@@ -181,7 +181,7 @@ public class TestBlockReorder {
   /**
    * Test that the hook works within HBase
    */
-  //@Test()
+  @Test()
   public void testHBaseCluster() throws Exception {
     byte[] sb = "sb".getBytes();
     TEST_UTIL.startMiniZKCluster();
@@ -207,7 +207,8 @@ public class TestBlockReorder {
     do {
       bls = dfs.getFileBlockLocations(fss[0], 0, 1);
       Assert.assertNotNull(bls);
-      Assert.assertTrue("Expecting 3, got " + bls.length, System.currentTimeMillis() < max);
+      Assert.assertTrue("Expecting 3, got " + bls.length+" for file"+fss[0],
+          System.currentTimeMillis() < max);
     } while (bls.length != 3);
 
   }
@@ -292,7 +293,6 @@ public class TestBlockReorder {
     Assert.assertEquals(host2, l.get(0).getLocations()[0].getHostName());
     Assert.assertEquals(host3, l.get(0).getLocations()[1].getHostName());
     Assert.assertEquals("nothing", l.get(0).getLocations()[2].getHostName());
-
   }
 
   private void setOurOrder(LocatedBlocks l) {
