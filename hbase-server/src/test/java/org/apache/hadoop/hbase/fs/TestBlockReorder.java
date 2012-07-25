@@ -87,7 +87,7 @@ public class TestBlockReorder {
   /**
    * Tests that we're can add a hook, and that this hook works when we try to read the file in HDFS.
    */
-  @Test
+  //@Test
   public void testBlockLocationReorder() throws Exception {
     Path p = new Path("hello");
 
@@ -176,7 +176,7 @@ public class TestBlockReorder {
   /**
    * Test that the hook works within HBase
    */
-  //@Test()
+  @Test()
   public void testHBaseCluster() throws Exception {
     byte[] sb = "sb".getBytes();
     TEST_UTIL.startMiniZKCluster();
@@ -213,29 +213,27 @@ public class TestBlockReorder {
     final String fileName = "helloWorld";
     Path p = new Path(fileName);
 
-    Assert.assertTrue((short) cluster.getDataNodes().size() > 1);
-    final int repCount = 2;
+    final int repCount = 3;
+    Assert.assertTrue((short) cluster.getDataNodes().size() >= repCount);
 
     // Let's write the file
-    FileSystem fs = FileSystem.get(conf);
-    FSDataOutputStream fop = fs.create(p, (short) repCount);
+    FSDataOutputStream fop = dfs.create(p, (short) repCount);
     final double toWrite = 875.5613;
     fop.writeDouble(toWrite);
     fop.close();
 
-    HFileSystem.LogReorderBlocks lrb = new HFileSystem.LogReorderBlocks();
 
-    Thread.sleep(5000);
     // The interceptor is not set in this test, so we get the raw list
     LocatedBlocks l = dfs.getClient().namenode.getBlockLocations(fileName, 0, 1);
 
     Assert.assertNotNull(l.getLocatedBlocks());
     Assert.assertEquals(l.getLocatedBlocks().size(),  1);
-    Assert.assertEquals(l.get(0).getLocations().length, 3);
+    Assert.assertEquals(l.get(0).getLocations().length, repCount);
 
     // Let's fix our own order
     setOurOrder(l);
 
+    HFileSystem.LogReorderBlocks lrb = new HFileSystem.LogReorderBlocks();
     // Should be filtered, the name is different
     lrb.reorderBlocks(conf, l, fileName);
     checkOurOrder(l);
