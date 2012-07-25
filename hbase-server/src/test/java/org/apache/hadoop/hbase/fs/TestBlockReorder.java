@@ -34,6 +34,7 @@ import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.MiniHBaseCluster;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
@@ -235,8 +236,13 @@ public class TestBlockReorder {
     checkOurOrder(l);
 
     // Should be reordered, as we pretend to be a file name with a compliant stuff
+    Assert.assertNotNull(conf.get(HConstants.HBASE_DIR));
+    Assert.assertFalse(conf.get(HConstants.HBASE_DIR).isEmpty());
     String pseudoLogFile = conf.get(HConstants.HBASE_DIR) + "/" +
         HConstants.HREGION_LOGDIR_NAME + "/" + host1 + ",6977,65766576";
+
+    Assert.assertNotNull( HLog.getServerNameFromHLogDirectoryName(conf, pseudoLogFile) );
+
     lrb.reorderBlocks(conf, l, pseudoLogFile);
     checkOurFixedOrder(l);
   }
