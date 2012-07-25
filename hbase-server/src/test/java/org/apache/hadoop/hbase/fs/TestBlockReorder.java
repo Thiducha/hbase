@@ -199,7 +199,7 @@ public class TestBlockReorder {
     String rootDir = conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME;
     Path p2 = new Path(rootDir);
 
-    DirectoryListing dl = dfs.getClient().listPaths("/"+p2.getName(), HdfsFileStatus.EMPTY_NAME);
+    DirectoryListing dl = dfs.getClient().listPaths("/hbase/.logs/", HdfsFileStatus.EMPTY_NAME);
     Assert.assertNotNull("Reading " + p2.getName(), dl);
     HdfsFileStatus[] hfs = dl.getPartialListing() ;
     Assert.assertEquals(hfs.length, 1);
