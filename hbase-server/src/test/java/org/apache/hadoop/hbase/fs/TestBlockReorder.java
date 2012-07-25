@@ -203,7 +203,7 @@ public class TestBlockReorder {
       LOG.info("File=" + f.getPath());
     }
 
-    DirectoryListing dl = dfs.getClient().listPaths(rootDir, HdfsFileStatus.EMPTY_NAME);
+    DirectoryListing dl = dfs.getClient().listPaths("/"+rootDir, HdfsFileStatus.EMPTY_NAME);
     Assert.assertNotNull(dl);
     HdfsFileStatus[] hfs = dl.getPartialListing() ;
     Assert.assertEquals(hfs.length, 1);
