@@ -21,6 +21,7 @@ package org.apache.hadoop.hbase.fs;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.commons.logging.impl.Log4JLogger;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FSDataInputStream;
@@ -35,12 +36,15 @@ import org.apache.hadoop.hbase.MiniHBaseCluster;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
+import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.server.datanode.DataNode;
+import org.apache.hadoop.hdfs.server.namenode.LeaseManager;
+import org.apache.log4j.Level;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -52,6 +56,12 @@ import java.net.ServerSocket;
 @Category(LargeTests.class)
 public class TestBlockReorder {
   private static final Log LOG = LogFactory.getLog(TestBlockReorder.class);
+  static {
+    //((Log4JLogger) DataNode.LOG).getLogger().setLevel(Level.ALL);
+   // ((Log4JLogger) LeaseManager.LOG).getLogger().setLevel(Level.ALL);
+   // ((Log4JLogger) DFSClient.LOG).getLogger().setLevel(Level.ALL);
+    ((Log4JLogger) HFileSystem.LOG).getLogger().setLevel(Level.ALL);
+  }
 
   private Configuration conf;
   private MiniDFSCluster cluster;
@@ -227,10 +237,9 @@ public class TestBlockReorder {
       l = dfs.getClient().namenode.getBlockLocations(fileName, 0, 1);
       Assert.assertNotNull(l.getLocatedBlocks());
       Assert.assertEquals(l.getLocatedBlocks().size(), 1);
-      Assert.assertTrue("Expecting "+repCount+" , got " + l.get(0).getLocations().length,
+      Assert.assertTrue("Expecting " + repCount + " , got " + l.get(0).getLocations().length,
           System.currentTimeMillis() < max);
     } while (l.get(0).getLocations().length != repCount);
-
 
 
     // Let's fix our own order
@@ -247,7 +256,8 @@ public class TestBlockReorder {
     String pseudoLogFile = conf.get(HConstants.HBASE_DIR) + "/" +
         HConstants.HREGION_LOGDIR_NAME + "/" + host1 + ",6977,65766576";
 
-    Assert.assertNotNull( HLog.getServerNameFromHLogDirectoryName(conf, pseudoLogFile) );
+    // Check that it will be possible to extract a ServerName from our construction
+    Assert.assertNotNull(HLog.getServerNameFromHLogDirectoryName(conf, pseudoLogFile));
 
     lrb.reorderBlocks(conf, l, pseudoLogFile);
     checkOurFixedOrder(l);
