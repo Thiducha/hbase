@@ -34,23 +34,18 @@ import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.MiniHBaseCluster;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.regionserver.TestParallelPut;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.server.datanode.DataNode;
-import org.apache.hadoop.hdfs.server.protocol.NamenodeProtocol;
 import org.junit.After;
-import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import java.io.IOException;
 import java.net.ServerSocket;
 
 @Category(LargeTests.class)
@@ -87,7 +82,7 @@ public class TestBlockReorder {
   /**
    * Tests that we're can add a hook, and that this hook works when we try to read the file in HDFS.
    */
-  //@Test
+  @Test
   public void testBlockLocationReorder() throws Exception {
     Path p = new Path("hello");
 
@@ -95,15 +90,14 @@ public class TestBlockReorder {
     final int repCount = 2;
 
     // Let's write the file
-    FileSystem fs = FileSystem.get(conf);
-    FSDataOutputStream fop = fs.create(p, (short) repCount);
+    FSDataOutputStream fop = dfs.create(p, (short) repCount);
     final double toWrite = 875.5613;
     fop.writeDouble(toWrite);
     fop.close();
 
     // Let's check we can read it when everybody's there
     long start = System.currentTimeMillis();
-    FSDataInputStream fin = fs.open(p);
+    FSDataInputStream fin = dfs.open(p);
     Assert.assertTrue(toWrite == fin.readDouble());
     long end = System.currentTimeMillis();
     LOG.fatal("HFileSystem readtime= " + (end - start));
@@ -112,10 +106,10 @@ public class TestBlockReorder {
 
     // Let's kill the first location. But actually the fist location returned will change
     // The first thing to do it to get the location, then the port
-    FileStatus f = fs.getFileStatus(p);
+    FileStatus f = dfs.getFileStatus(p);
     BlockLocation[] lbs;
     do {
-      lbs = fs.getFileBlockLocations(f, 0, 1);
+      lbs = dfs.getFileBlockLocations(f, 0, 1);
     } while (lbs.length != 1 && lbs[0].getLength() != repCount);
     String name = lbs[0].getNames()[0];
     Assert.assertTrue(name.indexOf(':') > 0);
@@ -162,7 +156,7 @@ public class TestBlockReorder {
     boolean iAmBad = false;
     for (int i = 0; i < 10 && !iAmBad; i++) {
       start = System.currentTimeMillis();
-      fin = fs.open(p);
+      fin = dfs.open(p);
       Assert.assertTrue(toWrite == fin.readDouble());
       fin.close();
       end = System.currentTimeMillis();
@@ -176,7 +170,7 @@ public class TestBlockReorder {
   /**
    * Test that the hook works within HBase
    */
-  @Test()
+//  @Test()
   public void testHBaseCluster() throws Exception {
     byte[] sb = "sb".getBytes();
     TEST_UTIL.startMiniZKCluster();
@@ -238,7 +232,7 @@ public class TestBlockReorder {
     lrb.reorderBlocks(conf, l, fileName);
     checkOurOrder(l);
 
-    // Should be reordered
+    // Should be reordered, as we pretend to be a file name with a compliant stuff
     String pseudoLogFile = conf.get(HConstants.HBASE_DIR) + "/" +
         HConstants.HREGION_LOGDIR_NAME + "/" + host1 + ",6977,65766576";
     lrb.reorderBlocks(conf, l, pseudoLogFile);
