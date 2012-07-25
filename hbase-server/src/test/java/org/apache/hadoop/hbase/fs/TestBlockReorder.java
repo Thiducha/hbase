@@ -17,11 +17,13 @@ import org.apache.hadoop.hbase.MiniHBaseCluster;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.regionserver.TestParallelPut;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.server.datanode.DataNode;
+import org.apache.hadoop.hdfs.server.protocol.NamenodeProtocol;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -40,6 +42,7 @@ public class TestBlockReorder {
   private static Configuration conf;
   private static MiniDFSCluster cluster;
   private final static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
+  private static DistributedFileSystem dfs;
 
   @Before
   public static void setUpBeforeClass() throws Exception {
@@ -50,6 +53,7 @@ public class TestBlockReorder {
 
     conf = TEST_UTIL.getConfiguration();
     cluster = TEST_UTIL.getDFSCluster();
+    dfs= (DistributedFileSystem)FileSystem.get(conf);
   }
 
   @After
@@ -170,7 +174,8 @@ public class TestBlockReorder {
 
   @Test
   public void testBlockLocation() throws IOException {
-    Path p = new Path("hello2");
+    final String fileName = "helloWorld";
+    Path p = new Path(fileName);
 
     Assert.assertTrue((short) cluster.getDataNodes().size() > 1);
     final int repCount = 2;
@@ -182,14 +187,14 @@ public class TestBlockReorder {
     fop.writeDouble(toWrite);
     fop.close();
 
-
-
     HFileSystem.LogReorderBlocks lrb = new HFileSystem.LogReorderBlocks();
     FileStatus f = fs.getFileStatus(p);
 
-    //LocatedBlocks l = fs.getFileBlockLocations(f, 0, 1);
+    // The
+    LocatedBlocks l = dfs.getClient().namenode.getBlockLocations(fileName, 0, 1);
 
-    //lrb.reorderBlocks(conf, );
+
+    lrb.reorderBlocks(conf, l, fileName);
 
   }
 }
