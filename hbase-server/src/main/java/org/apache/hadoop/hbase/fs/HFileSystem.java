@@ -276,12 +276,8 @@ public class HFileSystem extends FilterFileSystem {
         DatanodeInfo[] dnis = lb.getLocations();
         if (dnis != null && dnis.length > 1) {
           boolean found = false;
-          for (int a=0; a<dnis.length; a++){
-            LOG.debug("res: "+dnis[a]+" "+dnis[a].getHostName());
-          }
           for (int i = 0; i < dnis.length - 1 && !found; i++) {
             if (hostName.equals(dnis[i].getHostName()) || hostName.equals(dnis[i].getHost())) {
-
               // advance the other locations by one and put this one at the last place.
               DatanodeInfo toLast = dnis[i];
               System.arraycopy(dnis, i+1, dnis, i, dnis.length-i-1);
@@ -289,9 +285,6 @@ public class HFileSystem extends FilterFileSystem {
               found = true;
               LOG.debug("Moved the location "+toLast.getHostName()+" to the last place." +
                   " locations size was "+dnis.length);
-              for (int a=0; a<dnis.length; a++){
-                LOG.debug("res: "+dnis[a]+" "+dnis[a].getHostName());
-              }
             }
           }
         }

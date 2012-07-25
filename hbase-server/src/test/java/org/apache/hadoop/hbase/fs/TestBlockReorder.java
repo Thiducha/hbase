@@ -259,6 +259,21 @@ public class TestBlockReorder {
     // Check that it will be possible to extract a ServerName from our construction
     Assert.assertNotNull(HLog.getServerNameFromHLogDirectoryName(conf, pseudoLogFile));
 
+    // And check we're doing the right reorder.
+    lrb.reorderBlocks(conf, l, pseudoLogFile);
+    checkOurFixedOrder(l);
+
+    // And change again and check again
+    l.get(0).getLocations()[0].setHostName(host2);
+    l.get(0).getLocations()[1].setHostName(host1);
+    l.get(0).getLocations()[2].setHostName(host3);
+    lrb.reorderBlocks(conf, l, pseudoLogFile);
+    checkOurFixedOrder(l);
+
+    // And change again and check again
+    l.get(0).getLocations()[0].setHostName(host2);
+    l.get(0).getLocations()[1].setHostName(host1);
+    l.get(0).getLocations()[2].setHostName(host3);
     lrb.reorderBlocks(conf, l, pseudoLogFile);
     checkOurFixedOrder(l);
   }
