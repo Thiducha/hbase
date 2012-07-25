@@ -205,6 +205,7 @@ public class TestBlockReorder {
     org.apache.hadoop.fs.BlockLocation[] bls;
     long max = System.currentTimeMillis() + 10000;
     do {
+      // Always returns 0, why?
       bls = dfs.getFileBlockLocations(fss[0], 0, 1);
       Assert.assertNotNull(bls);
       Assert.assertTrue("Expecting 3, got " + bls.length+" for file"+fss[0].getPath().getName(),System.currentTimeMillis() < max);
@@ -216,6 +217,7 @@ public class TestBlockReorder {
     LocatedBlocks l;
     final long max = System.currentTimeMillis() + 10000;
     do {
+      // The "/" is mandatory, without it we've got a null pointer exception on the namenode
       l = dfs.getClient().namenode.getBlockLocations("/"+fss[0].getPath().getName(), 0, 1);
       Assert.assertNotNull(l.getLocatedBlocks());
       Assert.assertEquals(l.getLocatedBlocks().size(), 1);
