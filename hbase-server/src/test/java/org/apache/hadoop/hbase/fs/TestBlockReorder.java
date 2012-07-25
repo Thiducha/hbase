@@ -158,7 +158,7 @@ public class TestBlockReorder {
     ServerSocket ss = new ServerSocket(port);   // We're taking the port to have a timeout issue.
 
     // Now it will fail with a timeout, unfortunately it does not always connect to the same box,
-    // so we try 10 times;  with the reorder it will never last more
+    // so we try 10 times;  with the reorder it will never last more than a few milli seconds
     boolean iAmBad = false;
     for (int i = 0; i < 10 && !iAmBad; i++) {
       start = System.currentTimeMillis();
@@ -197,9 +197,12 @@ public class TestBlockReorder {
     Assert.assertEquals(fss.length, 1);
     Assert.assertNotNull(fss[0]);
 
-    org.apache.hadoop.fs.BlockLocation[] bls = dfs.getFileBlockLocations(fss[0], 0, 1);
-    Assert.assertNotNull(bls);
-    Assert.assertEquals(bls.length, 3);
+    org.apache.hadoop.fs.BlockLocation[] bls;
+    do {
+      bls = dfs.getFileBlockLocations(fss[0], 0, 1);
+      Assert.assertNotNull(bls);
+    }while (bls.length != 3);
+
   }
 
   /**
