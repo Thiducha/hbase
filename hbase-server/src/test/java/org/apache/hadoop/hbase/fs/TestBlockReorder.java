@@ -203,13 +203,23 @@ public class TestBlockReorder {
     Assert.assertNotNull(fss[0]);
 
     org.apache.hadoop.fs.BlockLocation[] bls;
-    final long max = System.currentTimeMillis() + 10000;
+    long max = System.currentTimeMillis() + 10000;
     do {
       bls = dfs.getFileBlockLocations(fss[0], 0, 1);
       Assert.assertNotNull(bls);
-      Assert.assertTrue("Expecting 3, got " + bls.length+" for file"+fss[0],
-          System.currentTimeMillis() < max);
+      //Assert.assertTrue("Expecting 3, got " + bls.length+" for file"+fss[0].getPath().getName(),System.currentTimeMillis() < max);
     } while (bls.length != 3);
+
+    // The interceptor is not set in this test, so we get the raw list
+    LocatedBlocks l;
+     max = System.currentTimeMillis() + 10000;
+    do {
+      l = dfs.getClient().namenode.getBlockLocations(fss[0].getPath().getName(), 0, 1);
+      Assert.assertNotNull(l.getLocatedBlocks());
+      Assert.assertEquals(l.getLocatedBlocks().size(), 1);
+      Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
+          System.currentTimeMillis() < max);
+    } while (l.get(0).getLocations().length != 3);
 
   }
 
