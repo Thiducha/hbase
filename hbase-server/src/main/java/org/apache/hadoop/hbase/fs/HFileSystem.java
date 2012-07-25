@@ -253,7 +253,7 @@ public class HFileSystem extends FilterFileSystem {
   }
 
   static interface ReorderBlocks{
-    public void reorderBlocks(Configuration conf, LocatedBlocks lbs, String src);
+    public void reorderBlocks(Configuration conf, LocatedBlocks lbs, String src) throws IOException;
   }
 
   /**
@@ -262,7 +262,8 @@ public class HFileSystem extends FilterFileSystem {
    *  datanode is actually dead, so if we use it it will timeout.
    */
   static class LogReorderBlocks implements ReorderBlocks {
-    public void reorderBlocks(Configuration conf, LocatedBlocks lbs, String src) {
+    public void reorderBlocks(Configuration conf, LocatedBlocks lbs, String src)
+        throws IOException {
       LOG.info("intercepting a call to LocatedBlocks to reorder the blocks of the file " + src);
 
       ServerName sn = HLog.getServerNameFromHLogDirectoryName(conf, src);

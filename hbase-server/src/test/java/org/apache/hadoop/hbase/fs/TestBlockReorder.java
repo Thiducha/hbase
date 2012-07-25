@@ -201,6 +201,7 @@ public class TestBlockReorder {
         conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME)).toUri().getPath();
 
     DirectoryListing dl = dfs.getClient().listPaths(rootDir, HdfsFileStatus.EMPTY_NAME);
+    // If we don't find anything it means that we're wrong on the path naming rules
     Assert.assertNotNull("Reading " + rootDir, dl);
     HdfsFileStatus[] hfs = dl.getPartialListing() ;
 
