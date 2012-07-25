@@ -43,13 +43,16 @@ public class TestBlockReorder {
   private MiniDFSCluster cluster;
   private final HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
   private DistributedFileSystem dfs;
+  private final String host1 = "iambad";
+  private final String host2 = "iamgood";
+  private final String host3 = "iamverygood";
 
   @Before
   public void setUp() throws Exception {
     TEST_UTIL.getConfiguration().setInt("dfs.blocksize", 1024 * 1024);
     TEST_UTIL.getConfiguration().setBoolean("dfs.support.append", true);
     // The reason to a rack it to try to get always the same order but it does not work.
-    TEST_UTIL.startMiniDFSCluster(2, new String[]{"/r1", null}, new String[]{"/r1/h1", "h2"});
+    TEST_UTIL.startMiniDFSCluster(3, new String[]{"/r1", "/r2", "/r3"}, new String[]{host1, host2, host3 });
 
     conf = TEST_UTIL.getConfiguration();
     cluster = TEST_UTIL.getDFSCluster();
@@ -190,10 +193,17 @@ public class TestBlockReorder {
     HFileSystem.LogReorderBlocks lrb = new HFileSystem.LogReorderBlocks();
     FileStatus f = fs.getFileStatus(p);
 
-    // The
+    // The interceptor is not set in this test, so we get the raw list
     LocatedBlocks l = dfs.getClient().namenode.getBlockLocations(fileName, 0, 1);
+    Assert.assertTrue(l.getLocatedBlocks().size() == 1);
+    Assert.assertTrue(l.get(0).getLocations().length == 3);
 
+    l.get(0).getLocations()[0].setHostName(host1);
 
+    // Should be filtered, the name is different
+    lrb.reorderBlocks(conf, l, fileName);
+
+    // Should be filtered, the name is different
     lrb.reorderBlocks(conf, l, fileName);
 
   }
