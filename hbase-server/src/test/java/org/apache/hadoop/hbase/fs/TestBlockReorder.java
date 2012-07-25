@@ -221,11 +221,17 @@ public class TestBlockReorder {
 
 
     // The interceptor is not set in this test, so we get the raw list
-    LocatedBlocks l = dfs.getClient().namenode.getBlockLocations(fileName, 0, 1);
+    LocatedBlocks l;
+    final long max = System.currentTimeMillis() + 10000;
+    do {
+      l = dfs.getClient().namenode.getBlockLocations(fileName, 0, 1);
+      Assert.assertNotNull(l.getLocatedBlocks());
+      Assert.assertEquals(l.getLocatedBlocks().size(), 1);
+      Assert.assertTrue("Expecting "+repCount+" , got " + l.getLocatedBlocks().size(),
+          System.currentTimeMillis() < max);
+    } while (l.getLocatedBlocks().size() != repCount);
 
-    Assert.assertNotNull(l.getLocatedBlocks());
-    Assert.assertEquals(l.getLocatedBlocks().size(), 1);
-    Assert.assertEquals(l.get(0).getLocations().length, repCount);
+
 
     // Let's fix our own order
     setOurOrder(l);
