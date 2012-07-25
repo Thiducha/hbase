@@ -66,8 +66,11 @@ public class TestBlockReorder {
   }
 
 
+  /**
+   * Tests that we're can add a hook, and that this hook works when we try to read the file in HDFS.
+   */
   @Test
-  public void testBlockLocationReorder() throws IOException, InterruptedException, NoSuchFieldException, IllegalAccessException {
+  public void testBlockLocationReorder() throws Exception {
     Path p = new Path("hello");
 
     Assert.assertTrue((short) cluster.getDataNodes().size() > 1);
@@ -117,7 +120,8 @@ public class TestBlockReorder {
 
 
     // Add the hook, with an implementation checking that we don't use the port we've just killed.
-    HFileSystem.addLocationOrderHack(conf, new HFileSystem.ReorderBlocks() {
+    HFileSystem.addLocationOrderHack(conf,
+        new HFileSystem.ReorderBlocks() {
       @Override
       public void reorderBlocks(Configuration c, LocatedBlocks lbs, String src) {
         for (LocatedBlock lb : lbs.getLocatedBlocks()) {
@@ -151,6 +155,9 @@ public class TestBlockReorder {
     ss.close();
   }
 
+  /**
+   * Test that the hook works within HBase
+   */
   @Test
   public void testHBaseCluster() throws Exception {
     byte[] sb = "sb".getBytes();
@@ -175,8 +182,12 @@ public class TestBlockReorder {
     org.apache.hadoop.fs.BlockLocation[] bls = dfs.getFileBlockLocations(fss[0], 0, 1);
     Assert.assertNotNull(bls);
     Assert.assertTrue(bls.length == 3);
+
   }
 
+  /**
+   * Test that the reorder algo works as we expect.
+   */
   @Test
   public void testBlockLocation() throws IOException {
     final String fileName = "helloWorld";
@@ -209,7 +220,7 @@ public class TestBlockReorder {
 
     // Should be reordered
     String pseudoLogFile = conf.get(HConstants.HBASE_DIR) + "/" +
-        HConstants.HREGION_LOGDIR_NAME+"/"+host1;
+        HConstants.HREGION_LOGDIR_NAME+"/"+host1+",6977,65766576";
     lrb.reorderBlocks(conf, l, pseudoLogFile);
     checkOurFixedOrder(l);
   }
