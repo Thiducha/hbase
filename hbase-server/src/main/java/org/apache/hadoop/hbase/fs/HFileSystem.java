@@ -284,7 +284,7 @@ public class HFileSystem extends FilterFileSystem {
 
               // advance the other locations by one and put this one at the last place.
               DatanodeInfo toLast = dnis[i];
-              System.arraycopy(dnis, i, dnis, i+1, dnis.length-i-1);
+              System.arraycopy(dnis, i+1, dnis, i, dnis.length-i-1);
               dnis[dnis.length - 1] = toLast;
               found = true;
               LOG.debug("Moved the location "+toLast.getHostName()+" to the last place." +
