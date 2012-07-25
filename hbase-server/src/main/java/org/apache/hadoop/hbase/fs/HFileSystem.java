@@ -21,16 +21,30 @@
 package org.apache.hadoop.hbase.fs;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.Proxy;
 import java.net.URI;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FilterFileSystem;
-import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.util.Methods;
+import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.regionserver.wal.HLog;
+import org.apache.hadoop.hdfs.DFSClient;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
+import org.apache.hadoop.hdfs.protocol.ClientProtocol;
+import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
+import org.apache.hadoop.hdfs.protocol.LocatedBlock;
+import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.util.Progressable;
 
@@ -42,6 +56,7 @@ import org.apache.hadoop.util.Progressable;
  * this is the place to make it happen.
  */
 public class HFileSystem extends FilterFileSystem {
+  public static final Log LOG = LogFactory.getLog(HFileSystem.class);
 
   private final FileSystem noChecksumFs;   // read hfile data from storage
   private final boolean useHBaseChecksum;
@@ -159,7 +174,123 @@ public class HFileSystem extends FilterFileSystem {
     if (fs == null) {
       throw new IOException("No FileSystem for scheme: " + uri.getScheme());
     }
+
     return fs;
+  }
+
+  public static void addLocationOrderHack(Configuration conf) throws IOException {
+    addLocationOrderHack(conf, new LogReorderBlocks());
+  }
+
+  /**
+   * Add an interceptor on the calls to tne namenode#getBlockLocations from the DFSClient
+   *  linked to this FileSystem. See HBASE-6435 for the background.
+   *
+   * There should be no reason, except testing to create a specific ReorderBlocks.
+   */
+  static void addLocationOrderHack(Configuration conf, final ReorderBlocks lrb)
+      throws IOException {
+    FileSystem fs = FileSystem.get(conf);
+
+      if (!(fs instanceof DistributedFileSystem)){
+      LOG.warn("The file system is not a DistributedFileSystem. Not adding block location reordering");
+      return;
+    }
+
+    DistributedFileSystem dfs =(DistributedFileSystem)fs;
+    DFSClient dfsc = dfs.getClient();
+    if (dfsc == null){
+        LOG.warn("The DistributedFileSystem does not contains a DFSClient." +
+            " Can't add the location block reordering hack. Continuing, but this is unexpected."
+        );
+      return;
+    }
+
+    if (dfsc.namenode == null){
+      LOG.warn("The DFSClient is not linked to a namenode" +
+          " Can't add the location block reordering hack. Continuing, but this is unexpected."
+      );
+      return;
+    }
+
+    ClientProtocol cp1 =  createReordoringProxy(dfsc.namenode, lrb, conf);
+
+    try {
+      Field nf = DFSClient.class.getField("namenode");
+
+      nf.setAccessible(true);
+      Field modifiersField = Field.class.getDeclaredField("modifiers");
+      modifiersField.setAccessible(true);
+      modifiersField.setInt(nf, nf.getModifiers() & ~Modifier.FINAL);
+      nf.set(dfsc, cp1);
+      LOG.info("Added intercepting call to namenode get location");
+    } catch (NoSuchFieldException impossible) {
+    } catch (IllegalAccessException e) {
+      LOG.warn("Can't modify the DFSClient#namenode field to add the location reorder.", e);
+    }
+  }
+
+  private static ClientProtocol createReordoringProxy(final ClientProtocol cp,
+                                                      final ReorderBlocks lrb,
+                                                      final Configuration conf
+) {
+    return (ClientProtocol) Proxy.newProxyInstance
+        (cp.getClass().getClassLoader(),
+            new Class[]{ClientProtocol.class},
+            new InvocationHandler() {
+              public Object invoke(Object proxy, Method method,
+                                   Object[] args) throws Throwable {
+                Object res = method.invoke(cp, args);
+                if (res != null && args.length == 3 && "getBlockLocations".equals(method.getName())
+                    && res instanceof LocatedBlocks
+                    && args[0] instanceof String
+                    && args[0] != null) {
+                  lrb.reorderBlocks(conf, (LocatedBlocks) res, (String) args[0]);
+                }
+                return res;
+              }
+            });
+  }
+
+  static interface ReorderBlocks{
+    public void reorderBlocks(Configuration conf, LocatedBlocks lbs, String src);
+  }
+
+  /**
+   * We're putting at lowest priority the hlog files blocks that are on the same datanode
+   *  as the original regionserver which created these files. This because we fear that the
+   *  datanode is actually dead, so if we use it it will timeout.
+   */
+  static class LogReorderBlocks implements ReorderBlocks {
+    public void reorderBlocks(Configuration conf, LocatedBlocks lbs, String src) {
+      LOG.info("intercepting a call to LocatedBlocks to reorder the blocks of the file " + src);
+
+      ServerName sn = HLog.getServerNameFromHLogDirectoryName(conf, src);
+      if (sn == null) return;
+
+      // Ok, so it's an HLog
+      String hostName = sn.getHostname();
+
+      // Just check for all blocks
+      for (LocatedBlock lb : lbs.getLocatedBlocks()) {
+        DatanodeInfo[] dnis = lb.getLocations();
+        if (dnis != null && dnis.length > 1) {
+          boolean found = false;
+          for (int i = 0; i < dnis.length - 1 && !found; i++) {
+            if (hostName.equals(dnis[i].getHostName()) || hostName.equals(dnis[i].getHost())) {
+
+              // advance the other locations by one and put this one at the last place.
+              DatanodeInfo toLast = dnis[i];
+              System.arraycopy(dnis, i, dnis, i+1, dnis.length-i-1);
+              dnis[dnis.length - 1] = toLast;
+              found = true;
+              LOG.debug("Moved the location "+toLast.getHostName()+" to the last place." +
+                  " locations size was "+dnis.length);
+            }
+          }
+        }
+      }
+    }
   }
 
   /**

@@ -438,6 +438,25 @@ public class HBaseTestingUtility {
     return this.dfsCluster;
   }
 
+
+  public MiniDFSCluster startMiniDFSCluster(int servers, final  String racks[], String hosts[])
+      throws Exception {
+    createDirsAndSetProperties();
+    this.dfsCluster = new MiniDFSCluster(0, this.conf, servers, true, true,
+        true, null, racks, hosts, null);
+
+    // Set this just-started cluster as our filesystem.
+    FileSystem fs = this.dfsCluster.getFileSystem();
+    this.conf.set("fs.defaultFS", fs.getUri().toString());
+    // Do old style too just to be safe.
+    this.conf.set("fs.default.name", fs.getUri().toString());
+
+    // Wait for the cluster to be totally up
+    this.dfsCluster.waitClusterUp();
+
+    return this.dfsCluster;
+  }
+
   public MiniDFSCluster startMiniDFSClusterForTestHLog(int namenodePort) throws IOException {
     createDirsAndSetProperties();
     dfsCluster = new MiniDFSCluster(namenodePort, conf, 5, false, true, true, null,

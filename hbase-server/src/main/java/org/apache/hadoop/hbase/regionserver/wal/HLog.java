@@ -1757,6 +1757,47 @@ public class HLog implements Syncable {
     return dirName.toString();
   }
 
+
+  /**
+   * Returns null if it's not a log file. Returns the ServerName of the region server that created
+   *  this log file otherwise.
+   */
+  public static ServerName getServerNameFromHLogDirectoryName(Configuration conf, String path){
+    if (path == null || path.length() <= HConstants.HREGION_LOGDIR_NAME.length())
+      return null;
+
+    if (conf == null){
+      throw new IllegalArgumentException("conf must be set");
+    }
+
+    final String rootDir = conf.get(HConstants.HBASE_DIR);
+    if (rootDir == null || rootDir.isEmpty()){
+      throw new IllegalArgumentException(HConstants.HBASE_DIR+" key must be not found in conf");
+    }
+
+    final StringBuilder startPathSB = new StringBuilder(rootDir);
+    if (!rootDir.endsWith("/")) startPathSB.append('/');
+    startPathSB.append(HConstants.HREGION_LOGDIR_NAME);
+    if (!HConstants.HREGION_LOGDIR_NAME.endsWith("/")) startPathSB.append('/');
+    final String startPath =  startPathSB.toString();
+
+    if (!path.startsWith(startPath)){
+      return null;
+    }
+
+    final String toParse = path.substring(startPath.length());
+
+    ServerName.parseServerName(toParse);
+
+    if (!ServerName.isFullServerName(toParse)){
+      LOG.warn("There is a file in the hlog directory, but it seems it's not a log file." +
+          " Ignoring but strange. file="+path);
+      return null;
+    }
+
+    return ServerName.parseServerName(toParse);
+  }
+
   /**
    * Get the directory we are making logs in.
    * 

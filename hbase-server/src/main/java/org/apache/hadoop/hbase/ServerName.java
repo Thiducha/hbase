@@ -301,6 +301,15 @@ public class ServerName implements Comparable<ServerName> {
       new ServerName(str, NON_STARTCODE);
   }
 
+
+  /**
+   * @return true if the String follows the pattern of {@link ServerName#toString()}, false
+   *  otherwise.
+   */
+  public static boolean isFullServerName(final String str){
+    return SERVERNAME_PATTERN.matcher(str).matches();
+  }
+
   /**
    * Get a ServerName from the passed in data bytes.
    * @param data Data with a serialize server name in it; can handle the old style

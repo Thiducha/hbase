@@ -649,6 +649,7 @@ public class  HRegionServer implements ClientProtocol,
       for (int i = 0; i < nbBlocks; i++) {
         reservedSpace.add(new byte[HConstants.DEFAULT_SIZE_RESERVATION_BLOCK]);
       }
+      HFileSystem.addLocationOrderHack(conf);
     } catch (Throwable t) {
       // Call stop if error or process will stick around for ever since server
       // puts up non-daemon threads.
@@ -1748,7 +1749,7 @@ public class  HRegionServer implements ClientProtocol,
    * logs but it does close socket in case want to bring up server on old
    * hostname+port immediately.
    */
-  protected void kill() {
+  public void kill() {
     this.killed = true;
     abort("Simulated kill");
   }
