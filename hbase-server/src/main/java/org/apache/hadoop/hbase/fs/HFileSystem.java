@@ -286,6 +286,9 @@ public class HFileSystem extends FilterFileSystem {
               found = true;
               LOG.debug("Moved the location "+toLast.getHostName()+" to the last place." +
                   " locations size was "+dnis.length);
+              for (int a=0; a<dnis.length; a++){
+                LOG.debug("res: "+dnis[a]);
+              }
             }
           }
         }
