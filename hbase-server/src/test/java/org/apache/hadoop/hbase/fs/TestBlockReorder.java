@@ -209,7 +209,7 @@ public class TestBlockReorder {
    * Test that the reorder algo works as we expect.
    */
   @Test
-  public void testBlockLocation() throws IOException {
+  public void testBlockLocation() throws Exception {
     final String fileName = "helloWorld";
     Path p = new Path(fileName);
 
@@ -225,6 +225,7 @@ public class TestBlockReorder {
 
     HFileSystem.LogReorderBlocks lrb = new HFileSystem.LogReorderBlocks();
 
+    Thread.sleep(5000);
     // The interceptor is not set in this test, so we get the raw list
     LocatedBlocks l = dfs.getClient().namenode.getBlockLocations(fileName, 0, 1);
 
