@@ -409,6 +409,7 @@ public class HLog implements Syncable {
     if (!fs.mkdirs(dir)) {
       throw new IOException("Unable to mkdir " + dir);
     }
+    System.out.println("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA "+dir);
     this.oldLogDir = oldLogDir;
     if (!fs.exists(oldLogDir)) {
       if (!fs.mkdirs(this.oldLogDir)) {
@@ -1782,6 +1783,7 @@ public class HLog implements Syncable {
     final String startPath =  startPathSB.toString();
 
     if (!path.startsWith(startPath)){
+      LOG.fatal("AAAAAAAAAAAAAAAA "+startPath);
       return null;
     }
 
