@@ -187,9 +187,9 @@ public class TestBlockReorder {
     HFileSystem.LogReorderBlocks lrb = new HFileSystem.LogReorderBlocks();
     FileStatus f = fs.getFileStatus(p);
 
-    LocatedBlocks l = fs.getFileBlockLocations(f, 0, 1);
+    //LocatedBlocks l = fs.getFileBlockLocations(f, 0, 1);
 
-    lrb.reorderBlocks(conf, );
+    //lrb.reorderBlocks(conf, );
 
   }
 }
