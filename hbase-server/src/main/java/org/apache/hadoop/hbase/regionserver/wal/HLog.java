@@ -1763,13 +1763,16 @@ public class HLog implements Syncable {
    * Returns null if it's not a log file. Returns the ServerName of the region server that created
    *  this log file otherwise.
    */
-  public static ServerName getServerNameFromHLogDirectoryName(Configuration conf, String path){
+  public static ServerName getServerNameFromHLogDirectoryName(Configuration conf, String path) throws IOException {
     if (path == null || path.length() <= HConstants.HREGION_LOGDIR_NAME.length())
       return null;
 
     if (conf == null){
       throw new IllegalArgumentException("conf must be set");
     }
+
+    Path p = new Path(path);
+    Path p2 = FileSystem.get(conf).makeQualified(p);
 
     final String rootDir = conf.get(HConstants.HBASE_DIR);
     if (rootDir == null || rootDir.isEmpty()){
@@ -1782,7 +1785,7 @@ public class HLog implements Syncable {
     if (!HConstants.HREGION_LOGDIR_NAME.endsWith("/")) startPathSB.append('/');
     final String startPath =  startPathSB.toString();
 
-    LOG.fatal("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA "+startPath+" vs "+path);
+    LOG.fatal("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA "+startPath+" vs "+path+" "+p2+ " "+p2.getName());
     if (!path.startsWith(startPath)){
       return null;
     }
