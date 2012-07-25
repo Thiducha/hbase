@@ -170,7 +170,7 @@ public class TestBlockReorder {
   /**
    * Test that the hook works within HBase
    */
-  @Test()
+  //@Test()
   public void testHBaseCluster() throws Exception {
     byte[] sb = "sb".getBytes();
     TEST_UTIL.startMiniZKCluster();
@@ -204,7 +204,7 @@ public class TestBlockReorder {
   /**
    * Test that the reorder algo works as we expect.
    */
-  //@Test
+  @Test
   public void testBlockLocation() throws Exception {
     final String fileName = "/helloWorld";
     Path p = new Path(fileName);
