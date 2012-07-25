@@ -140,20 +140,20 @@ public class TestBlockReorder {
     // Add the hook, with an implementation checking that we don't use the port we've just killed.
     HFileSystem.addLocationOrderHack(conf,
         new HFileSystem.ReorderBlocks() {
-      @Override
-      public void reorderBlocks(Configuration c, LocatedBlocks lbs, String src) {
-        for (LocatedBlock lb : lbs.getLocatedBlocks()) {
-          if (lb.getLocations().length > 1) {
-            if (lb.getLocations()[0].getPort() == port) {
-              LOG.fatal("HFileSystem bad port, inverting");
-              DatanodeInfo tmp = lb.getLocations()[0];
-              lb.getLocations()[0] = lb.getLocations()[1];
-              lb.getLocations()[1] = tmp;
+          @Override
+          public void reorderBlocks(Configuration c, LocatedBlocks lbs, String src) {
+            for (LocatedBlock lb : lbs.getLocatedBlocks()) {
+              if (lb.getLocations().length > 1) {
+                if (lb.getLocations()[0].getPort() == port) {
+                  LOG.fatal("HFileSystem bad port, inverting");
+                  DatanodeInfo tmp = lb.getLocations()[0];
+                  lb.getLocations()[0] = lb.getLocations()[1];
+                  lb.getLocations()[1] = tmp;
+                }
+              }
             }
           }
-        }
-      }
-    });
+        });
 
     ServerSocket ss = new ServerSocket(port);   // We're taking the port to have a timeout issue.
 
@@ -200,7 +200,6 @@ public class TestBlockReorder {
     org.apache.hadoop.fs.BlockLocation[] bls = dfs.getFileBlockLocations(fss[0], 0, 1);
     Assert.assertNotNull(bls);
     Assert.assertTrue(bls.length == 3);
-
   }
 
   /**
@@ -238,7 +237,7 @@ public class TestBlockReorder {
 
     // Should be reordered
     String pseudoLogFile = conf.get(HConstants.HBASE_DIR) + "/" +
-        HConstants.HREGION_LOGDIR_NAME+"/"+host1+",6977,65766576";
+        HConstants.HREGION_LOGDIR_NAME + "/" + host1 + ",6977,65766576";
     lrb.reorderBlocks(conf, l, pseudoLogFile);
     checkOurFixedOrder(l);
   }
