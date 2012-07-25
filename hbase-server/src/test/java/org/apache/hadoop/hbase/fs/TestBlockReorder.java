@@ -51,6 +51,7 @@ public class TestBlockReorder {
   public void setUp() throws Exception {
     TEST_UTIL.getConfiguration().setInt("dfs.blocksize", 1024 * 1024);
     TEST_UTIL.getConfiguration().setBoolean("dfs.support.append", true);
+    TEST_UTIL.getConfiguration().setInt("dfs.replication", 3);
     // The reason to a rack it to try to get always the same order but it does not work.
     TEST_UTIL.startMiniDFSCluster(3, new String[]{"/r1", "/r2", "/r3"}, new String[]{host1, host2, host3});
 
@@ -153,6 +154,7 @@ public class TestBlockReorder {
   @Test
   public void testHBaseCluster() throws Exception {
     byte[] sb = "sb".getBytes();
+    TEST_UTIL.startMiniZKCluster();
     MiniHBaseCluster hbm = TEST_UTIL.startMiniHBaseCluster(1, 2);
     HTable h = TEST_UTIL.createTable("table".getBytes(), sb);
 
