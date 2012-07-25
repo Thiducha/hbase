@@ -227,9 +227,9 @@ public class TestBlockReorder {
       l = dfs.getClient().namenode.getBlockLocations(fileName, 0, 1);
       Assert.assertNotNull(l.getLocatedBlocks());
       Assert.assertEquals(l.getLocatedBlocks().size(), 1);
-      Assert.assertTrue("Expecting "+repCount+" , got " + l.getLocatedBlocks().size(),
+      Assert.assertTrue("Expecting "+repCount+" , got " + l.get(0).getLocations().length,
           System.currentTimeMillis() < max);
-    } while (l.getLocatedBlocks().size() != repCount);
+    } while (l.get(0).getLocations().length != repCount);
 
 
 
