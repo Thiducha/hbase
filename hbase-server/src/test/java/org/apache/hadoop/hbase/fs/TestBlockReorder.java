@@ -163,18 +163,18 @@ public class TestBlockReorder {
     h.put(p);
 
     // Now we need to find the log file, its locations, and stop it
-    FileSystem fs = FileSystem.get(conf);
-
     String rootDir = conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME;
-    FileStatus[] fss = fs.globStatus(new Path(rootDir));
+    FileStatus[] fss = dfs.globStatus(new Path(rootDir));
     for (FileStatus f : fss) {
       LOG.info("File=" + f.getPath());
     }
 
     Assert.assertTrue(fss.length == 1);
+    Assert.assertNotNull(fss[0]);
 
-    org.apache.hadoop.fs.BlockLocation[] bls = fs.getFileBlockLocations(fss[0], 0, 1);
-    Assert.assertTrue(bls.length == 2);
+    org.apache.hadoop.fs.BlockLocation[] bls = dfs.getFileBlockLocations(fss[0], 0, 1);
+    Assert.assertNotNull(bls);
+    Assert.assertTrue(bls.length == 3);
   }
 
   @Test
