@@ -219,6 +219,7 @@ public class TestBlockReorder {
     do {
       // The "/" is mandatory, without it we've got a null pointer exception on the namenode
       l = dfs.getClient().namenode.getBlockLocations("/"+fss[0].getPath().getName(), 0, 1);
+      Assert.assertNotNull("Trying "+"/"+fss[0].getPath().getName(),l);
       Assert.assertNotNull(l.getLocatedBlocks());
       Assert.assertEquals(l.getLocatedBlocks().size(), 1);
       Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
