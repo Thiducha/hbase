@@ -196,31 +196,13 @@ public class TestBlockReorder {
     h.put(p);
 
     // Now we need to find the log file, its locations, and stop it
-    String rootDir = conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME;
-    Path p2 = new Path(rootDir);
+    String rootDir = hbm.getConfiguration().get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME;
+    if (!rootDir.startsWith("/")){
+      rootDir = "/"+rootDir;
+    }
 
-    String s = "/hbase/.logs/";
-
-    System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
-
-    s = "/hbase/.logs";
-    System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
-
-    s = "/user/liochon/hbase/.logs/";
-    System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
-
-    s = "/user/liochon/hbase/.logs";
-    System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
-
-    s = "/";
-    System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
-
-    s = rootDir;
-    System.out.println(s+"=");//dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
-
-
-    DirectoryListing dl = dfs.getClient().listPaths("/hbase/.logs", HdfsFileStatus.EMPTY_NAME);
-    Assert.assertNotNull("Reading " + p2.getName(), dl);
+    DirectoryListing dl = dfs.getClient().listPaths(rootDir, HdfsFileStatus.EMPTY_NAME);
+    Assert.assertNotNull("Reading " + rootDir, dl);
     HdfsFileStatus[] hfs = dl.getPartialListing() ;
     Assert.assertEquals(hfs.length, 1);
     Assert.assertNotNull(hfs[0]);

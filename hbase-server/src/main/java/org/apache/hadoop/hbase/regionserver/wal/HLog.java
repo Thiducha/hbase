@@ -1779,18 +1779,21 @@ public class HLog implements Syncable {
       throw new IllegalArgumentException(HConstants.HBASE_DIR+" key must be not found in conf");
     }
 
+
+
     final StringBuilder startPathSB = new StringBuilder(rootDir);
     if (!rootDir.endsWith("/")) startPathSB.append('/');
     startPathSB.append(HConstants.HREGION_LOGDIR_NAME);
     if (!HConstants.HREGION_LOGDIR_NAME.endsWith("/")) startPathSB.append('/');
     final String startPath =  startPathSB.toString();
 
-    LOG.fatal("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA "+startPath+" vs "+path+" "+p2+ " "+p2.getName());
-    if (!path.startsWith(startPath)){
+    LOG.fatal("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA "+startPath+" vs "+path+" "+p2+ " "+p2.toUri().getPath());
+    String fullPath = FileSystem.get(conf).makeQualified(new Path(path)).toString();
+    if (!fullPath.startsWith(startPath)){
       return null;
     }
 
-    final String toParse = path.substring(startPath.length());
+    final String toParse = path.substring(fullPath.length());
 
     ServerName.parseServerName(toParse);
 
