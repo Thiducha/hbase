@@ -192,12 +192,12 @@ public class TestBlockReorder {
     Assert.assertNotNull(fss[0]);
 
     org.apache.hadoop.fs.BlockLocation[] bls;
-    final long max = System.currentTimeMillis()+10000;
+    final long max = System.currentTimeMillis() + 10000;
     do {
       bls = dfs.getFileBlockLocations(fss[0], 0, 1);
       Assert.assertNotNull(bls);
-      Assert.assertTrue("Expecting 3, got "+bls.length, System.currentTimeMillis() < max);
-    }while (bls.length != 3);
+      Assert.assertTrue("Expecting 3, got " + bls.length, System.currentTimeMillis() < max);
+    } while (bls.length != 3);
 
   }
 
@@ -223,7 +223,7 @@ public class TestBlockReorder {
     LocatedBlocks l = dfs.getClient().namenode.getBlockLocations(fileName, 0, 1);
 
     Assert.assertNotNull(l.getLocatedBlocks());
-    Assert.assertEquals(l.getLocatedBlocks().size(),  1);
+    Assert.assertEquals(l.getLocatedBlocks().size(), 1);
     Assert.assertEquals(l.get(0).getLocations().length, repCount);
 
     // Let's fix our own order
@@ -248,14 +248,14 @@ public class TestBlockReorder {
   }
 
   private void checkOurOrder(LocatedBlocks l) {
-    Assert.assertTrue(host1.equals(l.get(0).getLocations()[0].getHostName()));
-    Assert.assertTrue(host2.equals(l.get(0).getLocations()[1].getHostName()));
-    Assert.assertTrue(host3.equals(l.get(0).getLocations()[2].getHostName()));
+    Assert.assertEquals(host1, l.get(0).getLocations()[0].getHostName());
+    Assert.assertEquals(host2, l.get(0).getLocations()[1].getHostName());
+    Assert.assertEquals(host3, l.get(0).getLocations()[2].getHostName());
   }
 
   private void checkOurFixedOrder(LocatedBlocks l) {
-    Assert.assertTrue(host2.equals(l.get(0).getLocations()[0].getHostName()));
-    Assert.assertTrue(host3.equals(l.get(0).getLocations()[1].getHostName()));
-    Assert.assertTrue(host1.equals(l.get(0).getLocations()[2].getHostName()));
+    Assert.assertEquals(host2, l.get(0).getLocations()[0].getHostName());
+    Assert.assertEquals(host3, l.get(0).getLocations()[1].getHostName());
+    Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
   }
 }
