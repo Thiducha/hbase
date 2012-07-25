@@ -206,7 +206,7 @@ public class HFileSystem extends FilterFileSystem {
       return;
     }
 
-    if (dfsc.namenode != null){
+    if (dfsc.namenode == null){
       LOG.warn("The DFSClient is not linked to a namenode" +
           " Can't add the location block reordering hack. Continuing, but this is unexpected."
       );

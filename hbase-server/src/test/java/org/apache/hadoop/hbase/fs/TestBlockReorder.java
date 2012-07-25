@@ -192,9 +192,11 @@ public class TestBlockReorder {
     Assert.assertNotNull(fss[0]);
 
     org.apache.hadoop.fs.BlockLocation[] bls;
+    final long max = System.currentTimeMillis()+10000;
     do {
       bls = dfs.getFileBlockLocations(fss[0], 0, 1);
       Assert.assertNotNull(bls);
+      Assert.assertTrue("Expecting 3, got "+bls.length, System.currentTimeMillis() < max);
     }while (bls.length != 3);
 
   }
