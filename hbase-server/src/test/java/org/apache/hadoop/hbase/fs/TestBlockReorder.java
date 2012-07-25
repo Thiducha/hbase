@@ -189,6 +189,7 @@ public class TestBlockReorder {
     byte[] sb = "sb".getBytes();
     TEST_UTIL.startMiniZKCluster();
     MiniHBaseCluster hbm = TEST_UTIL.startMiniHBaseCluster(1, 2);
+    conf = hbm.getConfiguration();
     HTable h = TEST_UTIL.createTable("table".getBytes(), sb);
 
     Put p = new Put(sb);
@@ -196,10 +197,8 @@ public class TestBlockReorder {
     h.put(p);
 
     // Now we need to find the log file, its locations, and stop it
-    String rootDir = hbm.getConfiguration().get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME;
-    if (!rootDir.startsWith("/")){
-      rootDir = "/"+rootDir;
-    }
+    String rootDir =  FileSystem.get(conf).makeQualified(
+        new Path(conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME)).toUri().getPath();
 
     DirectoryListing dl = dfs.getClient().listPaths(rootDir, HdfsFileStatus.EMPTY_NAME);
     Assert.assertNotNull("Reading " + rootDir, dl);
