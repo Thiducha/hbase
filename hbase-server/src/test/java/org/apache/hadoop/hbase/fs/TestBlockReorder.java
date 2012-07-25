@@ -206,7 +206,7 @@ public class TestBlockReorder {
    */
   @Test
   public void testBlockLocation() throws Exception {
-    final String fileName = "/helloWorld";
+    final String fileName = "helloWorld";
     Path p = new Path(fileName);
 
     final int repCount = 3;
