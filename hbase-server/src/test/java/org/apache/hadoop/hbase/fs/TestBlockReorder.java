@@ -197,14 +197,9 @@ public class TestBlockReorder {
 
     // Now we need to find the log file, its locations, and stop it
     String rootDir = conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME;
-    LOG.info("Reading " + rootDir);
-    FileStatus[] fss = dfs.globStatus(new Path(rootDir));
-    for (FileStatus f : fss) {
-      LOG.info("File=" + f.getPath());
-    }
 
     DirectoryListing dl = dfs.getClient().listPaths("/"+rootDir, HdfsFileStatus.EMPTY_NAME);
-    Assert.assertNotNull(dl);
+    Assert.assertNotNull("Reading " + rootDir, dl);
     HdfsFileStatus[] hfs = dl.getPartialListing() ;
     Assert.assertEquals(hfs.length, 1);
     Assert.assertNotNull(hfs[0]);
