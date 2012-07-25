@@ -215,7 +215,7 @@ public class TestBlockReorder {
     s = "/";
     System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
 
-    s = "/.";
+    s = rootDir;
     System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
 
 

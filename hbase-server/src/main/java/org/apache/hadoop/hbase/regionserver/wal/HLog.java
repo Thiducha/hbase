@@ -1782,8 +1782,8 @@ public class HLog implements Syncable {
     if (!HConstants.HREGION_LOGDIR_NAME.endsWith("/")) startPathSB.append('/');
     final String startPath =  startPathSB.toString();
 
+    LOG.fatal("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA "+startPath);
     if (!path.startsWith(startPath)){
-      LOG.fatal("AAAAAAAAAAAAAAAA "+startPath);
       return null;
     }
 
