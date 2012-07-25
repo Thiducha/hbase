@@ -197,26 +197,18 @@ public class TestBlockReorder {
     h.put(p);
 
     // Now we need to find the log file, its locations, and stop it
-    String rootDir =  FileSystem.get(conf).makeQualified(
-        new Path(conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME)).toUri().getPath();
+    String rootDir =  FileSystem.get(conf).makeQualified(new Path(
+        conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME)).toUri().getPath();
 
     DirectoryListing dl = dfs.getClient().listPaths(rootDir, HdfsFileStatus.EMPTY_NAME);
     Assert.assertNotNull("Reading " + rootDir, dl);
     HdfsFileStatus[] hfs = dl.getPartialListing() ;
-    Assert.assertEquals(hfs.length, 1);
-    Assert.assertNotNull(hfs[0]);
 
+    for (HdfsFileStatus hf:hfs){
+      System.out.print("BBBBBBBBBBBBBBBBBBBB "+hf.getLocalName());
+    }
 
-    /*
-    org.apache.hadoop.fs.BlockLocation[] bls;
-    long max = System.currentTimeMillis() + 10000;
-    do {
-      // Always returns 0, why?
-      bls = dfs.getFileBlockLocations(fss[0], 0, 1);
-      Assert.assertNotNull(bls);
-      Assert.assertTrue("Expecting 3, got " + bls.length+" for file"+fss[0].getPath().getName(),System.currentTimeMillis() < max);
-    } while (bls.length != 3);
-    */
+    Assert.assertTrue(hfs.length >= 1);
 
 
     // The interceptor is not set in this test, so we get the raw list
