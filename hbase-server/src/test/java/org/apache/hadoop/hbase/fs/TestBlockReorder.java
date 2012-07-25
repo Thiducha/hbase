@@ -216,7 +216,7 @@ public class TestBlockReorder {
     LocatedBlocks l;
     final long max = System.currentTimeMillis() + 10000;
     do {
-      l = dfs.getClient().namenode.getBlockLocations(fss[0].getPath().getName(), 0, 1);
+      l = dfs.getClient().namenode.getBlockLocations("/"+fss[0].getPath().getName(), 0, 1);
       Assert.assertNotNull(l.getLocatedBlocks());
       Assert.assertEquals(l.getLocatedBlocks().size(), 1);
       Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
