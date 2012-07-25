@@ -176,7 +176,7 @@ public class TestBlockReorder {
   /**
    * Test that the hook works within HBase
    */
-  @Test
+  //@Test()
   public void testHBaseCluster() throws Exception {
     byte[] sb = "sb".getBytes();
     TEST_UTIL.startMiniZKCluster();
@@ -224,12 +224,13 @@ public class TestBlockReorder {
     fop.close();
 
     HFileSystem.LogReorderBlocks lrb = new HFileSystem.LogReorderBlocks();
-    FileStatus f = fs.getFileStatus(p);
 
     // The interceptor is not set in this test, so we get the raw list
     LocatedBlocks l = dfs.getClient().namenode.getBlockLocations(fileName, 0, 1);
-    Assert.assertTrue(l.getLocatedBlocks().size() == 1);
-    Assert.assertTrue(l.get(0).getLocations().length == 3);
+
+    Assert.assertNotNull(l.getLocatedBlocks());
+    Assert.assertEquals(l.getLocatedBlocks().size(),  1);
+    Assert.assertEquals(l.get(0).getLocations().length, 3);
 
     // Let's fix our own order
     setOurOrder(l);
