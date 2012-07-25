@@ -199,7 +199,27 @@ public class TestBlockReorder {
     String rootDir = conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME;
     Path p2 = new Path(rootDir);
 
-    DirectoryListing dl = dfs.getClient().listPaths("/hbase/.logs/", HdfsFileStatus.EMPTY_NAME);
+    String s = "/hbase/.logs/";
+
+    System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
+
+    s = "/hbase/.logs";
+    System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
+
+    s = "/hbase/";
+    System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
+
+    s = "/hbase";
+    System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
+
+    s = "/";
+    System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
+
+    s = "/.";
+    System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
+
+
+    DirectoryListing dl = dfs.getClient().listPaths("/hbase/.logs", HdfsFileStatus.EMPTY_NAME);
     Assert.assertNotNull("Reading " + p2.getName(), dl);
     HdfsFileStatus[] hfs = dl.getPartialListing() ;
     Assert.assertEquals(hfs.length, 1);
