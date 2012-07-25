@@ -276,6 +276,23 @@ public class TestBlockReorder {
     l.get(0).getLocations()[2].setHostName(host3);
     lrb.reorderBlocks(conf, l, pseudoLogFile);
     checkOurFixedOrder(l);
+
+    // nothing to do here
+    l.get(0).getLocations()[0].setHostName(host2);
+    l.get(0).getLocations()[1].setHostName(host3);
+    l.get(0).getLocations()[2].setHostName(host1);
+    lrb.reorderBlocks(conf, l, pseudoLogFile);
+    checkOurFixedOrder(l);
+
+    // nothing to do here
+    l.get(0).getLocations()[0].setHostName(host2);
+    l.get(0).getLocations()[1].setHostName(host3);
+    l.get(0).getLocations()[2].setHostName("nothing");
+    lrb.reorderBlocks(conf, l, pseudoLogFile);
+    Assert.assertEquals(host2, l.get(0).getLocations()[0].getHostName());
+    Assert.assertEquals(host3, l.get(0).getLocations()[1].getHostName());
+    Assert.assertEquals("nothing", l.get(0).getLocations()[2].getHostName());
+
   }
 
   private void setOurOrder(LocatedBlocks l) {
