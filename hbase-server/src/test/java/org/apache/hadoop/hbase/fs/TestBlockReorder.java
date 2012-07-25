@@ -52,11 +52,11 @@ public class TestBlockReorder {
     TEST_UTIL.getConfiguration().setInt("dfs.blocksize", 1024 * 1024);
     TEST_UTIL.getConfiguration().setBoolean("dfs.support.append", true);
     // The reason to a rack it to try to get always the same order but it does not work.
-    TEST_UTIL.startMiniDFSCluster(3, new String[]{"/r1", "/r2", "/r3"}, new String[]{host1, host2, host3 });
+    TEST_UTIL.startMiniDFSCluster(3, new String[]{"/r1", "/r2", "/r3"}, new String[]{host1, host2, host3});
 
     conf = TEST_UTIL.getConfiguration();
     cluster = TEST_UTIL.getDFSCluster();
-    dfs= (DistributedFileSystem)FileSystem.get(conf);
+    dfs = (DistributedFileSystem) FileSystem.get(conf);
   }
 
   @After
@@ -151,9 +151,9 @@ public class TestBlockReorder {
   }
 
   @Test
-  public void testHBaseCluster() throws Exception{
+  public void testHBaseCluster() throws Exception {
     byte[] sb = "sb".getBytes();
-    MiniHBaseCluster hbm =  TEST_UTIL.startMiniHBaseCluster(1, 2);
+    MiniHBaseCluster hbm = TEST_UTIL.startMiniHBaseCluster(1, 2);
     HTable h = TEST_UTIL.createTable("table".getBytes(), sb);
 
     Put p = new Put(sb);
@@ -164,15 +164,15 @@ public class TestBlockReorder {
     FileSystem fs = FileSystem.get(conf);
 
     String rootDir = conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME;
-    FileStatus[] fss =  fs.globStatus( new Path(rootDir));
-    for (FileStatus f: fss){
-      LOG.info("File="+f.getPath());
+    FileStatus[] fss = fs.globStatus(new Path(rootDir));
+    for (FileStatus f : fss) {
+      LOG.info("File=" + f.getPath());
     }
 
-    Assert.assertTrue( fss.length == 1);
+    Assert.assertTrue(fss.length == 1);
 
     org.apache.hadoop.fs.BlockLocation[] bls = fs.getFileBlockLocations(fss[0], 0, 1);
-    Assert.assertTrue( bls.length == 2 );
+    Assert.assertTrue(bls.length == 2);
   }
 
   @Test
@@ -198,13 +198,35 @@ public class TestBlockReorder {
     Assert.assertTrue(l.getLocatedBlocks().size() == 1);
     Assert.assertTrue(l.get(0).getLocations().length == 3);
 
+    // Let's fix our own order
+    setOurOrder(l);
+
+    // Should be filtered, the name is different
+    lrb.reorderBlocks(conf, l, fileName);
+    checkOurOrder(l);
+
+    // Should be reordered
+    String pseudoLogFile = conf.get(HConstants.HBASE_DIR) + "/" +
+        HConstants.HREGION_LOGDIR_NAME+"/"+host1;
+    lrb.reorderBlocks(conf, l, pseudoLogFile);
+    checkOurFixedOrder(l);
+  }
+
+  private void setOurOrder(LocatedBlocks l) {
     l.get(0).getLocations()[0].setHostName(host1);
+    l.get(0).getLocations()[1].setHostName(host2);
+    l.get(0).getLocations()[2].setHostName(host3);
+  }
 
-    // Should be filtered, the name is different
-    lrb.reorderBlocks(conf, l, fileName);
+  private void checkOurOrder(LocatedBlocks l) {
+    Assert.assertTrue(host1.equals(l.get(0).getLocations()[0].getHostName()));
+    Assert.assertTrue(host2.equals(l.get(0).getLocations()[1].getHostName()));
+    Assert.assertTrue(host3.equals(l.get(0).getLocations()[2].getHostName()));
+  }
 
-    // Should be filtered, the name is different
-    lrb.reorderBlocks(conf, l, fileName);
-
+  private void checkOurFixedOrder(LocatedBlocks l) {
+    Assert.assertTrue(host2.equals(l.get(0).getLocations()[0].getHostName()));
+    Assert.assertTrue(host3.equals(l.get(0).getLocations()[1].getHostName()));
+    Assert.assertTrue(host1.equals(l.get(0).getLocations()[2].getHostName()));
   }
 }
