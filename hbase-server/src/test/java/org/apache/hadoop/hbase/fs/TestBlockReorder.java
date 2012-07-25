@@ -206,17 +206,17 @@ public class TestBlockReorder {
     s = "/hbase/.logs";
     System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
 
-    s = "/hbase/";
+    s = "/user/liochon/hbase/.logs/";
     System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
 
-    s = "/hbase";
+    s = "/user/liochon/hbase/.logs";
     System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
 
     s = "/";
     System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
 
     s = rootDir;
-    System.out.println(s+"="+dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
+    System.out.println(s+"=");//dfs.getClient().listPaths(s, HdfsFileStatus.EMPTY_NAME));
 
 
     DirectoryListing dl = dfs.getClient().listPaths("/hbase/.logs", HdfsFileStatus.EMPTY_NAME);
