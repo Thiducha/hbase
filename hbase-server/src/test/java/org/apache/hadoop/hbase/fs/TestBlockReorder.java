@@ -39,13 +39,13 @@ import java.net.ServerSocket;
 public class TestBlockReorder {
   private static final Log LOG = LogFactory.getLog(TestBlockReorder.class);
 
-  private static Configuration conf;
-  private static MiniDFSCluster cluster;
-  private final static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
-  private static DistributedFileSystem dfs;
+  private Configuration conf;
+  private MiniDFSCluster cluster;
+  private final HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
+  private DistributedFileSystem dfs;
 
   @Before
-  public static void setUpBeforeClass() throws Exception {
+  public void setUp() throws Exception {
     TEST_UTIL.getConfiguration().setInt("dfs.blocksize", 1024 * 1024);
     TEST_UTIL.getConfiguration().setBoolean("dfs.support.append", true);
     // The reason to a rack it to try to get always the same order but it does not work.
@@ -57,7 +57,7 @@ public class TestBlockReorder {
   }
 
   @After
-  public static void tearDownAfterClass() throws Exception {
+  public void tearDownAfterClass() throws Exception {
     TEST_UTIL.shutdownMiniCluster();
   }
 
