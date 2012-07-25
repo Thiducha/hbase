@@ -40,6 +40,8 @@ import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
+import org.apache.hadoop.hdfs.protocol.DirectoryListing;
+import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.server.datanode.DataNode;
@@ -56,10 +58,11 @@ import java.net.ServerSocket;
 @Category(LargeTests.class)
 public class TestBlockReorder {
   private static final Log LOG = LogFactory.getLog(TestBlockReorder.class);
+
   static {
     //((Log4JLogger) DataNode.LOG).getLogger().setLevel(Level.ALL);
-   // ((Log4JLogger) LeaseManager.LOG).getLogger().setLevel(Level.ALL);
-   // ((Log4JLogger) DFSClient.LOG).getLogger().setLevel(Level.ALL);
+    // ((Log4JLogger) LeaseManager.LOG).getLogger().setLevel(Level.ALL);
+    // ((Log4JLogger) DFSClient.LOG).getLogger().setLevel(Level.ALL);
     ((Log4JLogger) HFileSystem.LOG).getLogger().setLevel(Level.ALL);
   }
 
@@ -194,13 +197,19 @@ public class TestBlockReorder {
 
     // Now we need to find the log file, its locations, and stop it
     String rootDir = conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME;
+    LOG.info("Reading " + rootDir);
     FileStatus[] fss = dfs.globStatus(new Path(rootDir));
     for (FileStatus f : fss) {
       LOG.info("File=" + f.getPath());
     }
 
-    Assert.assertEquals(fss.length, 1);
-    Assert.assertNotNull(fss[0]);
+    DirectoryListing dl = dfs.getClient().listPaths(rootDir, HdfsFileStatus.EMPTY_NAME);
+    Assert.assertNotNull(dl);
+    HdfsFileStatus[] hfs = dl.getPartialListing() ;
+    Assert.assertEquals(hfs.length, 1);
+    Assert.assertNotNull(hfs[0]);
+
+
     /*
     org.apache.hadoop.fs.BlockLocation[] bls;
     long max = System.currentTimeMillis() + 10000;
@@ -218,8 +227,8 @@ public class TestBlockReorder {
     final long max = System.currentTimeMillis() + 10000;
     do {
       // The "/" is mandatory, without it we've got a null pointer exception on the namenode
-      l = dfs.getClient().namenode.getBlockLocations("/"+fss[0].getPath().getName(), 0, 1);
-      Assert.assertNotNull("Trying "+"/"+fss[0].getPath().getName(),l);
+      l = dfs.getClient().namenode.getBlockLocations("/" + hfs[0].getLocalName(), 0, 1);
+      Assert.assertNotNull("Trying " + "/" + hfs[0].getLocalName(), l);
       Assert.assertNotNull(l.getLocatedBlocks());
       Assert.assertEquals(l.getLocatedBlocks().size(), 1);
       Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
