@@ -1774,8 +1774,8 @@ public class HLog implements Syncable {
     }
 
     final String rootDir = conf.get(HConstants.HBASE_DIR);
-    if (rootDir == null || rootDir.isEmpty()){
-       LOG.info(HConstants.HBASE_DIR+" key must be not found in conf");
+    if (rootDir == null || rootDir.isEmpty()) {
+      LOG.info(HConstants.HBASE_DIR + " key not found in conf");
       return null;
     }
 

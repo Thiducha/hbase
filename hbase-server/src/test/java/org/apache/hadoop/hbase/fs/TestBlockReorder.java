@@ -321,7 +321,7 @@ public class TestBlockReorder {
 
     // Check that it will be possible to extract a ServerName from our construction
     Assert.assertNotNull("log= "+pseudoLogFile,
-        HLog.getServerNameFromHLogDirectoryName(conf, pseudoLogFile));
+        HLog.getServerNameFromHLogDirectoryName(dfs.getConf(), pseudoLogFile));
 
     // And check we're doing the right reorder.
     lrb.reorderBlocks(conf, l, pseudoLogFile);
