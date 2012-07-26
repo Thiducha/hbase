@@ -93,6 +93,7 @@ public class HFileSystem extends FilterFileSystem {
     } else {
       this.noChecksumFs = fs;
     }
+    addLocationOrderHack(conf);
   }
 
   /**
@@ -268,8 +269,6 @@ public class HFileSystem extends FilterFileSystem {
 
       ServerName sn = HLog.getServerNameFromHLogDirectoryName(conf, src);
       if (sn == null) {
-        LOG.debug(src+" is NOT an HLog file, so NOT reordering blocks");
-
         return;
       }
 
