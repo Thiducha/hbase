@@ -307,6 +307,7 @@ public class ServerName implements Comparable<ServerName> {
    *  otherwise.
    */
   public static boolean isFullServerName(final String str){
+    if (str == null ||str.isEmpty()) return false;
     return SERVERNAME_PATTERN.matcher(str).matches();
   }
 

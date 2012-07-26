@@ -1762,6 +1762,8 @@ public class HLog implements Syncable {
   /**
    * Returns null if it's not a log file. Returns the ServerName of the region server that created
    *  this log file otherwise.
+   * The format is: / [base directory for hbase] / hbase / .logs / ServerName / logfile
+   *
    */
   public static ServerName getServerNameFromHLogDirectoryName(Configuration conf, String path) throws IOException {
     if (path == null || path.length() <= HConstants.HREGION_LOGDIR_NAME.length())
@@ -1790,17 +1792,20 @@ public class HLog implements Syncable {
       return null;
     }
 
-    final String toParse = path.substring(fullPath.length());
+    final String serverNameAndFile = path.substring(startPath.length());
 
-    ServerName.parseServerName(toParse);
-
-    if (!ServerName.isFullServerName(toParse)){
-      LOG.warn("There is a file in the hlog directory, but it seems it's not a log file." +
-          " Ignoring but strange. file="+path);
+    if (serverNameAndFile.indexOf('/') < "a,0,0".length() ){
+      // Either it's a file, not a directory either it's not a ServerName format
       return null;
     }
 
-    return ServerName.parseServerName(toParse);
+    final String serverName = serverNameAndFile.substring(0, serverNameAndFile.indexOf('/')-1);
+
+    if (!ServerName.isFullServerName(serverName)){
+      return null;
+    }
+
+    return ServerName.parseServerName(serverName);
   }
 
   /**

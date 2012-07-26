@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.sun.jersey.core.util.StringIgnoreCaseKeyComparator;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.commons.logging.impl.Log4JLogger;
@@ -53,6 +54,7 @@ import org.apache.hadoop.io.SequenceFile;
 import org.apache.log4j.Level;
 import org.junit.After;
 import org.junit.AfterClass;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -718,6 +720,24 @@ public class TestHLog  {
     } finally {
       if (log != null) log.closeAndDelete();
     }
+  }
+
+
+  @Test
+  public void testGetServerNameFromHLogDirectoryName() throws IOException {
+    String hl = conf.get(HConstants.HBASE_DIR) + "/"+
+        HLog.getHLogDirectoryName(new ServerName("hn", 450, 1398).toString());
+
+    // Must not throw exception
+    Assert.assertNull(HLog.getServerNameFromHLogDirectoryName(conf, null));
+    Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, "") );
+    Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, "                  ") );
+    Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, "           ") );
+    Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, hl) );
+    Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, hl+"qdf") );
+    Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, "sfqf"+hl+"qdf") );
+
+    Assert.assertNotNull( HLog.getServerNameFromHLogDirectoryName(conf, hl+"/qdf") );
   }
 
   /**
