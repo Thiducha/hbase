@@ -187,7 +187,7 @@ public class TestBlockReorder {
     MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1);
     // We use the regionserver file system & conf as we expect it to have the hook.
     conf = hbm.getRegionServer(0).getConfiguration();
-    dfs = (DistributedFileSystem) hbm.getRegionServer(0).getFileSystem();
+    HFileSystem rfs = (HFileSystem) hbm.getRegionServer(0).getFileSystem();
     HTable h = htu.createTable("table".getBytes(), sb);
 
     Put p = new Put(sb);
@@ -213,14 +213,37 @@ public class TestBlockReorder {
     // We will try only one file
     Assert.assertNotNull(hfs[0]);
     String logFile = rootDir + "/" + hfs[0].getLocalName();
+    FileStatus fsLog = rfs.getFileStatus(new Path(logFile));
 
-    // Now checking that it's used
+    // Now checking that the hook is up and running
+    // We can't call directly getBlockLocations, it's not available in HFileSystem
     // We're trying ten times to be sure, as the order is random
     for (int i = 0; i < 10; i++) {
-      LocatedBlocks l;
+      BlockLocation[] blocs;
       // The NN gets the block list asynchronously, so we may need multiple tries to get the list
       final long max = System.currentTimeMillis() + 10000;
       do {
+        blocs = rfs.getFileBlockLocations(fsLog, 0, 1 );
+        Assert.assertNotNull("Can't get block locations for " + logFile, blocs);
+        Assert.assertEquals(blocs.length, 1);
+        Assert.assertTrue("Expecting " + 3 + " , got " + blocs[0].getHosts().length,
+            System.currentTimeMillis() < max);
+      } while (blocs[0].getHosts().length != 3);
+
+      Assert.assertTrue(host1.equals(blocs[0].getHosts()[2]));
+      Assert.assertFalse(host1.equals(blocs[0].getHosts()[1]));
+      Assert.assertFalse(host1.equals(blocs[0].getHosts()[0]));
+    }
+  }
+
+  /*
+      for (int i = 0; i < 10; i++) {
+      LocatedBlocks l;
+      BlockLocation[] blocs;
+      // The NN gets the block list asynchronously, so we may need multiple tries to get the list
+      final long max = System.currentTimeMillis() + 10000;
+      do {
+        blocs = rfs.getFileBlockLocations(fsLog, 0, 1 );
         l = dfs.getClient().namenode.getBlockLocations(logFile, 0, 1);
         Assert.assertNotNull("Can't get block locations for " + logFile, l);
         Assert.assertNotNull(l.getLocatedBlocks());
@@ -229,11 +252,8 @@ public class TestBlockReorder {
             System.currentTimeMillis() < max);
       } while (l.get(0).getLocations().length != 3);
 
-      Assert.assertTrue(host1.equals(l.get(0).getLocations()[2].getHostName()));
-      Assert.assertFalse(host1.equals(l.get(0).getLocations()[1].getHostName()));
-      Assert.assertFalse(host1.equals(l.get(0).getLocations()[0].getHostName()));
-    }
-  }
+*/
+
 
   /**
    * Test that the reorder algo works as we expect.
