@@ -214,7 +214,7 @@ public class TestBlockReorder {
 
     // We will try only one file
     Assert.assertNotNull(hfs[0]);
-    String logFile = hfs[0].getFullPath(new Path("/")).toString();
+    String logFile = hfs[0].getFullName("/");
     LOG.info("Checking log file: "+logFile);
 
     // Checking the underlying file system. Multiple times as the order is random
