@@ -36,7 +36,6 @@ import org.apache.hadoop.hbase.MiniHBaseCluster;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
-import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
@@ -45,7 +44,6 @@ import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.server.datanode.DataNode;
-import org.apache.hadoop.hdfs.server.namenode.LeaseManager;
 import org.apache.log4j.Level;
 import org.junit.After;
 import org.junit.Assert;
@@ -60,43 +58,41 @@ public class TestBlockReorder {
   private static final Log LOG = LogFactory.getLog(TestBlockReorder.class);
 
   static {
-    //((Log4JLogger) DataNode.LOG).getLogger().setLevel(Level.ALL);
-    // ((Log4JLogger) LeaseManager.LOG).getLogger().setLevel(Level.ALL);
-    // ((Log4JLogger) DFSClient.LOG).getLogger().setLevel(Level.ALL);
     ((Log4JLogger) HFileSystem.LOG).getLogger().setLevel(Level.ALL);
   }
 
   private Configuration conf;
   private MiniDFSCluster cluster;
-  private final HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
+  private HBaseTestingUtility htu;
   private DistributedFileSystem dfs;
-  private final String host1 = "iambad";
-  private final String host2 = "iamgood";
-  private final String host3 = "iamverygood";
+  private final String host1 = "localhost"; // A trick to active block reorder on the unit tests
+  private final String host2 = "host2";
+  private final String host3 = "host3";
 
   @Before
   public void setUp() throws Exception {
-    TEST_UTIL.getConfiguration().setInt("dfs.blocksize", 1024 * 1024);
-    TEST_UTIL.getConfiguration().setBoolean("dfs.support.append", true);
-    TEST_UTIL.getConfiguration().setInt("dfs.replication", 3);
+    htu = new HBaseTestingUtility();
+    htu.getConfiguration().setInt("dfs.blocksize", 1024 * 1024);
+    htu.getConfiguration().setBoolean("dfs.support.append", true);
+    htu.getConfiguration().setInt("dfs.replication", 3);
     // The reason to a rack it to try to get always the same order but it does not work.
-    TEST_UTIL.startMiniDFSCluster(3, new String[]{"/r1", "/r2", "/r3"}, new String[]{host1, host2, host3});
+    htu.startMiniDFSCluster(3, new String[]{"/r1", "/r2", "/r3"}, new String[]{host1, host2, host3});
 
-    conf = TEST_UTIL.getConfiguration();
-    cluster = TEST_UTIL.getDFSCluster();
+    conf = htu.getConfiguration();
+    cluster = htu.getDFSCluster();
     dfs = (DistributedFileSystem) FileSystem.get(conf);
   }
 
   @After
   public void tearDownAfterClass() throws Exception {
-    TEST_UTIL.shutdownMiniCluster();
+    htu.shutdownMiniCluster();
   }
 
 
   /**
    * Tests that we're can add a hook, and that this hook works when we try to read the file in HDFS.
    */
-  //@Test
+  @Test
   public void testBlockLocationReorder() throws Exception {
     Path p = new Path("hello");
 
@@ -163,7 +159,7 @@ public class TestBlockReorder {
           }
         });
 
-    ServerSocket ss = new ServerSocket(port);   // We're taking the port to have a timeout issue.
+    ServerSocket ss = new ServerSocket(port);// We're taking the port to have a timeout issue later.
 
     // Now it will fail with a timeout, unfortunately it does not always connect to the same box,
     // so we try 10 times;  with the reorder it will never last more than a few milli seconds
@@ -187,43 +183,50 @@ public class TestBlockReorder {
   @Test()
   public void testHBaseCluster() throws Exception {
     byte[] sb = "sb".getBytes();
-    TEST_UTIL.startMiniZKCluster();
-    MiniHBaseCluster hbm = TEST_UTIL.startMiniHBaseCluster(1, 2);
+    htu.startMiniZKCluster();
+    MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 2);
     conf = hbm.getConfiguration();
-    HTable h = TEST_UTIL.createTable("table".getBytes(), sb);
+    HTable h = htu.createTable("table".getBytes(), sb);
 
     Put p = new Put(sb);
     p.add(sb, sb, sb);
     h.put(p);
 
     // Now we need to find the log file, its locations, and stop it
-    String rootDir =  FileSystem.get(conf).makeQualified(new Path(
+    String rootDir = FileSystem.get(conf).makeQualified(new Path(
         conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME)).toUri().getPath();
 
     DirectoryListing dl = dfs.getClient().listPaths(rootDir, HdfsFileStatus.EMPTY_NAME);
     // If we don't find anything it means that we're wrong on the path naming rules
     Assert.assertNotNull("Reading " + rootDir, dl);
-    HdfsFileStatus[] hfs = dl.getPartialListing() ;
+    HdfsFileStatus[] hfs = dl.getPartialListing();
 
-    for (HdfsFileStatus hf:hfs){
-      System.out.print("BBBBBBBBBBBBBBBBBBBB "+hf.getLocalName());
+    for (HdfsFileStatus hf : hfs) {
+      System.out.print("BBBBBBBBBBBBBBBBBBBB " + hf.getLocalName());
     }
 
     Assert.assertTrue(hfs.length >= 1);
 
+    // Now checking that it's used
+    // We're trying ten times to be sure, as the order is random
+    for (int i = 0; i < 10; i++) {
+      LocatedBlocks l;
+      // The NN gets the block list asynchronously, so we may need multiple tries to get the list
+      final long max = System.currentTimeMillis() + 10000;
+      do {
+        // The "/" is mandatory, without it we've got a null pointer exception on the namenode
+        l = dfs.getClient().namenode.getBlockLocations("/" + hfs[0].getLocalName(), 0, 1);
+        Assert.assertNotNull("Trying " + "/" + hfs[0].getLocalName(), l);
+        Assert.assertNotNull(l.getLocatedBlocks());
+        Assert.assertEquals(l.getLocatedBlocks().size(), 1);
+        Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
+            System.currentTimeMillis() < max);
+      } while (l.get(0).getLocations().length != 3);
 
-    // The interceptor is not set in this test, so we get the raw list
-    LocatedBlocks l;
-    final long max = System.currentTimeMillis() + 10000;
-    do {
-      // The "/" is mandatory, without it we've got a null pointer exception on the namenode
-      l = dfs.getClient().namenode.getBlockLocations("/" + hfs[0].getLocalName(), 0, 1);
-      Assert.assertNotNull("Trying " + "/" + hfs[0].getLocalName(), l);
-      Assert.assertNotNull(l.getLocatedBlocks());
-      Assert.assertEquals(l.getLocatedBlocks().size(), 1);
-      Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
-          System.currentTimeMillis() < max);
-    } while (l.get(0).getLocations().length != 3);
+      Assert.assertTrue(l.get(0).getLocations()[2].equals(host1));
+      Assert.assertFalse(l.get(0).getLocations()[1].equals(host1));
+      Assert.assertFalse(l.get(0).getLocations()[0].equals(host1));
+    }
 
   }
 
@@ -292,14 +295,14 @@ public class TestBlockReorder {
     lrb.reorderBlocks(conf, l, pseudoLogFile);
     checkOurFixedOrder(l);
 
-    // nothing to do here
+    // nothing to do here, but let's check
     l.get(0).getLocations()[0].setHostName(host2);
     l.get(0).getLocations()[1].setHostName(host3);
     l.get(0).getLocations()[2].setHostName(host1);
     lrb.reorderBlocks(conf, l, pseudoLogFile);
     checkOurFixedOrder(l);
 
-    // nothing to do here
+    // nothing to do here, check again
     l.get(0).getLocations()[0].setHostName(host2);
     l.get(0).getLocations()[1].setHostName(host3);
     l.get(0).getLocations()[2].setHostName("nothing");
