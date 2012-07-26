@@ -279,6 +279,12 @@ public class TestBlockReorder {
    */
   @Test
   public void testBlockLocation() throws Exception {
+    // We need to start HBase to get  HConstants.HBASE_DIR set in conf
+    htu.startMiniZKCluster();
+    MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1);
+    conf = hbm.getConfiguration();
+
+
     // The "/" is mandatory, without it we've got a null pointer exception on the namenode
     final String fileName = "/helloWorld";
     Path p = new Path(fileName);
