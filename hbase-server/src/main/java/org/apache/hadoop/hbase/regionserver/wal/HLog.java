@@ -1795,6 +1795,9 @@ public class HLog implements Syncable {
     LOG.info("startPath="+startPath);
 
     if (!fullPath.startsWith(startPath)){
+      if (fullPath.contains(".logs")){
+        LOG.info("Strange: "+fullPath);
+      }
       return null;
     }
 
