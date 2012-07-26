@@ -223,16 +223,16 @@ public class TestBlockReorder {
       // The NN gets the block list asynchronously, so we may need multiple tries to get the list
       final long max = System.currentTimeMillis() + 10000;
       do {
-        blocs = rfs.getFileBlockLocations(fsLog, 0, 1 );
+        blocs = rfs.getFileBlockLocations(fsLog, 0, 1);
         Assert.assertNotNull("Can't get block locations for " + logFile, blocs);
         Assert.assertEquals(blocs.length, 1);
         Assert.assertTrue("Expecting " + 3 + " , got " + blocs[0].getHosts().length,
             System.currentTimeMillis() < max);
       } while (blocs[0].getHosts().length != 3);
 
-      Assert.assertTrue(host1.equals(blocs[0].getHosts()[2]));
-      Assert.assertFalse(host1.equals(blocs[0].getHosts()[1]));
-      Assert.assertFalse(host1.equals(blocs[0].getHosts()[0]));
+      Assert.assertEquals(host1, blocs[0].getHosts()[2]);
+      Assert.assertNotSame(host1, blocs[0].getHosts()[1]);
+      Assert.assertNotSame(host1, blocs[0].getHosts()[0]);
     }
   }
 
@@ -298,7 +298,7 @@ public class TestBlockReorder {
     Assert.assertNotNull(conf.get(HConstants.HBASE_DIR));
     Assert.assertFalse(conf.get(HConstants.HBASE_DIR).isEmpty());
     String pseudoLogFile = conf.get(HConstants.HBASE_DIR) + "/" +
-        HConstants.HREGION_LOGDIR_NAME + "/" + host1 + ",6977,65766576";
+        HConstants.HREGION_LOGDIR_NAME + "/" + host1 + ",6977,6576" + "/mylogfile";
 
     // Check that it will be possible to extract a ServerName from our construction
     Assert.assertNotNull(HLog.getServerNameFromHLogDirectoryName(conf, pseudoLogFile));
