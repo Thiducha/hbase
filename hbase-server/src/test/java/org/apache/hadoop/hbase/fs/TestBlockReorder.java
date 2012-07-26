@@ -214,10 +214,8 @@ public class TestBlockReorder {
 
     // We will try only one file
     Assert.assertNotNull(hfs[0]);
-    String logFile = conf.get(HConstants.HBASE_DIR) + "/" +
-        HConstants.HREGION_LOGDIR_NAME + "/" + hfs[0].getLocalName();
+    String logFile = hfs[0].getFullPath(new Path("/")).toString();
     LOG.info("Checking log file: "+logFile);
-    FileStatus fsLog = rfs.getFileStatus(new Path(logFile));
 
     // Checking the underlying file system. Multiple times as the order is random
     //   HFileSystem.addLocationOrderHack(dfs.getConf());
@@ -239,6 +237,7 @@ public class TestBlockReorder {
     // Now checking that the hook is up and running
     // We can't call directly getBlockLocations, it's not available in HFileSystem
     // We're trying ten times to be sure, as the order is random
+    FileStatus fsLog = rfs.getFileStatus(new Path(logFile));
     for (int i = 0; i < 10; i++) {
       BlockLocation[] blocs;
       // The NN gets the block list asynchronously, so we may need multiple tries to get the list
@@ -282,7 +281,7 @@ public class TestBlockReorder {
     fop.close();
 
 
-    // The interceptor is not set in this test, so we get the raw list
+    // The interceptor is not set in this test, so we get the raw list at this point
     LocatedBlocks l;
     final long max = System.currentTimeMillis() + 10000;
     do {
