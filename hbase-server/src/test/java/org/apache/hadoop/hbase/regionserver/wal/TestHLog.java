@@ -730,9 +730,10 @@ public class TestHLog  {
 
     // Must not throw exception
     Assert.assertNull(HLog.getServerNameFromHLogDirectoryName(conf, null));
+    Assert.assertNull(HLog.getServerNameFromHLogDirectoryName(conf,
+        conf.get(HConstants.HBASE_DIR) + "/"));
     Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, "") );
     Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, "                  ") );
-    Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, "           ") );
     Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, hl) );
     Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, hl+"qdf") );
     Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, "sfqf"+hl+"qdf") );

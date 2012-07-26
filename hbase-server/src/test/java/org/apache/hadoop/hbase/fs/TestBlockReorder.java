@@ -185,7 +185,9 @@ public class TestBlockReorder {
     byte[] sb = "sb".getBytes();
     htu.startMiniZKCluster();
     MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1);
-    conf = hbm.getConfiguration();
+    // We use the regionserver file system & conf as we expect it to have the hook.
+    conf = hbm.getRegionServer(0).getConfiguration();
+    dfs = (DistributedFileSystem) hbm.getRegionServer(0).getFileSystem();
     HTable h = htu.createTable("table".getBytes(), sb);
 
     Put p = new Put(sb);
@@ -220,7 +222,7 @@ public class TestBlockReorder {
       final long max = System.currentTimeMillis() + 10000;
       do {
         l = dfs.getClient().namenode.getBlockLocations(logFile, 0, 1);
-        Assert.assertNotNull("Can't get block locations for " +  logFile, l);
+        Assert.assertNotNull("Can't get block locations for " + logFile, l);
         Assert.assertNotNull(l.getLocatedBlocks());
         Assert.assertEquals(l.getLocatedBlocks().size(), 1);
         Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
