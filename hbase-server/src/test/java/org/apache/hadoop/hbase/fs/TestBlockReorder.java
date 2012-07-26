@@ -51,6 +51,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
+import java.io.IOException;
 import java.net.ServerSocket;
 
 @Category(LargeTests.class)
@@ -218,20 +219,7 @@ public class TestBlockReorder {
     LOG.info("Checking log file: " + logFile);
 
     // Checking the underlying file system. Multiple times as the order is random
-    for (int i = 0; i < 10; i++) {
-      LocatedBlocks l;
-      // The NN gets the block list asynchronously, so we may need multiple tries to get the list
-      final long max = System.currentTimeMillis() + 10000;
-      do {
-        l = dfs.getClient().namenode.getBlockLocations(logFile, 0, 1);
-        Assert.assertNotNull("Can't get block locations for " + logFile, l);
-        Assert.assertNotNull(l.getLocatedBlocks());
-        Assert.assertEquals(l.getLocatedBlocks().size(), 1);
-        Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
-            System.currentTimeMillis() < max);
-      } while (l.get(0).getLocations().length != 3);
-      Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
-    }
+    testFromDFS(dfs, logFile);
 
     // Now checking that the hook is up and running
     // We can't call directly getBlockLocations, it's not available in HFileSystem
@@ -257,13 +245,18 @@ public class TestBlockReorder {
     // now from the master
     DistributedFileSystem mdfs = (DistributedFileSystem)
         hbm.getMaster().getMasterFileSystem().getFileSystem();
+    testFromDFS(mdfs, logFile);
+  }
+
+  private void testFromDFS(DistributedFileSystem dfs, String src) throws IOException {
+    // Multiple times as the order is random
     for (int i = 0; i < 10; i++) {
       LocatedBlocks l;
       // The NN gets the block list asynchronously, so we may need multiple tries to get the list
       final long max = System.currentTimeMillis() + 10000;
       do {
-        l = mdfs.getClient().namenode.getBlockLocations(logFile, 0, 1);
-        Assert.assertNotNull("Can't get block locations for " + logFile, l);
+        l = dfs.getClient().namenode.getBlockLocations(src, 0, 1);
+        Assert.assertNotNull("Can't get block locations for " + src, l);
         Assert.assertNotNull(l.getLocatedBlocks());
         Assert.assertEquals(l.getLocatedBlocks().size(), 1);
         Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
