@@ -267,9 +267,13 @@ public class HFileSystem extends FilterFileSystem {
       LOG.info("intercepting a call to LocatedBlocks to reorder the blocks of the file " + src);
 
       ServerName sn = HLog.getServerNameFromHLogDirectoryName(conf, src);
-      if (sn == null) return;
+      if (sn == null) {
+        LOG.debug(src+" is NOT an HLog file, so NOT reordering blocks");
 
-      LOG.debug(src+" is an HLog file, so reordering");
+        return;
+      }
+
+      LOG.debug(src+" is an HLog file, so reordering blocks");
 
       // Ok, so it's an HLog
       String hostName = sn.getHostname();
@@ -286,7 +290,7 @@ public class HFileSystem extends FilterFileSystem {
               System.arraycopy(dnis, i+1, dnis, i, dnis.length-i-1);
               dnis[dnis.length - 1] = toLast;
               found = true;
-              LOG.debug("Mov  ed the location "+toLast.getHostName()+" to the last place." +
+              LOG.debug("Moved the location "+toLast.getHostName()+" to the last place." +
                   " locations size was "+dnis.length);
             }
           }

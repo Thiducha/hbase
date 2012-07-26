@@ -218,7 +218,7 @@ public class TestBlockReorder {
     FileStatus fsLog = rfs.getFileStatus(new Path(logFile));
 
     // Checking the underlying file system. Multiple times as the order is random
- //   HFileSystem.addLocationOrderHack(dfs.getConf());
+    //   HFileSystem.addLocationOrderHack(dfs.getConf());
     for (int i = 0; i < 10; i++) {
       LocatedBlocks l;
       // The NN gets the block list asynchronously, so we may need multiple tries to get the list
@@ -231,7 +231,7 @@ public class TestBlockReorder {
         Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
             System.currentTimeMillis() < max);
       } while (l.get(0).getLocations().length != 3);
-      //Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
+      Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
     }
 
     // Now checking that the hook is up and running
@@ -254,25 +254,6 @@ public class TestBlockReorder {
       Assert.assertNotSame(host1, blocs[0].getHosts()[0]);
     }
   }
-
-  /*
-      for (int i = 0; i < 10; i++) {
-      LocatedBlocks l;
-      BlockLocation[] blocs;
-      // The NN gets the block list asynchronously, so we may need multiple tries to get the list
-      final long max = System.currentTimeMillis() + 10000;
-      do {
-        blocs = rfs.getFileBlockLocations(fsLog, 0, 1 );
-        l = dfs.getClient().namenode.getBlockLocations(logFile, 0, 1);
-        Assert.assertNotNull("Can't get block locations for " + logFile, l);
-        Assert.assertNotNull(l.getLocatedBlocks());
-        Assert.assertEquals(l.getLocatedBlocks().size(), 1);
-        Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
-            System.currentTimeMillis() < max);
-      } while (l.get(0).getLocations().length != 3);
-
-*/
-
 
   /**
    * Test that the reorder algo works as we expect.
@@ -326,7 +307,7 @@ public class TestBlockReorder {
         HConstants.HREGION_LOGDIR_NAME + "/" + host1 + ",6977,6576" + "/mylogfile";
 
     // Check that it will be possible to extract a ServerName from our construction
-    Assert.assertNotNull("log= "+pseudoLogFile,
+    Assert.assertNotNull("log= " + pseudoLogFile,
         HLog.getServerNameFromHLogDirectoryName(dfs.getConf(), pseudoLogFile));
 
     // And check we're doing the right reorder.
