@@ -1791,6 +1791,9 @@ public class HLog implements Syncable {
       LOG.info("Call to makeQualified failed on "+  path+" "+e.getMessage());
       return null;
     }
+    LOG.info("fullPath="+fullPath);
+    LOG.info("startPath="+startPath);
+
     if (!fullPath.startsWith(startPath)){
       return null;
     }
