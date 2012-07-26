@@ -219,7 +219,6 @@ public class TestBlockReorder {
       // The NN gets the block list asynchronously, so we may need multiple tries to get the list
       final long max = System.currentTimeMillis() + 10000;
       do {
-        // The "/" is mandatory, without it we've got a null pointer exception on the namenode
         l = dfs.getClient().namenode.getBlockLocations(logFile, 0, 1);
         Assert.assertNotNull("Can't get block locations for " +  logFile, l);
         Assert.assertNotNull(l.getLocatedBlocks());
@@ -239,6 +238,7 @@ public class TestBlockReorder {
    */
   @Test
   public void testBlockLocation() throws Exception {
+    // The "/" is mandatory, without it we've got a null pointer exception on the namenode
     final String fileName = "/helloWorld";
     Path p = new Path(fileName);
 
