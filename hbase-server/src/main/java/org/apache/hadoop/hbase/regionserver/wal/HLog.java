@@ -1773,9 +1773,6 @@ public class HLog implements Syncable {
       throw new IllegalArgumentException("conf must be set");
     }
 
-    Path p = new Path(path);
-    Path p2 = FileSystem.get(conf).makeQualified(p);
-
     final String rootDir = conf.get(HConstants.HBASE_DIR);
     if (rootDir == null || rootDir.isEmpty()){
       throw new IllegalArgumentException(HConstants.HBASE_DIR+" key must be not found in conf");
@@ -1787,12 +1784,18 @@ public class HLog implements Syncable {
     if (!HConstants.HREGION_LOGDIR_NAME.endsWith("/")) startPathSB.append('/');
     final String startPath =  startPathSB.toString();
 
-    String fullPath = FileSystem.get(conf).makeQualified(new Path(path)).toString();
+    String fullPath;
+    try {
+      fullPath = FileSystem.get(conf).makeQualified(new Path(path)).toString();
+    }catch (IllegalArgumentException e){
+      // bad format
+      return null;
+    }
     if (!fullPath.startsWith(startPath)){
       return null;
     }
 
-    final String serverNameAndFile = path.substring(startPath.length());
+    final String serverNameAndFile = path.substring(startPath.length()-1);
 
     if (serverNameAndFile.indexOf('/') < "a,0,0".length() ){
       // Either it's a file, not a directory either it's not a ServerName format
