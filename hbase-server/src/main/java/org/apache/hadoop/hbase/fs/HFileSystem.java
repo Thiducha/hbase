@@ -269,6 +269,8 @@ public class HFileSystem extends FilterFileSystem {
       ServerName sn = HLog.getServerNameFromHLogDirectoryName(conf, src);
       if (sn == null) return;
 
+      LOG.debug(src+" is an HLog file, so reordering");
+
       // Ok, so it's an HLog
       String hostName = sn.getHostname();
 
