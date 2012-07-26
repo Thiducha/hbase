@@ -218,7 +218,7 @@ public class TestBlockReorder {
     LOG.info("Checking log file: "+logFile);
 
     // Checking the underlying file system. Multiple times as the order is random
-    //   HFileSystem.addLocationOrderHack(dfs.getConf());
+    //   HFileSystem.addLocationsOrderHack(dfs.getConf());
     for (int i = 0; i < 10; i++) {
       LocatedBlocks l;
       // The NN gets the block list asynchronously, so we may need multiple tries to get the list

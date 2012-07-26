@@ -364,8 +364,6 @@ Server {
     if (this.conf.get("mapred.task.id") == null) {
       this.conf.set("mapred.task.id", "hb_m_" + this.serverName.toString());
     }
-    HFileSystem.addLocationOrderHack(conf);
-
 
     this.zooKeeper = new ZooKeeperWatcher(conf, MASTER + ":" + isa.getPort(), this, true);
     this.rpcServer.startThreads();

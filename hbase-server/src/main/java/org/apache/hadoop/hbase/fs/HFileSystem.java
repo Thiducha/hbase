@@ -36,7 +36,6 @@ import org.apache.hadoop.fs.FilterFileSystem;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hdfs.DFSClient;
@@ -93,7 +92,7 @@ public class HFileSystem extends FilterFileSystem {
     } else {
       this.noChecksumFs = fs;
     }
-    addLocationOrderHack(conf);
+    addLocationsOrderHack(conf);
   }
 
   /**
@@ -179,7 +178,7 @@ public class HFileSystem extends FilterFileSystem {
     return fs;
   }
 
-  public static void addLocationOrderHack(Configuration conf) throws IOException {
+  public static void addLocationsOrderHack(Configuration conf) throws IOException {
     addLocationOrderHack(conf, new LogReorderBlocks());
   }
 
