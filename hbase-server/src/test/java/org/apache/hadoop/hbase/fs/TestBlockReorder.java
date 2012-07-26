@@ -220,8 +220,8 @@ public class TestBlockReorder {
       final long max = System.currentTimeMillis() + 10000;
       do {
         // The "/" is mandatory, without it we've got a null pointer exception on the namenode
-        l = dfs.getClient().namenode.getBlockLocations("/" + logFile, 0, 1);
-        Assert.assertNotNull("Trying " + "/" + logFile, l);
+        l = dfs.getClient().namenode.getBlockLocations(logFile, 0, 1);
+        Assert.assertNotNull("Can't get block locations for " +  logFile, l);
         Assert.assertNotNull(l.getLocatedBlocks());
         Assert.assertEquals(l.getLocatedBlocks().size(), 1);
         Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
