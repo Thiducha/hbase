@@ -215,10 +215,9 @@ public class TestBlockReorder {
     // We will try only one file
     Assert.assertNotNull(hfs[0]);
     String logFile = rootDir + "/" + hfs[0].getLocalName();
-    LOG.info("Checking log file: "+logFile);
+    LOG.info("Checking log file: " + logFile);
 
     // Checking the underlying file system. Multiple times as the order is random
-    //   HFileSystem.addLocationsOrderHack(dfs.getConf());
     for (int i = 0; i < 10; i++) {
       LocatedBlocks l;
       // The NN gets the block list asynchronously, so we may need multiple tries to get the list
@@ -243,9 +242,7 @@ public class TestBlockReorder {
       // The NN gets the block list asynchronously, so we may need multiple tries to get the list
       final long max = System.currentTimeMillis() + 10000;
       do {
-        LOG.info("AAAAAAAAAAA");
         blocs = rfs.getFileBlockLocations(fsLog, 0, 1);
-        LOG.info("BBBBBBBBBBBBBBBBBBB");
         Assert.assertNotNull("Can't get block locations for " + logFile, blocs);
         Assert.assertEquals(blocs.length, 1);
         Assert.assertTrue("Expecting " + 3 + " , got " + blocs[0].getHosts().length,
@@ -255,6 +252,24 @@ public class TestBlockReorder {
       Assert.assertEquals(host1, blocs[0].getHosts()[2]);
       Assert.assertNotSame(host1, blocs[0].getHosts()[1]);
       Assert.assertNotSame(host1, blocs[0].getHosts()[0]);
+    }
+
+    // now from the master
+    DistributedFileSystem mdfs = (DistributedFileSystem)
+        hbm.getMaster().getMasterFileSystem().getFileSystem();
+    for (int i = 0; i < 10; i++) {
+      LocatedBlocks l;
+      // The NN gets the block list asynchronously, so we may need multiple tries to get the list
+      final long max = System.currentTimeMillis() + 10000;
+      do {
+        l = mdfs.getClient().namenode.getBlockLocations(logFile, 0, 1);
+        Assert.assertNotNull("Can't get block locations for " + logFile, l);
+        Assert.assertNotNull(l.getLocatedBlocks());
+        Assert.assertEquals(l.getLocatedBlocks().size(), 1);
+        Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
+            System.currentTimeMillis() < max);
+      } while (l.get(0).getLocations().length != 3);
+      Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
     }
   }
 
