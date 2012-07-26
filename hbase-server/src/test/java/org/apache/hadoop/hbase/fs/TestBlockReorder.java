@@ -217,6 +217,23 @@ public class TestBlockReorder {
     String logFile = rootDir + "/" + hfs[0].getLocalName();
     FileStatus fsLog = rfs.getFileStatus(new Path(logFile));
 
+    // Checking the underlying file system
+    HFileSystem.addLocationOrderHack(cluster.getDataNodes().get(0).getConf());
+    for (int i = 0; i < 10; i++) {
+      LocatedBlocks l;
+      // The NN gets the block list asynchronously, so we may need multiple tries to get the list
+      final long max = System.currentTimeMillis() + 10000;
+      do {
+        l = dfs.getClient().namenode.getBlockLocations(logFile, 0, 1);
+        Assert.assertNotNull("Can't get block locations for " + logFile, l);
+        Assert.assertNotNull(l.getLocatedBlocks());
+        Assert.assertEquals(l.getLocatedBlocks().size(), 1);
+        Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
+            System.currentTimeMillis() < max);
+      } while (l.get(0).getLocations().length != 3);
+      Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
+    }
+
     // Now checking that the hook is up and running
     // We can't call directly getBlockLocations, it's not available in HFileSystem
     // We're trying ten times to be sure, as the order is random
