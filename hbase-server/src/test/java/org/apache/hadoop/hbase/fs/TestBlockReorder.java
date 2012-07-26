@@ -243,7 +243,9 @@ public class TestBlockReorder {
       // The NN gets the block list asynchronously, so we may need multiple tries to get the list
       final long max = System.currentTimeMillis() + 10000;
       do {
+        LOG.info("AAAAAAAAAAA");
         blocs = rfs.getFileBlockLocations(fsLog, 0, 1);
+        LOG.info("BBBBBBBBBBBBBBBBBBB");
         Assert.assertNotNull("Can't get block locations for " + logFile, blocs);
         Assert.assertEquals(blocs.length, 1);
         Assert.assertTrue("Expecting " + 3 + " , got " + blocs[0].getHosts().length,
