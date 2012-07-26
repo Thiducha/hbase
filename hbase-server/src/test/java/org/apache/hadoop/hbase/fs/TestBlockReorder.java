@@ -72,7 +72,6 @@ public class TestBlockReorder {
   @Before
   public void setUp() throws Exception {
     htu = new HBaseTestingUtility();
-    htu.getConfiguration().setInt("dfs.blocksize", 1024 * 1024);
     htu.getConfiguration().setBoolean("dfs.support.append", true);
     htu.getConfiguration().setInt("dfs.replication", 3);
     // We have a rack to get always the same location order but it does not work.
