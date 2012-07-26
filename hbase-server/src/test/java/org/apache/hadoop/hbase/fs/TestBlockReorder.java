@@ -75,8 +75,9 @@ public class TestBlockReorder {
     htu.getConfiguration().setInt("dfs.blocksize", 1024 * 1024);
     htu.getConfiguration().setBoolean("dfs.support.append", true);
     htu.getConfiguration().setInt("dfs.replication", 3);
-    // The reason to a rack it to try to get always the same order but it does not work.
-    htu.startMiniDFSCluster(3, new String[]{"/r1", "/r2", "/r3"}, new String[]{host1, host2, host3});
+    // We have a rack to get always the same location order but it does not work.
+    htu.startMiniDFSCluster(3,
+        new String[]{"/r1", "/r2", "/r3"}, new String[]{host1, host2, host3});
 
     conf = htu.getConfiguration();
     cluster = htu.getDFSCluster();
@@ -201,11 +202,10 @@ public class TestBlockReorder {
     Assert.assertNotNull("Reading " + rootDir, dl);
     HdfsFileStatus[] hfs = dl.getPartialListing();
 
+    Assert.assertTrue(hfs.length >= 1);// We should have a least one, sometimes we will have more...
     for (HdfsFileStatus hf : hfs) {
-      System.out.print("BBBBBBBBBBBBBBBBBBBB " + hf.getLocalName());
+      LOG.info("Log file found: "+hf.getLocalName());
     }
-
-    Assert.assertTrue(hfs.length >= 1);
 
     // Now checking that it's used
     // We're trying ten times to be sure, as the order is random
@@ -223,11 +223,10 @@ public class TestBlockReorder {
             System.currentTimeMillis() < max);
       } while (l.get(0).getLocations().length != 3);
 
-      Assert.assertTrue(l.get(0).getLocations()[2].equals(host1));
-      Assert.assertFalse(l.get(0).getLocations()[1].equals(host1));
-      Assert.assertFalse(l.get(0).getLocations()[0].equals(host1));
+      Assert.assertTrue(host1.equals(l.get(0).getLocations()[2].getHostName()));
+      Assert.assertFalse(host1.equals(l.get(0).getLocations()[1].getHostName()));
+      Assert.assertFalse(host1.equals(l.get(0).getLocations()[0].getHostName()));
     }
-
   }
 
   /**
