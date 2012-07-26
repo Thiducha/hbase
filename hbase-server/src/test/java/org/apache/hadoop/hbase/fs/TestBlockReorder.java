@@ -110,7 +110,7 @@ public class TestBlockReorder {
     FSDataInputStream fin = dfs.open(p);
     Assert.assertTrue(toWrite == fin.readDouble());
     long end = System.currentTimeMillis();
-    LOG.fatal("HFileSystem readtime= " + (end - start));
+    LOG.info("HFileSystem readtime= " + (end - start));
     fin.close();
     Assert.assertTrue((end - start) < 30 * 1000);
 
@@ -125,7 +125,7 @@ public class TestBlockReorder {
     Assert.assertTrue(name.indexOf(':') > 0);
     String portS = name.substring(name.indexOf(':') + 1);
     final int port = Integer.parseInt(portS);
-    LOG.fatal("HFileSystem port= " + port);
+    LOG.info("HFileSystem port= " + port);
 
     // Let's find the DN to kill. cluster.getDataNodes(int) is not on the same port, so wee need
     // to iterate ourselves.
@@ -135,7 +135,7 @@ public class TestBlockReorder {
         ok = true;
         LOG.info("HFileSystem killing " + name);
         dn.shutdown();
-        LOG.fatal("HFileSystem killed  " + name);
+        LOG.info("HFileSystem killed  " + name);
       }
     }
     Assert.assertTrue("didn't find the server to kill", ok);
@@ -149,7 +149,7 @@ public class TestBlockReorder {
             for (LocatedBlock lb : lbs.getLocatedBlocks()) {
               if (lb.getLocations().length > 1) {
                 if (lb.getLocations()[0].getPort() == port) {
-                  LOG.fatal("HFileSystem bad port, inverting");
+                  LOG.info("HFileSystem bad port, inverting");
                   DatanodeInfo tmp = lb.getLocations()[0];
                   lb.getLocations()[0] = lb.getLocations()[1];
                   lb.getLocations()[1] = tmp;
@@ -170,7 +170,7 @@ public class TestBlockReorder {
       Assert.assertTrue(toWrite == fin.readDouble());
       fin.close();
       end = System.currentTimeMillis();
-      LOG.fatal("HFileSystem readtime= " + (end - start));
+      LOG.info("HFileSystem readtime= " + (end - start));
       if ((end - start) > 60000) iAmBad = true;
     }
     Assert.assertFalse("We took too much time to read", iAmBad);
@@ -301,7 +301,8 @@ public class TestBlockReorder {
         HConstants.HREGION_LOGDIR_NAME + "/" + host1 + ",6977,6576" + "/mylogfile";
 
     // Check that it will be possible to extract a ServerName from our construction
-    Assert.assertNotNull(HLog.getServerNameFromHLogDirectoryName(conf, pseudoLogFile));
+    Assert.assertNotNull("log= "+pseudoLogFile,
+        HLog.getServerNameFromHLogDirectoryName(conf, pseudoLogFile));
 
     // And check we're doing the right reorder.
     lrb.reorderBlocks(conf, l, pseudoLogFile);

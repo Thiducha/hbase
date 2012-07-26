@@ -192,17 +192,17 @@ public class HFileSystem extends FilterFileSystem {
       throws IOException {
     FileSystem fs = FileSystem.get(conf);
 
-      if (!(fs instanceof DistributedFileSystem)){
+    if (!(fs instanceof DistributedFileSystem)) {
       LOG.warn("The file system is not a DistributedFileSystem. Not adding block location reordering");
       return;
     }
 
-    DistributedFileSystem dfs =(DistributedFileSystem)fs;
+    DistributedFileSystem dfs = (DistributedFileSystem) fs;
     DFSClient dfsc = dfs.getClient();
-    if (dfsc == null){
-        LOG.warn("The DistributedFileSystem does not contains a DFSClient." +
-            " Can't add the location block reordering hack. Continuing, but this is unexpected."
-        );
+    if (dfsc == null) {
+      LOG.warn("The DistributedFileSystem does not contains a DFSClient." +
+          " Can't add the location block reordering hack. Continuing, but this is unexpected."
+      );
       return;
     }
 
