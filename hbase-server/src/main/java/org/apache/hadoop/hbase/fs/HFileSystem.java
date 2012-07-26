@@ -190,6 +190,11 @@ public class HFileSystem extends FilterFileSystem {
    */
   static void addLocationOrderHack(Configuration conf, final ReorderBlocks lrb)
       throws IOException {
+
+    if (!conf.getBoolean("hbase.hdfs.jira6435", true)){  // activated by default
+      return;
+    }
+
     FileSystem fs = FileSystem.get(conf);
 
     if (!(fs instanceof DistributedFileSystem)) {
