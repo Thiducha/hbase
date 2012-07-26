@@ -204,8 +204,10 @@ public class TestBlockReorder {
 
     Assert.assertTrue(hfs.length >= 1);// We should have a least one, sometimes we will have more...
     for (HdfsFileStatus hf : hfs) {
-      LOG.info("Log file found: "+hf.getLocalName());
+      LOG.info("Log file found: "+hf.getLocalName()+ " in "+rootDir);
     }
+
+    String logFile = rootDir +  hfs[0].getLocalName();
 
     // Now checking that it's used
     // We're trying ten times to be sure, as the order is random
@@ -215,8 +217,8 @@ public class TestBlockReorder {
       final long max = System.currentTimeMillis() + 10000;
       do {
         // The "/" is mandatory, without it we've got a null pointer exception on the namenode
-        l = dfs.getClient().namenode.getBlockLocations("/" + hfs[0].getLocalName(), 0, 1);
-        Assert.assertNotNull("Trying " + "/" + hfs[0].getLocalName(), l);
+        l = dfs.getClient().namenode.getBlockLocations("/" + logFile, 0, 1);
+        Assert.assertNotNull("Trying " + "/" + logFile, l);
         Assert.assertNotNull(l.getLocatedBlocks());
         Assert.assertEquals(l.getLocatedBlocks().size(), 1);
         Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
