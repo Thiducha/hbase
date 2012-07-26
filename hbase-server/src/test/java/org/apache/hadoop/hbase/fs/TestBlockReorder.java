@@ -196,22 +196,22 @@ public class TestBlockReorder {
     // Now we need to find the log file, its locations, and stop it
     String rootDir = FileSystem.get(conf).makeQualified(new Path(
         conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME +
-        hbm.getRegionServer(0).getServerName().toString())).toUri().getPath();
+            "/" + hbm.getRegionServer(0).getServerName().toString())).toUri().getPath();
 
     DirectoryListing dl = dfs.getClient().listPaths(rootDir, HdfsFileStatus.EMPTY_NAME);
     // If we don't find anything it means that we're wrong on the path naming rules
-    Assert.assertNotNull("Reading " + rootDir, dl);
+    Assert.assertNotNull("Can't find: " + rootDir, dl);
     HdfsFileStatus[] hfs = dl.getPartialListing();
 
     // As we wrote a put, we should have at least one log file.
     Assert.assertTrue(hfs.length >= 1);
     for (HdfsFileStatus hf : hfs) {
-      LOG.info("Log file found: "+hf.getLocalName()+ " in "+rootDir);
+      LOG.info("Log file found: " + hf.getLocalName() + " in " + rootDir);
     }
 
     // We will try only one file
     Assert.assertNotNull(hfs[0]);
-    String logFile = rootDir + "/" +  hfs[0].getLocalName();
+    String logFile = rootDir + "/" + hfs[0].getLocalName();
 
     // Now checking that it's used
     // We're trying ten times to be sure, as the order is random
