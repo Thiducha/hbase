@@ -1795,7 +1795,7 @@ public class HLog implements Syncable {
       return null;
     }
 
-    final String serverNameAndFile = path.substring(startPath.length()-1);
+    final String serverNameAndFile = path.substring(startPath.length());
 
     if (serverNameAndFile.indexOf('/') < "a,0,0".length() ){
       // Either it's a file, not a directory either it's not a ServerName format
