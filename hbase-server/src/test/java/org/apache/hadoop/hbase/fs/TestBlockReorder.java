@@ -219,7 +219,7 @@ public class TestBlockReorder {
 
     // Checking the underlying file system. Multiple times as the order is random
     //   HFileSystem.addLocationOrderHack(dfs.getConf());
-    for (int i = 0; i < 10; i++) {
+    /*for (int i = 0; i < 10; i++) {
       LocatedBlocks l;
       // The NN gets the block list asynchronously, so we may need multiple tries to get the list
       final long max = System.currentTimeMillis() + 10000;
@@ -232,7 +232,7 @@ public class TestBlockReorder {
             System.currentTimeMillis() < max);
       } while (l.get(0).getLocations().length != 3);
       //Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
-    }
+    }                          */
 
     // Now checking that the hook is up and running
     // We can't call directly getBlockLocations, it's not available in HFileSystem
