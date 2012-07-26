@@ -1775,7 +1775,8 @@ public class HLog implements Syncable {
 
     final String rootDir = conf.get(HConstants.HBASE_DIR);
     if (rootDir == null || rootDir.isEmpty()){
-      throw new IllegalArgumentException(HConstants.HBASE_DIR+" key must be not found in conf");
+       LOG.info(HConstants.HBASE_DIR+" key must be not found in conf");
+      return null;
     }
 
     final StringBuilder startPathSB = new StringBuilder(rootDir);
@@ -1788,7 +1789,7 @@ public class HLog implements Syncable {
     try {
       fullPath = FileSystem.get(conf).makeQualified(new Path(path)).toString();
     }catch (IllegalArgumentException e){
-      // bad format
+      LOG.info("Call to makeQualified failed on "+  path+" "+e.getMessage());
       return null;
     }
     if (!fullPath.startsWith(startPath)){
