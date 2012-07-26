@@ -738,8 +738,9 @@ public class TestHLog  {
     Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, hl+"qdf") );
     Assert.assertNull( HLog.getServerNameFromHLogDirectoryName(conf, "sfqf"+hl+"qdf") );
 
-    Assert.assertNotNull( HLog.getServerNameFromHLogDirectoryName(conf,
-        "/user/whatever/hbase/.logs/localhost,32984,1343316388997/localhost%2C32984%2C1343316388997.1343316390417"
+    Assert.assertNotNull( HLog.getServerNameFromHLogDirectoryName(conf, conf.get(
+        HConstants.HBASE_DIR) +
+        "/.logs/localhost,32984,1343316388997/localhost%2C32984%2C1343316388997.1343316390417"
         ));
     Assert.assertNotNull( HLog.getServerNameFromHLogDirectoryName(conf, hl+"/qdf") );
   }
