@@ -185,6 +185,8 @@ public class TestBlockReorder {
     byte[] sb = "sb".getBytes();
     htu.startMiniZKCluster();
     MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1);
+    hbm.waitForActiveAndReadyMaster();
+    hbm.getRegionServer(0).waitForServerOnline();
     // We use the regionserver file system & conf as we expect it to have the hook.
     conf = hbm.getRegionServer(0).getConfiguration();
     HFileSystem rfs = (HFileSystem) hbm.getRegionServer(0).getFileSystem();
