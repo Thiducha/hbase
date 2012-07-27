@@ -138,7 +138,7 @@ public class TestBlockReorder {
       if (dn.dnRegistration.getName().equals(name)) {
         ok = true;
         LOG.info("killing datanode " + name);
-        ipcPort = dn.ipcServer.getListenerAddress().getPort()
+        ipcPort = dn.ipcServer.getListenerAddress().getPort();
         dn.shutdown();
         LOG.info("killed datanode " + name);
         break;
