@@ -75,6 +75,7 @@ public class TestBlockReorder {
   @Before
   public void setUp() throws Exception {
     htu = new HBaseTestingUtility();
+    htu.getConfiguration().setInt("dfs.block.size", 1024);// For the test with multiple blocks
     htu.getConfiguration().setBoolean("dfs.support.append", true);
     htu.getConfiguration().setInt("dfs.replication", 3);
     // We have a rack to get always the same location order but it does not work.
@@ -106,9 +107,7 @@ public class TestBlockReorder {
     FSDataOutputStream fop = dfs.create(p, (short) repCount);
     final double toWrite = 875.5613;
     fop.writeDouble(toWrite);
-    fop.flush();
-    fop.sync();
-    fop.flush();
+    fop.close();
 
     // Let's check we can read it when everybody's there
     long start = System.currentTimeMillis();
@@ -151,7 +150,7 @@ public class TestBlockReorder {
 
 
     // Add the hook, with an implementation checking that we don't use the port we've just killed.
-   /* HFileSystem.addLocationOrderHack(conf,
+    HFileSystem.addLocationOrderHack(conf,
         new HFileSystem.ReorderBlocks() {
           @Override
           public void reorderBlocks(Configuration c, LocatedBlocks lbs, String src) {
@@ -167,9 +166,9 @@ public class TestBlockReorder {
             }
           }
         });
-    */
+
     ServerSocket ss = new ServerSocket(port);// We're taking the port to have a timeout issue later.
-    ServerSocket ssI = new ServerSocket(ipcPort) ;
+    ServerSocket ssI = new ServerSocket(ipcPort);
 
     // Now it will fail with a timeout, unfortunately it does not always connect to the same box,
     // so we try 10 times;  with the reorder it will never last more than a few milli seconds
@@ -180,14 +179,14 @@ public class TestBlockReorder {
       fin.close();
       end = System.currentTimeMillis();
       LOG.info("HFileSystem readtime= " + (end - start));
-      Assert.assertFalse ("We took too much time to read", (end - start) > 15000);
+      Assert.assertFalse("We took too much time to read", (end - start) > 15000);
     }
     ss.close();
     ssI.close();
   }
 
   /**
-   * Test that the hook works within HBase
+   * Test that the hook works within HBase, including when there are multiple blocks.
    */
   @Test()
   public void testHBaseCluster() throws Exception {
@@ -201,9 +200,12 @@ public class TestBlockReorder {
     HFileSystem rfs = (HFileSystem) hbm.getRegionServer(0).getFileSystem();
     HTable h = htu.createTable("table".getBytes(), sb);
 
-    Put p = new Put(sb);
-    p.add(sb, sb, sb);
-    h.put(p);
+    // Insert enough data to get multiple blocks
+    for (int i = 0; i < 1024; i++) {
+      Put p = new Put(sb);
+      p.add(sb, sb, sb);
+      h.put(p);
+    }
 
     // Now we need to find the log file, its locations, and stop it
     String rootDir = FileSystem.get(conf).makeQualified(new Path(
@@ -238,11 +240,10 @@ public class TestBlockReorder {
       // The NN gets the block list asynchronously, so we may need multiple tries to get the list
       final long max = System.currentTimeMillis() + 10000;
       do {
+        Assert.assertTrue("Can't get enouth replica.", System.currentTimeMillis() < max);
         blocs = rfs.getFileBlockLocations(fsLog, 0, 1);
         Assert.assertNotNull("Can't get block locations for " + logFile, blocs);
-        Assert.assertEquals(blocs.length, 1);
-        Assert.assertTrue("Expecting " + 3 + " , got " + blocs[0].getHosts().length,
-            System.currentTimeMillis() < max);
+        Assert.assertTrue(blocs.length > 0);
       } while (blocs[0].getHosts().length != 3);
 
       Assert.assertEquals(host1, blocs[0].getHosts()[2]);
@@ -262,15 +263,23 @@ public class TestBlockReorder {
       LocatedBlocks l;
       // The NN gets the block list asynchronously, so we may need multiple tries to get the list
       final long max = System.currentTimeMillis() + 10000;
+      boolean done;
       do {
+        Assert.assertTrue("Can't get enouth replica.", System.currentTimeMillis() < max);
         l = dfs.getClient().namenode.getBlockLocations(src, 0, 1);
         Assert.assertNotNull("Can't get block locations for " + src, l);
         Assert.assertNotNull(l.getLocatedBlocks());
-        Assert.assertEquals(l.getLocatedBlocks().size(), 1);
-        Assert.assertTrue("Expecting " + 3 + " , got " + l.get(0).getLocations().length,
-            System.currentTimeMillis() < max);
+        Assert.assertTrue(l.getLocatedBlocks().size() > 0);
+
+        done = true;
+        for (int y=0; y<l.getLocatedBlocks().size() && done; y++){
+          done = (l.get(y).getLocations().length == 3);
+        }
       } while (l.get(0).getLocations().length != 3);
-      Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
+
+      for (int y=0; y<l.getLocatedBlocks().size() && done; y++){
+        Assert.assertEquals(host1, l.get(y).getLocations()[2].getHostName());
+      }
     }
   }
 
