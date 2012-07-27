@@ -107,6 +107,8 @@ public class TestBlockReorder {
     final double toWrite = 875.5613;
     fop.writeDouble(toWrite);
     fop.flush();
+    fop.sync();
+    fop.flush();
 
     // Let's check we can read it when everybody's there
     long start = System.currentTimeMillis();
