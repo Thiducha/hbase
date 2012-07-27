@@ -113,7 +113,7 @@ public class TestBlockReorder {
     FSDataInputStream fin = dfs.open(p);
     Assert.assertTrue(toWrite == fin.readDouble());
     long end = System.currentTimeMillis();
-    LOG.info("HFileSystem readtime= " + (end - start));
+    LOG.info("readtime= " + (end - start));
     fin.close();
     Assert.assertTrue((end - start) < 30 * 1000);
 
@@ -128,7 +128,8 @@ public class TestBlockReorder {
     Assert.assertTrue(name.indexOf(':') > 0);
     String portS = name.substring(name.indexOf(':') + 1);
     final int port = Integer.parseInt(portS);
-    LOG.info("HFileSystem port= " + port);
+    LOG.info("port= " + port);
+    int ipcPort = -1;
 
     // Let's find the DN to kill. cluster.getDataNodes(int) is not on the same port, so wee need
     // to iterate ourselves.
@@ -137,11 +138,15 @@ public class TestBlockReorder {
       if (dn.dnRegistration.getName().equals(name)) {
         ok = true;
         LOG.info("killing datanode " + name);
+        ipcPort = dn.ipcServer.getListenerAddress().getPort()
         dn.shutdown();
         LOG.info("killed datanode " + name);
+        break;
       }
     }
     Assert.assertTrue("didn't find the server to kill", ok);
+    LOG.info("ipc port= " + ipcPort);
+
 
     // Add the hook, with an implementation checking that we don't use the port we've just killed.
    /* HFileSystem.addLocationOrderHack(conf,
@@ -162,6 +167,7 @@ public class TestBlockReorder {
         });
     */
     ServerSocket ss = new ServerSocket(port);// We're taking the port to have a timeout issue later.
+    ServerSocket ssI = new ServerSocket(ipcPort) ;
 
     // Now it will fail with a timeout, unfortunately it does not always connect to the same box,
     // so we try 10 times;  with the reorder it will never last more than a few milli seconds
@@ -172,9 +178,10 @@ public class TestBlockReorder {
       fin.close();
       end = System.currentTimeMillis();
       LOG.info("HFileSystem readtime= " + (end - start));
-      Assert.assertFalse ("We took too much time to read", (end - start) > 60000);
+      Assert.assertFalse ("We took too much time to read", (end - start) > 15000);
     }
     ss.close();
+    ssI.close();
   }
 
   /**
