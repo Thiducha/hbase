@@ -36,6 +36,7 @@ import org.apache.hadoop.hbase.MiniHBaseCluster;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
+import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
@@ -59,6 +60,7 @@ public class TestBlockReorder {
   private static final Log LOG = LogFactory.getLog(TestBlockReorder.class);
 
   static {
+    ((Log4JLogger) DFSClient.LOG).getLogger().setLevel(Level.ALL);
     ((Log4JLogger) HFileSystem.LOG).getLogger().setLevel(Level.ALL);
   }
 
@@ -134,16 +136,15 @@ public class TestBlockReorder {
     for (DataNode dn : cluster.getDataNodes()) {
       if (dn.dnRegistration.getName().equals(name)) {
         ok = true;
-        LOG.info("HFileSystem killing " + name);
+        LOG.info("killing datanode " + name);
         dn.shutdown();
-        LOG.info("HFileSystem killed  " + name);
+        LOG.info("killed datanode " + name);
       }
     }
     Assert.assertTrue("didn't find the server to kill", ok);
 
-
     // Add the hook, with an implementation checking that we don't use the port we've just killed.
-    HFileSystem.addLocationOrderHack(conf,
+   /* HFileSystem.addLocationOrderHack(conf,
         new HFileSystem.ReorderBlocks() {
           @Override
           public void reorderBlocks(Configuration c, LocatedBlocks lbs, String src) {
@@ -159,22 +160,20 @@ public class TestBlockReorder {
             }
           }
         });
-
+    */
     ServerSocket ss = new ServerSocket(port);// We're taking the port to have a timeout issue later.
 
     // Now it will fail with a timeout, unfortunately it does not always connect to the same box,
     // so we try 10 times;  with the reorder it will never last more than a few milli seconds
-    boolean iAmBad = false;
-    for (int i = 0; i < 10 && !iAmBad; i++) {
+    for (int i = 0; i < 10; i++) {
       start = System.currentTimeMillis();
       fin = dfs.open(p);
       Assert.assertTrue(toWrite == fin.readDouble());
       fin.close();
       end = System.currentTimeMillis();
       LOG.info("HFileSystem readtime= " + (end - start));
-      if ((end - start) > 60000) iAmBad = true;
+      Assert.assertFalse ("We took too much time to read", (end - start) > 60000);
     }
-    Assert.assertFalse("We took too much time to read", iAmBad);
     ss.close();
   }
 
