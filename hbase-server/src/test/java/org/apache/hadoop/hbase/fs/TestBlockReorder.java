@@ -106,7 +106,7 @@ public class TestBlockReorder {
     FSDataOutputStream fop = dfs.create(p, (short) repCount);
     final double toWrite = 875.5613;
     fop.writeDouble(toWrite);
-    fop.close();
+    fop.flush();
 
     // Let's check we can read it when everybody's there
     long start = System.currentTimeMillis();
