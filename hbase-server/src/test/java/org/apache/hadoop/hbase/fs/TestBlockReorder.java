@@ -57,6 +57,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.net.ServerSocket;
+import java.util.Date;
 
 /**
  * Tests for the hdfs fix from HBASE-6435. The Jira contains a specific patch for the region
@@ -186,6 +187,8 @@ public class TestBlockReorder {
     // so we try 10 times;  with the reorder it will never last more than a few milli seconds
     for (int i = 0; i < 10; i++) {
       start = System.currentTimeMillis();
+      LOG.fatal("AAAA REORDER "+new Date());
+
       fin = dfs.open(p);
       Assert.assertTrue(toWrite == fin.readDouble());
       fin.close();
