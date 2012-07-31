@@ -211,22 +211,25 @@ public class HFileSystem extends FilterFileSystem {
       return;
     }
 
-    if (dfsc.namenode == null){
-      LOG.warn("The DFSClient is not linked to a namenode" +
-          " Can't add the location block reordering hack. Continuing, but this is unexpected."
-      );
-      return;
-    }
-
-    ClientProtocol cp1 =  createReordoringProxy(dfsc.namenode, lrb, conf);
 
     try {
       Field nf = DFSClient.class.getField("namenode");
-
       nf.setAccessible(true);
       Field modifiersField = Field.class.getDeclaredField("modifiers");
       modifiersField.setAccessible(true);
       modifiersField.setInt(nf, nf.getModifiers() & ~Modifier.FINAL);
+
+      ClientProtocol namenode = (ClientProtocol)nf.get(dfsc);
+      if (namenode == null){
+        LOG.warn("The DFSClient is not linked to a namenode" +
+            " Can't add the location block reordering hack. Continuing, but this is unexpected."
+        );
+        return;
+      }
+
+      ClientProtocol cp1 =  createReordoringProxy(namenode, lrb, conf);
+
+
       nf.set(dfsc, cp1);
       LOG.info("Added intercepting call to namenode#getBlockLocations");
     } catch (NoSuchFieldException impossible) {
