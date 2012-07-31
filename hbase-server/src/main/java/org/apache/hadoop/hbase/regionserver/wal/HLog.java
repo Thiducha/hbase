@@ -173,7 +173,7 @@ public class HLog implements Syncable {
       p("checking writer");
       if (hl.writer == null) return;
 
-      ArrayList al = new ArrayList(hl.outputfiles.values());
+      ArrayList<Path> al = new ArrayList<Path>(hl.outputfiles.values());
 
 
       SequenceFileLogWriter sw = (SequenceFileLogWriter) hl.writer;
@@ -181,7 +181,7 @@ public class HLog implements Syncable {
         al.add(sw.p);
       }
 
-      for (Path p :hl.outputfiles.values()){
+      for (Path p :al){
         FileStatus f = hl.fs.getFileStatus(p);
         BlockLocation[] bls = hl.fs.getFileBlockLocations(f, 0, 1);
         if (bls != null && bls.length >0 && bls[0].getHosts().length>0){
