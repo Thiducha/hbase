@@ -190,8 +190,10 @@ public class HFileSystem extends FilterFileSystem {
    */
   static void addLocationOrderInterceptor(Configuration conf, final ReorderBlocks lrb)
       throws IOException {
+    LOG.debug("Starting addLocationOrderInterceptor with class "+lrb.getClass());
 
     if (!conf.getBoolean("hbase.filesystem.reorder.blocks", true)){  // activated by default
+      LOG.debug("addLocationOrderInterceptor configured to false");
       return;
     }
 
