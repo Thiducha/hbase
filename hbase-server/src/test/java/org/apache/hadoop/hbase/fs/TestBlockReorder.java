@@ -143,7 +143,8 @@ public class TestBlockReorder {
     // to iterate ourselves.
     boolean ok = false;
     for (DataNode dn : cluster.getDataNodes()) {
-      if (dn.getDisplayName().equals(name)) {
+      final String dnName = dn.getDisplayName().split(":")[0];
+      if (name.equals(dnName)) {
         ok = true;
         LOG.info("killing datanode " + name);
         ipcPort = dn.ipcServer.getListenerAddress().getPort();
