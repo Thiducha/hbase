@@ -132,7 +132,7 @@ public class TestBlockReorder {
     do {
       lbs = dfs.getFileBlockLocations(f, 0, 1);
     } while (lbs.length != 1 && lbs[0].getLength() != repCount);
-    String name = lbs[0].getNames()[0];
+    final String name = lbs[0].getNames()[0];
     Assert.assertTrue(name.indexOf(':') > 0);
     String portS = name.substring(name.indexOf(':') + 1);
     final int port = Integer.parseInt(portS);
@@ -143,7 +143,7 @@ public class TestBlockReorder {
     // to iterate ourselves.
     boolean ok = false;
     for (DataNode dn : cluster.getDataNodes()) {
-      if (dn.dnRegistration.getName().equals(name)) {
+      if (dn.getDisplayName().equals(name)) {
         ok = true;
         LOG.info("killing datanode " + name);
         ipcPort = dn.ipcServer.getListenerAddress().getPort();
@@ -163,7 +163,7 @@ public class TestBlockReorder {
           public void reorderBlocks(Configuration c, LocatedBlocks lbs, String src) {
             for (LocatedBlock lb : lbs.getLocatedBlocks()) {
               if (lb.getLocations().length > 1) {
-                if (lb.getLocations()[0].getPort() == port) {
+                if (lb.getLocations()[0].getName().equals(name)) {
                   LOG.info("HFileSystem bad port, inverting");
                   DatanodeInfo tmp = lb.getLocations()[0];
                   lb.getLocations()[0] = lb.getLocations()[1];
