@@ -188,8 +188,7 @@ public class HFileSystem extends FilterFileSystem {
    *
    * There should be no reason, except testing to create a specific ReorderBlocks.
    */
-  static void addLocationOrderInterceptor(Configuration conf, final ReorderBlocks lrb)
-      throws IOException {
+  static void addLocationOrderInterceptor(Configuration conf, final ReorderBlocks lrb) {
     LOG.debug("Starting addLocationOrderInterceptor with class "+lrb.getClass());
 
     if (!conf.getBoolean("hbase.filesystem.reorder.blocks", true)){  // activated by default
@@ -197,7 +196,13 @@ public class HFileSystem extends FilterFileSystem {
       return;
     }
 
-    FileSystem fs = FileSystem.get(conf);
+    FileSystem fs = null;
+    try {
+      fs = FileSystem.get(conf);
+    } catch (IOException e) {
+      LOG.warn("Can't get the file system from the conf", e);
+      return;
+    }
 
     if (!(fs instanceof DistributedFileSystem)) {
       LOG.warn("The file system is not a DistributedFileSystem." +
