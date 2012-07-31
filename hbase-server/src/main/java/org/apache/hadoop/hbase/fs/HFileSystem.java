@@ -179,7 +179,7 @@ public class HFileSystem extends FilterFileSystem {
   }
 
   public static void addLocationsOrderHack(Configuration conf) throws IOException {
-    addLocationOrderHack(conf, new LogReorderBlocks());
+    addLocationOrderInterceptor(conf, new LogReorderBlocks());
   }
 
   /**
@@ -188,17 +188,18 @@ public class HFileSystem extends FilterFileSystem {
    *
    * There should be no reason, except testing to create a specific ReorderBlocks.
    */
-  static void addLocationOrderHack(Configuration conf, final ReorderBlocks lrb)
+  static void addLocationOrderInterceptor(Configuration conf, final ReorderBlocks lrb)
       throws IOException {
 
-    if (!conf.getBoolean("hbase.hdfs.jira6435", true)){  // activated by default
+    if (!conf.getBoolean("hbase.filesystem.reorder.blocks", true)){  // activated by default
       return;
     }
 
     FileSystem fs = FileSystem.get(conf);
 
     if (!(fs instanceof DistributedFileSystem)) {
-      LOG.warn("The file system is not a DistributedFileSystem. Not adding block location reordering");
+      LOG.warn("The file system is not a DistributedFileSystem." +
+          "Not adding block location reordering");
       return;
     }
 
@@ -210,7 +211,6 @@ public class HFileSystem extends FilterFileSystem {
       );
       return;
     }
-
 
     try {
       Field nf = DFSClient.class.getField("namenode");
@@ -289,7 +289,7 @@ public class HFileSystem extends FilterFileSystem {
         if (dnis != null && dnis.length > 1) {
           boolean found = false;
           for (int i = 0; i < dnis.length - 1 && !found; i++) {
-            if (hostName.equals(dnis[i].getHostName()) || hostName.equals(dnis[i].getHost())) {
+            if (hostName.equals(dnis[i].getHostName()) {
               // advance the other locations by one and put this one at the last place.
               DatanodeInfo toLast = dnis[i];
               System.arraycopy(dnis, i+1, dnis, i, dnis.length-i-1);
