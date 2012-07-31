@@ -148,8 +148,7 @@ public class TestBlockReorder {
     final String lookup = lbs[0].getHosts()[0];
     StringBuilder sb = new StringBuilder();
     for (DataNode dn : cluster.getDataNodes()) {
-
-      final String dnName = dn.getDisplayName().split(":")[0];
+      final String dnName = getHostName(dn);
       sb.append(dnName).append(' ');
       if (lookup.equals(dnName)) {
         ok = true;
