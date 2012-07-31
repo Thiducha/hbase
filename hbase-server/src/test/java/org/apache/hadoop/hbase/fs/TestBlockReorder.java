@@ -142,7 +142,7 @@ public class TestBlockReorder {
     // Let's find the DN to kill. cluster.getDataNodes(int) is not on the same port, so wee need
     // to iterate ourselves.
     boolean ok = false;
-    String lookup = lbs[0].getHosts()[0];
+    final String lookup = lbs[0].getHosts()[0];
     StringBuilder sb = new StringBuilder();
     for (DataNode dn : cluster.getDataNodes()) {
       final String dnName = dn.getDisplayName().split(":")[0];
@@ -167,7 +167,8 @@ public class TestBlockReorder {
           public void reorderBlocks(Configuration c, LocatedBlocks lbs, String src) {
             for (LocatedBlock lb : lbs.getLocatedBlocks()) {
               if (lb.getLocations().length > 1) {
-                if (lb.getLocations()[0].getName().equals(name)) {
+                LOG.info("HFileSystem AAAAA "+lb.getLocations()[0].getHostName());
+                if (lb.getLocations()[0].getHostName().equals(lookup)) {
                   LOG.info("HFileSystem bad port, inverting");
                   DatanodeInfo tmp = lb.getLocations()[0];
                   lb.getLocations()[0] = lb.getLocations()[1];
