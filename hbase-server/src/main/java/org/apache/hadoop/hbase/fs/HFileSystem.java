@@ -289,7 +289,7 @@ public class HFileSystem extends FilterFileSystem {
         if (dnis != null && dnis.length > 1) {
           boolean found = false;
           for (int i = 0; i < dnis.length - 1 && !found; i++) {
-            if (hostName.equals(dnis[i].getHostName()) {
+            if (hostName.equals(dnis[i].getHostName())) {
               // advance the other locations by one and put this one at the last place.
               DatanodeInfo toLast = dnis[i];
               System.arraycopy(dnis, i+1, dnis, i, dnis.length-i-1);
