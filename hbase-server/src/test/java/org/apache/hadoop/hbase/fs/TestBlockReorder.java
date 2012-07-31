@@ -55,13 +55,15 @@ import org.junit.experimental.categories.Category;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.ServerSocket;
 import java.util.Date;
 
 /**
  * Tests for the hdfs fix from HBASE-6435. The Jira contains a specific patch for the region
- *  server to validate the fix on a real cluster.
+ * server to validate the fix on a real cluster.
  */
 @Category(LargeTests.class)
 public class TestBlockReorder {
@@ -146,18 +148,19 @@ public class TestBlockReorder {
     final String lookup = lbs[0].getHosts()[0];
     StringBuilder sb = new StringBuilder();
     for (DataNode dn : cluster.getDataNodes()) {
+
       final String dnName = dn.getDisplayName().split(":")[0];
       sb.append(dnName).append(' ');
       if (lookup.equals(dnName)) {
         ok = true;
-        LOG.info("killing datanode " + name+ " / "+lookup);
+        LOG.info("killing datanode " + name + " / " + lookup);
         ipcPort = dn.ipcServer.getListenerAddress().getPort();
         dn.shutdown();
-        LOG.info("killed datanode " + name+ " / "+lookup);
+        LOG.info("killed datanode " + name + " / " + lookup);
         break;
       }
     }
-    Assert.assertTrue("didn't find the server to kill, was looking for "+lookup+" found "+sb, ok);
+    Assert.assertTrue("didn't find the server to kill, was looking for " + lookup + " found " + sb, ok);
     LOG.info("ipc port= " + ipcPort);
 
     // Add the hook, with an implementation checking that we don't use the port we've just killed.
@@ -168,7 +171,7 @@ public class TestBlockReorder {
             LOG.fatal("AAAA REORDER");
             for (LocatedBlock lb : lbs.getLocatedBlocks()) {
               if (lb.getLocations().length > 1) {
-                LOG.info("HFileSystem AAAAA "+lb.getLocations()[0].getHostName());
+                LOG.info("HFileSystem AAAAA " + lb.getLocations()[0].getHostName());
                 if (lb.getLocations()[0].getHostName().equals(lookup)) {
                   LOG.info("HFileSystem bad port, inverting");
                   DatanodeInfo tmp = lb.getLocations()[0];
@@ -187,7 +190,7 @@ public class TestBlockReorder {
     // so we try 10 times;  with the reorder it will never last more than a few milli seconds
     for (int i = 0; i < 10; i++) {
       start = System.currentTimeMillis();
-      LOG.fatal("AAAA REORDER "+new Date());
+      LOG.fatal("AAAA REORDER " + new Date());
 
       fin = dfs.open(p);
       Assert.assertTrue(toWrite == fin.readDouble());
@@ -198,6 +201,29 @@ public class TestBlockReorder {
     }
     ss.close();
     ssI.close();
+  }
+
+  /**
+   * Allow to get the hostname, using getHostName (hadoop 1) or getDisplayName (hadoop 2)
+   */
+  private String getHostName(DataNode dn) throws InvocationTargetException, IllegalAccessException {
+    Method m;
+    try {
+      m = DataNode.class.getMethod("getDisplayName");
+    } catch (NoSuchMethodException e) {
+      try {
+        m = DataNode.class.getMethod("getHostName");
+      } catch (NoSuchMethodException e1) {
+        throw new RuntimeException(e1);
+      }
+    }
+
+    String res = (String) m.invoke(dn);
+    if (res.contains(":")) {
+      return res.split(":")[0];
+    } else {
+      return res;
+    }
   }
 
   /**
@@ -287,12 +313,12 @@ public class TestBlockReorder {
         Assert.assertTrue(l.getLocatedBlocks().size() > 0);
 
         done = true;
-        for (int y=0; y<l.getLocatedBlocks().size() && done; y++){
+        for (int y = 0; y < l.getLocatedBlocks().size() && done; y++) {
           done = (l.get(y).getLocations().length == 3);
         }
       } while (l.get(0).getLocations().length != 3);
 
-      for (int y=0; y<l.getLocatedBlocks().size() && done; y++){
+      for (int y = 0; y < l.getLocatedBlocks().size() && done; y++) {
         Assert.assertEquals(host1, l.get(y).getLocations()[2].getHostName());
       }
     }
@@ -301,7 +327,7 @@ public class TestBlockReorder {
   private static ClientProtocol getNamenode(DFSClient dfsc) throws Exception {
     Field nf = DFSClient.class.getDeclaredField("namenode");
     nf.setAccessible(true);
-    ClientProtocol namenode = (ClientProtocol)nf.get(dfsc);
+    ClientProtocol namenode = (ClientProtocol) nf.get(dfsc);
     return namenode;
   }
 
