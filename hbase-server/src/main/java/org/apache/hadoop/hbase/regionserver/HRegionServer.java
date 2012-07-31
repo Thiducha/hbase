@@ -499,7 +499,7 @@ public class  HRegionServer implements ClientProtocol,
       throw new IllegalArgumentException("Failed resolve of " + initialIsa);
     }
 
-    this.rpcServer = HBaseRPC.getServer(this,
+    this.rpcServer = HBaseRPC.getServer(AdminProtocol.class, this,
       new Class<?>[]{ClientProtocol.class,
         AdminProtocol.class, HBaseRPCErrorHandler.class,
         OnlineRegions.class},
@@ -3366,8 +3366,8 @@ public class  HRegionServer implements ClientProtocol,
       checkOpen();
       requestCount.incrementAndGet();
       List<HRegionInfo> list = new ArrayList<HRegionInfo>(onlineRegions.size());
-      for (Map.Entry<String,HRegion> e: this.onlineRegions.entrySet()) {
-        list.add(e.getValue().getRegionInfo());
+      for (HRegion region: this.onlineRegions.values()) {
+        list.add(region.getRegionInfo());
       }
       Collections.sort(list);
       return ResponseConverter.buildGetOnlineRegionResponse(list);
