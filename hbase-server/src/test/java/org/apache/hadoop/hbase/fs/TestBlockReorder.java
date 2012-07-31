@@ -149,16 +149,15 @@ public class TestBlockReorder {
       sb.append(dnName).append(' ');
       if (lookup.equals(dnName)) {
         ok = true;
-        LOG.info("killing datanode " + name);
+        LOG.info("killing datanode " + name+ " / "+lookup);
         ipcPort = dn.ipcServer.getListenerAddress().getPort();
         dn.shutdown();
-        LOG.info("killed datanode " + name);
+        LOG.info("killed datanode " + name+ " / "+lookup);
         break;
       }
     }
     Assert.assertTrue("didn't find the server to kill, was looking for "+lookup+" found "+sb, ok);
     LOG.info("ipc port= " + ipcPort);
-
 
     // Add the hook, with an implementation checking that we don't use the port we've just killed.
     HFileSystem.addLocationOrderInterceptor(conf,
@@ -191,7 +190,7 @@ public class TestBlockReorder {
       fin.close();
       end = System.currentTimeMillis();
       LOG.info("HFileSystem readtime= " + (end - start));
-      Assert.assertFalse("We took too much time to read", (end - start) > 15000);
+      Assert.assertFalse("We took too much time to read", (end - start) > 60000);
     }
     ss.close();
     ssI.close();
