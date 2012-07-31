@@ -62,8 +62,7 @@ import java.net.ServerSocket;
 import java.util.Date;
 
 /**
- * Tests for the hdfs fix from HBASE-6435. The Jira contains a specific patch for the region
- * server to validate the fix on a real cluster.
+ * Tests for the hdfs fix from HBASE-6435.
  */
 @Category(LargeTests.class)
 public class TestBlockReorder {
