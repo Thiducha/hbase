@@ -152,15 +152,16 @@ public class HLog implements Syncable {
 
   private WALCoprocessorHost coprocessorHost;
 
-  static class MM extends Thread{
+  static class CheckLocations extends Thread{
     private void p(String s){
-      LOG.fatal("AAAAAAAAAAA "+s);
+      LOG.fatal("CheckLocations "+s);
     }
 
     HLog hl;
-    MM(HLog hl){
+    CheckLocations(HLog hl){
       this.hl = hl;
       setDaemon(true);
+      p("CheckLocations added");
     }
 
     private void work() throws Exception{
@@ -175,7 +176,6 @@ public class HLog implements Syncable {
 
       ArrayList<Path> al = new ArrayList<Path>(hl.outputfiles.values());
 
-
       SequenceFileLogWriter sw = (SequenceFileLogWriter) hl.writer;
       if (sw.p != null) {
         al.add(sw.p);
@@ -186,36 +186,31 @@ public class HLog implements Syncable {
         BlockLocation[] bls = hl.fs.getFileBlockLocations(f, 0, 1);
         if (bls != null && bls.length >0 && bls[0].getHosts().length>0){
           for (BlockLocation bl:bls){
-             for (String h:bl.getHosts()){
-                p(p+" "+h);
-             }
+            for (String h:bl.getHosts()){
+              p(p+" "+h);
+            }
             p("next block");
           }
         }
         p("next file");
       }
       p("end of this iteration");
-
-
     }
 
     public void run(){
-      for(;;){
+      while(true){
         try {
           work();
         } catch (Exception e) {
           e.printStackTrace();
         }
       }
-
     }
   }
 
   private void startTestHlog(){
-      LOG.fatal("AAAAAA trace set");
-      new MM(this).start();
+    new CheckLocations(this).start();
   }
-
 
   static void resetLogReaderClass() {
     HLog.logReaderClass = null;
@@ -1829,6 +1824,8 @@ public class HLog implements Syncable {
   /**
    * Returns null if it's not a log file. Returns the ServerName of the region server that created
    *  this log file otherwise.
+   * The format is: / [base directory for hbase] / hbase / .logs / ServerName / logfile
+   *
    */
   public static ServerName getServerNameFromHLogDirectoryName(Configuration conf, String path) throws IOException {
     if (path == null || path.length() <= HConstants.HREGION_LOGDIR_NAME.length())
@@ -1858,13 +1855,19 @@ public class HLog implements Syncable {
       return null;
     }
 
+    if (!fullPath.startsWith(startPath)){
+      return null;
+    }
+
     final String serverNameAndFile = fullPath.substring(startPath.length());
+
     if (serverNameAndFile.indexOf('/') < "a,0,0".length() ){
       // Either it's a file, not a directory either it's not a ServerName format
       return null;
     }
 
     final String serverName = serverNameAndFile.substring(0, serverNameAndFile.indexOf('/')-1);
+
     if (!ServerName.isFullServerName(serverName)){
       return null;
     }
