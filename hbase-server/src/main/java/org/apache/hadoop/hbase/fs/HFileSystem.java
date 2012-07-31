@@ -228,7 +228,7 @@ public class HFileSystem extends FilterFileSystem {
       modifiersField.setAccessible(true);
       modifiersField.setInt(nf, nf.getModifiers() & ~Modifier.FINAL);
       nf.set(dfsc, cp1);
-      LOG.info("Added intercepting call to namenode get location");
+      LOG.info("Added intercepting call to namenode#getBlockLocations");
     } catch (NoSuchFieldException impossible) {
     } catch (IllegalAccessException e) {
       LOG.warn("Can't modify the DFSClient#namenode field to add the location reorder.", e);
@@ -269,17 +269,16 @@ public class HFileSystem extends FilterFileSystem {
   static class LogReorderBlocks implements ReorderBlocks {
     public void reorderBlocks(Configuration conf, LocatedBlocks lbs, String src)
         throws IOException {
-      LOG.info("intercepting a call to LocatedBlocks to reorder the blocks of the file " + src);
 
       ServerName sn = HLog.getServerNameFromHLogDirectoryName(conf, src);
       if (sn == null) {
+        // It's not an HLOG
         return;
       }
 
-      LOG.debug(src+" is an HLog file, so reordering blocks");
-
       // Ok, so it's an HLog
       String hostName = sn.getHostname();
+      LOG.debug(src+" is an HLog file, so reordering blocks, last hostname will be:"+hostName);
 
       // Just check for all blocks
       for (LocatedBlock lb : lbs.getLocatedBlocks()) {

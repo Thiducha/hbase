@@ -1829,20 +1829,18 @@ public class HLog implements Syncable {
   /**
    * Returns null if it's not a log file. Returns the ServerName of the region server that created
    *  this log file otherwise.
-   * The format is: / [base directory for hbase] / hbase / .logs / ServerName / logfile
-   *
    */
   public static ServerName getServerNameFromHLogDirectoryName(Configuration conf, String path) throws IOException {
     if (path == null || path.length() <= HConstants.HREGION_LOGDIR_NAME.length())
       return null;
 
     if (conf == null){
-      throw new IllegalArgumentException("conf must be set");
+      throw new IllegalArgumentException("parameter conf must be set");
     }
 
     final String rootDir = conf.get(HConstants.HBASE_DIR);
     if (rootDir == null || rootDir.isEmpty()) {
-      LOG.info(HConstants.HBASE_DIR + " key not found in conf");
+      LOG.info(HConstants.HBASE_DIR + " key not found in conf.");
       return null;
     }
 
@@ -1859,25 +1857,14 @@ public class HLog implements Syncable {
       LOG.info("Call to makeQualified failed on "+  path+" "+e.getMessage());
       return null;
     }
-    LOG.info("fullPath="+fullPath);
-    LOG.info("startPath="+startPath);
-
-    if (!fullPath.startsWith(startPath)){
-      if (fullPath.contains(".logs")){
-        LOG.info("Strange: "+fullPath);
-      }
-      return null;
-    }
 
     final String serverNameAndFile = fullPath.substring(startPath.length());
-
     if (serverNameAndFile.indexOf('/') < "a,0,0".length() ){
       // Either it's a file, not a directory either it's not a ServerName format
       return null;
     }
 
     final String serverName = serverNameAndFile.substring(0, serverNameAndFile.indexOf('/')-1);
-
     if (!ServerName.isFullServerName(serverName)){
       return null;
     }

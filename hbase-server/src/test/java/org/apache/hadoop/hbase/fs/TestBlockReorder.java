@@ -61,6 +61,10 @@ import org.junit.experimental.categories.Category;
 import java.io.IOException;
 import java.net.ServerSocket;
 
+/**
+ * Tests for the hdfs fix from HBASE-6435. The Jira contains a specific patch for the region
+ *  server to validate the fix on a real cluster.
+ */
 @Category(LargeTests.class)
 public class TestBlockReorder {
   private static final Log LOG = LogFactory.getLog(TestBlockReorder.class);
@@ -100,7 +104,7 @@ public class TestBlockReorder {
 
 
   /**
-   * Tests that we're can add a hook, and that this hook works when we try to read the file in HDFS.
+   * Test that we're can add a hook, and that this hook works when we try to read the file in HDFS.
    */
   @Test
   public void testBlockLocationReorder() throws Exception {
@@ -396,33 +400,4 @@ public class TestBlockReorder {
     Assert.assertEquals(host3, l.get(0).getLocations()[1].getHostName());
     Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
   }
-         /*
-  public void externalClusterTest() throws Exception {
-    final String zkQuorum = System.getProperty("ZK_QUORUM");
-    Assert.assertNotNull(zkQuorum);
-    String zkPort = System.getProperty("ZK_PORT");
-    Assert.assertNotNull(zkPort);
-
-    Configuration config = HBaseConfiguration.create();
-
-    config.set("hbase.zookeeper.quorum", zkQuorum);
-    config.set("hbase.zookeeper.property.clientPort", zkPort);
-
-    HBaseAdmin hbAdmin = new HBaseAdmin(config);
-
-    byte[] rd = (""+System.currentTimeMillis()).getBytes();
-    HTableDescriptor hbt = new HTableDescriptor(rd);
-    hbt.addFamily( new HColumnDescriptor(rd));
-    hbAdmin.createTable(hbt);
-    HTable table = new HTable(config, rd);
-
-    Put p = new Put(rd);
-    p.add(rd, rd, rd);
-    table.put(p);
-
-
-
-
-
-  }    */
 }
