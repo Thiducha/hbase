@@ -164,6 +164,7 @@ public class TestBlockReorder {
         new HFileSystem.ReorderBlocks() {
           @Override
           public void reorderBlocks(Configuration c, LocatedBlocks lbs, String src) {
+            LOG.fatal("AAAA REORDER");
             for (LocatedBlock lb : lbs.getLocatedBlocks()) {
               if (lb.getLocations().length > 1) {
                 LOG.info("HFileSystem AAAAA "+lb.getLocations()[0].getHostName());
