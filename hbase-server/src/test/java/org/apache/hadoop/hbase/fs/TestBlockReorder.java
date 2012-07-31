@@ -39,6 +39,7 @@ import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
+import org.apache.hadoop.hdfs.protocol.ClientProtocol;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
 import org.apache.hadoop.hdfs.protocol.DirectoryListing;
 import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
@@ -53,6 +54,8 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.net.ServerSocket;
 
 /**
@@ -261,7 +264,7 @@ public class TestBlockReorder {
     testFromDFS(mdfs, logFile);
   }
 
-  private void testFromDFS(DistributedFileSystem dfs, String src) throws IOException {
+  private void testFromDFS(DistributedFileSystem dfs, String src) throws Exception {
     // Multiple times as the order is random
     for (int i = 0; i < 10; i++) {
       LocatedBlocks l;
@@ -270,7 +273,7 @@ public class TestBlockReorder {
       boolean done;
       do {
         Assert.assertTrue("Can't get enouth replica.", System.currentTimeMillis() < max);
-        l = dfs.getClient().namenode.getBlockLocations(src, 0, 1);
+        l = getNamenode(dfs.getClient()).getBlockLocations(src, 0, 1);
         Assert.assertNotNull("Can't get block locations for " + src, l);
         Assert.assertNotNull(l.getLocatedBlocks());
         Assert.assertTrue(l.getLocatedBlocks().size() > 0);
@@ -285,6 +288,16 @@ public class TestBlockReorder {
         Assert.assertEquals(host1, l.get(y).getLocations()[2].getHostName());
       }
     }
+  }
+
+  private static ClientProtocol getNamenode(DFSClient dfsc) throws Exception {
+    Field nf = DFSClient.class.getField("namenode");
+    nf.setAccessible(true);
+    Field modifiersField = Field.class.getDeclaredField("modifiers");
+    modifiersField.setAccessible(true);
+
+    ClientProtocol namenode = (ClientProtocol)nf.get(dfsc);
+    return namenode;
   }
 
   /**
@@ -316,7 +329,7 @@ public class TestBlockReorder {
     LocatedBlocks l;
     final long max = System.currentTimeMillis() + 10000;
     do {
-      l = dfs.getClient().namenode.getBlockLocations(fileName, 0, 1);
+      l = getNamenode(dfs.getClient()).getBlockLocations(fileName, 0, 1);
       Assert.assertNotNull(l.getLocatedBlocks());
       Assert.assertEquals(l.getLocatedBlocks().size(), 1);
       Assert.assertTrue("Expecting " + repCount + " , got " + l.get(0).getLocations().length,
