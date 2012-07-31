@@ -299,11 +299,8 @@ public class TestBlockReorder {
   }
 
   private static ClientProtocol getNamenode(DFSClient dfsc) throws Exception {
-    Field nf = DFSClient.class.getField("namenode");
+    Field nf = DFSClient.class.getDeclaredField("namenode");
     nf.setAccessible(true);
-    Field modifiersField = Field.class.getDeclaredField("modifiers");
-    modifiersField.setAccessible(true);
-
     ClientProtocol namenode = (ClientProtocol)nf.get(dfsc);
     return namenode;
   }
