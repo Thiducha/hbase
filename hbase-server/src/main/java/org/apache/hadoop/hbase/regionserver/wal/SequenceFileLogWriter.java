@@ -192,7 +192,10 @@ public class SequenceFileLogWriter implements HLog.Writer {
     
     this.writer_out = getSequenceFilePrivateFSDataOutputStreamAccessible();
     LOG.debug("Path=" + path + ", compression=" + compress);
+    p = path;
   }
+
+  public Path p;
 
   // Get at the private FSDataOutputStream inside in SequenceFile so we can
   // call sync on it.  Make it accessible.

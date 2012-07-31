@@ -169,8 +169,17 @@ public class HLog implements Syncable {
       if (hl.fs == null) return;
       p("checking outputfiles");
       if (hl.outputfiles == null) return;
-
       p("hl.outputfiles size="+ hl.outputfiles.size());
+      p("checking writer");
+      if (hl.writer == null) return;
+
+      ArrayList al = new ArrayList(hl.outputfiles.values());
+
+
+      SequenceFileLogWriter sw = (SequenceFileLogWriter) hl.writer;
+      if (sw.p != null) {
+        al.add(sw.p);
+      }
 
       for (Path p :hl.outputfiles.values()){
         FileStatus f = hl.fs.getFileStatus(p);
