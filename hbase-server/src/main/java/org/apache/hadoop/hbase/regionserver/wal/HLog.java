@@ -53,6 +53,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -150,6 +151,62 @@ public class HLog implements Syncable {
   private static Class<? extends Reader> logReaderClass;
 
   private WALCoprocessorHost coprocessorHost;
+
+  static class MM extends Thread{
+    private void p(String s){
+      LOG.fatal("AAAAAAAAAAA "+s);
+    }
+
+    HLog hl;
+    MM(HLog hl){
+      this.hl = hl;
+      setDaemon(true);
+    }
+
+    private void work() throws Exception{
+      Thread.sleep(1000*60);
+      p("checking fs");
+      if (hl.fs == null) return;
+      p("checking outputfiles");
+      if (hl.outputfiles == null) return;
+
+      p("hl.outputfiles size="+ hl.outputfiles.size());
+
+      for (Path p :hl.outputfiles.values()){
+        FileStatus f = hl.fs.getFileStatus(p);
+        BlockLocation[] bls = hl.fs.getFileBlockLocations(f, 0, 1);
+        if (bls != null && bls.length >0 && bls[0].getHosts().length>0){
+          for (BlockLocation bl:bls){
+             for (String h:bl.getHosts()){
+                p(p+" "+h);
+             }
+            p("next block");
+          }
+        }
+        p("next file");
+      }
+      p("end of this iteration");
+
+
+    }
+
+    public void run(){
+      for(;;){
+        try {
+          work();
+        } catch (Exception e) {
+          e.printStackTrace();
+        }
+      }
+
+    }
+  }
+
+  private void startTestHlog(){
+      LOG.fatal("AAAAAA trace set");
+      new MM(this).start();
+  }
+
 
   static void resetLogReaderClass() {
     HLog.logReaderClass = null;
@@ -443,6 +500,8 @@ public class HLog implements Syncable {
     Threads.setDaemonThreadRunning(logSyncerThread.getThread(),
         Thread.currentThread().getName() + ".logSyncer");
     coprocessorHost = new WALCoprocessorHost(this, conf);
+
+    startTestHlog();
   }
   
   // use reflection to search for getDefaultBlockSize(Path f)

@@ -29,10 +29,16 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
+import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.LargeTests;
+import org.apache.hadoop.hbase.MasterNotRunningException;
 import org.apache.hadoop.hbase.MiniHBaseCluster;
+import org.apache.hadoop.hbase.ZooKeeperConnectionException;
+import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
@@ -390,4 +396,33 @@ public class TestBlockReorder {
     Assert.assertEquals(host3, l.get(0).getLocations()[1].getHostName());
     Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
   }
+         /*
+  public void externalClusterTest() throws Exception {
+    final String zkQuorum = System.getProperty("ZK_QUORUM");
+    Assert.assertNotNull(zkQuorum);
+    String zkPort = System.getProperty("ZK_PORT");
+    Assert.assertNotNull(zkPort);
+
+    Configuration config = HBaseConfiguration.create();
+
+    config.set("hbase.zookeeper.quorum", zkQuorum);
+    config.set("hbase.zookeeper.property.clientPort", zkPort);
+
+    HBaseAdmin hbAdmin = new HBaseAdmin(config);
+
+    byte[] rd = (""+System.currentTimeMillis()).getBytes();
+    HTableDescriptor hbt = new HTableDescriptor(rd);
+    hbt.addFamily( new HColumnDescriptor(rd));
+    hbAdmin.createTable(hbt);
+    HTable table = new HTable(config, rd);
+
+    Put p = new Put(rd);
+    p.add(rd, rd, rd);
+    table.put(p);
+
+
+
+
+
+  }    */
 }
