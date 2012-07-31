@@ -152,65 +152,6 @@ public class HLog implements Syncable {
 
   private WALCoprocessorHost coprocessorHost;
 
-  static class CheckLocations extends Thread{
-    private void p(String s){
-      LOG.fatal("CheckLocations "+s);
-    }
-
-    HLog hl;
-    CheckLocations(HLog hl){
-      this.hl = hl;
-      setDaemon(true);
-      p("CheckLocations added");
-    }
-
-    private void work() throws Exception{
-      Thread.sleep(1000*60);
-      p("checking fs");
-      if (hl.fs == null) return;
-      p("checking outputfiles");
-      if (hl.outputfiles == null) return;
-      p("hl.outputfiles size="+ hl.outputfiles.size());
-      p("checking writer");
-      if (hl.writer == null) return;
-
-      ArrayList<Path> al = new ArrayList<Path>(hl.outputfiles.values());
-
-      SequenceFileLogWriter sw = (SequenceFileLogWriter) hl.writer;
-      if (sw.p != null) {
-        al.add(sw.p);
-      }
-
-      for (Path p :al){
-        FileStatus f = hl.fs.getFileStatus(p);
-        BlockLocation[] bls = hl.fs.getFileBlockLocations(f, 0, 1);
-        if (bls != null && bls.length >0 && bls[0].getHosts().length>0){
-          for (BlockLocation bl:bls){
-            for (String h:bl.getHosts()){
-              p(p+" "+h);
-            }
-            p("next block");
-          }
-        }
-        p("next file");
-      }
-      p("end of this iteration");
-    }
-
-    public void run(){
-      while(true){
-        try {
-          work();
-        } catch (Exception e) {
-          e.printStackTrace();
-        }
-      }
-    }
-  }
-
-  private void startTestHlog(){
-    new CheckLocations(this).start();
-  }
 
   static void resetLogReaderClass() {
     HLog.logReaderClass = null;
@@ -504,8 +445,6 @@ public class HLog implements Syncable {
     Threads.setDaemonThreadRunning(logSyncerThread.getThread(),
         Thread.currentThread().getName() + ".logSyncer");
     coprocessorHost = new WALCoprocessorHost(this, conf);
-
-    startTestHlog();
   }
   
   // use reflection to search for getDefaultBlockSize(Path f)
