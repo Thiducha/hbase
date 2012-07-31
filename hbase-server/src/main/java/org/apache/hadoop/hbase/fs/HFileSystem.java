@@ -200,7 +200,7 @@ public class HFileSystem extends FilterFileSystem {
     try {
       fs = FileSystem.get(conf);
     } catch (IOException e) {
-      LOG.warn("Can't get the file system from the conf", e);
+      LOG.warn("Can't get the file system from the conf.", e);
       return;
     }
 
@@ -220,7 +220,7 @@ public class HFileSystem extends FilterFileSystem {
     }
 
     try {
-      Field nf = DFSClient.class.getField("namenode");
+      Field nf = DFSClient.class.getDeclaredField("namenode");
       nf.setAccessible(true);
       Field modifiersField = Field.class.getDeclaredField("modifiers");
       modifiersField.setAccessible(true);
