@@ -142,11 +142,12 @@ public class TestBlockReorder {
     // Let's find the DN to kill. cluster.getDataNodes(int) is not on the same port, so wee need
     // to iterate ourselves.
     boolean ok = false;
+    String lookup = lbs[0].getHosts()[0];
     StringBuilder sb = new StringBuilder();
     for (DataNode dn : cluster.getDataNodes()) {
       final String dnName = dn.getDisplayName().split(":")[0];
       sb.append(dnName).append(' ');
-      if (name.equals(dnName)) {
+      if (lookup.equals(dnName)) {
         ok = true;
         LOG.info("killing datanode " + name);
         ipcPort = dn.ipcServer.getListenerAddress().getPort();
@@ -155,7 +156,7 @@ public class TestBlockReorder {
         break;
       }
     }
-    Assert.assertTrue("didn't find the server to kill, was looking for "+name+" found "+sb, ok);
+    Assert.assertTrue("didn't find the server to kill, was looking for "+lookup+" found "+sb, ok);
     LOG.info("ipc port= " + ipcPort);
 
 
