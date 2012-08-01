@@ -1766,7 +1766,8 @@ public class HLog implements Syncable {
    * The format is: / [base directory for hbase] / hbase / .logs / ServerName / logfile
    *
    */
-  public static ServerName getServerNameFromHLogDirectoryName(Configuration conf, String path) throws IOException {
+  public static ServerName getServerNameFromHLogDirectoryName(Configuration conf, String path)
+      throws IOException {
     if (path == null || path.length() <= HConstants.HREGION_LOGDIR_NAME.length())
       return null;
 

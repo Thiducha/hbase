@@ -53,7 +53,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -166,12 +165,10 @@ public class TestBlockReorder {
         new HFileSystem.ReorderBlocks() {
           @Override
           public void reorderBlocks(Configuration c, LocatedBlocks lbs, String src) {
-            LOG.fatal("AAAA REORDER");
             for (LocatedBlock lb : lbs.getLocatedBlocks()) {
               if (lb.getLocations().length > 1) {
-                LOG.info("HFileSystem AAAAA " + lb.getLocations()[0].getHostName());
                 if (lb.getLocations()[0].getHostName().equals(lookup)) {
-                  LOG.info("HFileSystem bad port, inverting");
+                  LOG.info("HFileSystem bad host, inverting");
                   DatanodeInfo tmp = lb.getLocations()[0];
                   lb.getLocations()[0] = lb.getLocations()[1];
                   lb.getLocations()[1] = tmp;
@@ -188,7 +185,6 @@ public class TestBlockReorder {
     // so we try 10 times;  with the reorder it will never last more than a few milli seconds
     for (int i = 0; i < 10; i++) {
       start = System.currentTimeMillis();
-      LOG.fatal("AAAA REORDER " + new Date());
 
       fin = dfs.open(p);
       Assert.assertTrue(toWrite == fin.readDouble());
@@ -314,7 +310,7 @@ public class TestBlockReorder {
         for (int y = 0; y < l.getLocatedBlocks().size() && done; y++) {
           done = (l.get(y).getLocations().length == 3);
         }
-      } while (l.get(0).getLocations().length != 3);
+      } while (!done);
 
       for (int y = 0; y < l.getLocatedBlocks().size() && done; y++) {
         Assert.assertEquals(host1, l.get(y).getLocations()[2].getHostName());
@@ -325,8 +321,7 @@ public class TestBlockReorder {
   private static ClientProtocol getNamenode(DFSClient dfsc) throws Exception {
     Field nf = DFSClient.class.getDeclaredField("namenode");
     nf.setAccessible(true);
-    ClientProtocol namenode = (ClientProtocol) nf.get(dfsc);
-    return namenode;
+    return (ClientProtocol) nf.get(dfsc);
   }
 
   /**

@@ -234,7 +234,7 @@ public class HFileSystem extends FilterFileSystem {
         return;
       }
 
-      ClientProtocol cp1 =  createReordoringProxy(namenode, lrb, conf);
+      ClientProtocol cp1 =  createReorderingProxy(namenode, lrb, conf);
       nf.set(dfsc, cp1);
       LOG.info("Added intercepting call to namenode#getBlockLocations");
     } catch (NoSuchFieldException e) {
@@ -244,10 +244,10 @@ public class HFileSystem extends FilterFileSystem {
     }
   }
 
-  private static ClientProtocol createReordoringProxy(final ClientProtocol cp,
+  private static ClientProtocol createReorderingProxy(final ClientProtocol cp,
                                                       final ReorderBlocks lrb,
                                                       final Configuration conf
-) {
+  ) {
     return (ClientProtocol) Proxy.newProxyInstance
         (cp.getClass().getClassLoader(),
             new Class[]{ClientProtocol.class},
@@ -301,8 +301,6 @@ public class HFileSystem extends FilterFileSystem {
               System.arraycopy(dnis, i+1, dnis, i, dnis.length-i-1);
               dnis[dnis.length - 1] = toLast;
               found = true;
-              LOG.debug("Moved the location "+toLast.getHostName()+" to the last place." +
-                  " locations size was "+dnis.length);
             }
           }
         }
