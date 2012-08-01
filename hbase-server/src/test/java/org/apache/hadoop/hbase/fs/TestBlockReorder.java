@@ -57,6 +57,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.util.Date;
 
@@ -76,12 +77,15 @@ public class TestBlockReorder {
   private MiniDFSCluster cluster;
   private HBaseTestingUtility htu;
   private DistributedFileSystem dfs;
-  private final String host1 = "localhost"; // A trick to active block reorder on the unit tests
+  private String host1 = null;
   private final String host2 = "host2";
   private final String host3 = "host3";
 
   @Before
   public void setUp() throws Exception {
+    host1 = InetAddress.getLocalHost().getHostName();
+    // A trick to active block reorder on the unit tests
+
     htu = new HBaseTestingUtility();
     htu.getConfiguration().setInt("dfs.block.size", 1024);// For the test with multiple blocks
     htu.getConfiguration().setBoolean("dfs.support.append", true);
