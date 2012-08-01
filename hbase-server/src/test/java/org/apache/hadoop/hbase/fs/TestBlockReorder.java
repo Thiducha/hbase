@@ -84,6 +84,7 @@ public class TestBlockReorder {
   @Before
   public void setUp() throws Exception {
     host1 = InetAddress.getLocalHost().getHostName();
+    LOG.info("My locahost name is "+host1);
     // A trick to active block reorder on the unit tests
 
     htu = new HBaseTestingUtility();
