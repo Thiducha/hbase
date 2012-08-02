@@ -239,6 +239,7 @@ public class TestBlockReorder {
 
     // We want to have one with the same name as the rs to check the reorder
     final String rsHostname = hbm.getRegionServer(0).getServerName().getHostname();
+    LOG.info("Starting a new datanode with name="+rsHostname);
     cluster.startDataNodes(
         conf, 1, true, null, new String[]{"/r4"}, new String[]{rsHostname}, null);
     cluster.stopDataNode(0);
