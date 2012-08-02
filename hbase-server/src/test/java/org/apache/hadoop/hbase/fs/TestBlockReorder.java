@@ -42,6 +42,7 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos;
+import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
@@ -65,6 +66,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 
 /**
@@ -232,20 +234,19 @@ public class TestBlockReorder {
     public ReorderMaster(Configuration conf) throws IOException, KeeperException,
         InterruptedException {
       super(conf);
-      LOG.warn("AAAAAAAAAAAAA");
     }
 
+    /**
+     * We're reimplementing this to set a specific name. This name will be the same
+     * as the one in the dfs list.
+     */
     @Override
     public RegionServerStatusProtos.RegionServerStartupResponse regionServerStartup(
         RpcController controller, RegionServerStatusProtos.RegionServerStartupRequest request)
         throws ServiceException {
-      LOG.warn("regionServerStartup "+this.getClass().getName());
+      LOG.warn("regionServerStartup " + this.getClass().getName());
 
-      //super.regionServerStartup(controller, request);
-
-      //InetAddress ia = getRemoteInetAddress(request.getPort(), request.getServerStartCode());
-
-      ServerName sn = new ServerName(host1+":"+request.getPort(),request.getServerStartCode());
+      ServerName sn = new ServerName(host1 + ":" + request.getPort(), request.getServerStartCode());
       this.serverManager.recordNewServer(sn, ServerLoad.EMPTY_SERVERLOAD);
 
       RegionServerStatusProtos.RegionServerStartupResponse.Builder resp = createConfigurationSubset();
@@ -266,14 +267,40 @@ public class TestBlockReorder {
     byte[] sb = "sb".getBytes();
     htu.startMiniZKCluster();
 
-    MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1, ReorderMaster.class, null);
+    MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1);
     hbm.waitForActiveAndReadyMaster();
     hbm.getRegionServer(0).waitForServerOnline();
 
+    String host4 = hbm.getRegionServer(0).getServerName().getHostname();
+    cluster.startDataNodes(conf, 1, true, null, new String[]{"/r4"}, new String[]{host4}, null);
+    cluster.waitClusterUp();
+
+    // We're going to increase this for the new RS.
+    final int repCount = 4;
+    conf.setInt("dfs.replication", repCount);
+
+    hbm.startRegionServer();
+    hbm.waitOnRegionServer(2);
+
+    HRegionServer targetRs = hbm.getRegionServer(1);
+
     // We use the regionserver file system & conf as we expect it to have the hook.
-    conf = hbm.getRegionServer(0).getConfiguration();
-    HFileSystem rfs = (HFileSystem) hbm.getRegionServer(0).getFileSystem();
+    conf = targetRs.getConfiguration();
+    HFileSystem rfs = (HFileSystem) targetRs.getFileSystem();
     HTable h = htu.createTable("table".getBytes(), sb);
+    htu.waitTableAvailable(sb, 10000);
+
+    String encodedRegion = h.getRegionLocation(sb).getRegionInfo().getEncodedName();
+    if (targetRs.getFromOnlineRegions(encodedRegion) == null) {
+      htu.getHBaseAdmin().move(
+          h.getRegionLocation(sb).getRegionInfo().getEncodedNameAsBytes(),
+          hbm.getRegionServer(1).getServerName().getVersionedBytes()
+      );
+    }
+    Thread.sleep(1000);
+    htu.waitTableAvailable(sb, 10000);
+
+    Assert.assertNotNull(targetRs.getFromOnlineRegions(encodedRegion));
 
     // Insert enough data to get multiple blocks
     for (int i = 0; i < 1024; i++) {
@@ -285,7 +312,7 @@ public class TestBlockReorder {
     // Now we need to find the log file, its locations, and stop it
     String rootDir = FileSystem.get(conf).makeQualified(new Path(
         conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME +
-            "/" + hbm.getRegionServer(0).getServerName().toString())).toUri().getPath();
+            "/" + targetRs.getServerName().toString())).toUri().getPath();
 
     DirectoryListing dl = dfs.getClient().listPaths(rootDir, HdfsFileStatus.EMPTY_NAME);
     // If we don't find anything it means that we're wrong on the path naming rules
@@ -300,11 +327,11 @@ public class TestBlockReorder {
 
     // We will try only one file
     Assert.assertNotNull(hfs[hfs.length - 1]);
-    String logFile = rootDir + "/" + hfs[0].getLocalName();
+    String logFile = rootDir + "/" + hfs[hfs.length - 1].getLocalName();
     LOG.info("Checking log file: " + logFile);
 
     // Checking the underlying file system. Multiple times as the order is random
-    testFromDFS(dfs, logFile);
+    testFromDFS(dfs, logFile, repCount);
 
     // Now checking that the hook is up and running
     // We can't call directly getBlockLocations, it's not available in HFileSystem
@@ -319,20 +346,21 @@ public class TestBlockReorder {
         blocs = rfs.getFileBlockLocations(fsLog, 0, 1);
         Assert.assertNotNull("Can't get block locations for " + logFile, blocs);
         Assert.assertTrue(blocs.length > 0);
-      } while (blocs[0].getHosts().length != 3);
+      } while (blocs[0].getHosts().length != repCount);
 
-      Assert.assertEquals(host1, blocs[0].getHosts()[2]);
-      Assert.assertNotSame(host1, blocs[0].getHosts()[1]);
-      Assert.assertNotSame(host1, blocs[0].getHosts()[0]);
+      Assert.assertEquals(host1, blocs[0].getHosts()[repCount - 1]);
+      for (int y = 0; y < repCount - 1; y++) {
+        Assert.assertNotSame(host1, blocs[0].getHosts()[y]);
+      }
     }
 
     // now from the master
     DistributedFileSystem mdfs = (DistributedFileSystem)
         hbm.getMaster().getMasterFileSystem().getFileSystem();
-    testFromDFS(mdfs, logFile);
+    testFromDFS(mdfs, logFile, repCount);
   }
 
-  private void testFromDFS(DistributedFileSystem dfs, String src) throws Exception {
+  private void testFromDFS(DistributedFileSystem dfs, String src, int repCount) throws Exception {
     // Multiple times as the order is random
     for (int i = 0; i < 10; i++) {
       LocatedBlocks l;
@@ -348,12 +376,12 @@ public class TestBlockReorder {
 
         done = true;
         for (int y = 0; y < l.getLocatedBlocks().size() && done; y++) {
-          done = (l.get(y).getLocations().length == 3);
+          done = (l.get(y).getLocations().length == repCount);
         }
       } while (!done);
 
       for (int y = 0; y < l.getLocatedBlocks().size() && done; y++) {
-        Assert.assertEquals(host1, l.get(y).getLocations()[2].getHostName());
+        Assert.assertEquals(host1, l.get(y).getLocations()[repCount - 1].getHostName());
       }
     }
   }
