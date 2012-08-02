@@ -235,7 +235,7 @@ public class TestBlockReorder {
     private AtomicInteger port = new AtomicInteger(-1);
     public void run(){
       try {
-        ServerSocket ss = new ServerSocket();
+        ServerSocket ss = new ServerSocket(0);
         port.set( ss.getLocalPort() );
         ss.accept();
         while(!done){
