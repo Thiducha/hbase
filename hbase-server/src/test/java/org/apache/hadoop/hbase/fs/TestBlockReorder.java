@@ -297,7 +297,9 @@ public class TestBlockReorder {
             LOG.info(bl.getHosts()[i] +"    "+logFile);
             Assert.assertNotSame(bl.getHosts()[i], host4);
           }
-          if (host4.equals(bl.getHosts().length)) {
+          String last = bl.getHosts()[bl.getHosts().length - 1];
+          LOG.info(last +"    "+logFile);
+          if (host4.equals(last)) {
             nbTest++;
             LOG.info(logFile + " is on the new datanode and is ok");
             if (bl.getHosts().length == 3) {
