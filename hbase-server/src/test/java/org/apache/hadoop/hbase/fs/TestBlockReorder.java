@@ -83,9 +83,10 @@ public class TestBlockReorder {
 
   @Before
   public void setUp() throws Exception {
-    host1 = InetAddress.getLocalHost().getHostName();
+    host1 = InetAddress.getByName("127.0.0.1").getHostName();
     LOG.info("My locahost name is "+host1);
-    // A trick to active block reorder on the unit tests
+    // A trick to active block reorder on the unit tests. We want to have the same name for the
+    //  hdfs node name and the hbase regionserver name.
 
     htu = new HBaseTestingUtility();
     htu.getConfiguration().setInt("dfs.block.size", 1024);// For the test with multiple blocks
