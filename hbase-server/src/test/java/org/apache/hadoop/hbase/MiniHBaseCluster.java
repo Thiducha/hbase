@@ -191,7 +191,7 @@ public class MiniHBaseCluster {
     try {
       String masterClassName = conf.get("test.hbase.master.class",
           HMaster.class.getName());
-      String regionserverClassName = conf.get("test.hbase.master.class",
+      String regionserverClassName = conf.get("test.hbase.regionserver.class",
           MiniHBaseCluster.MiniHBaseClusterRegionServer.class.getName());
 
       Class<? extends HMaster> masterClass = (Class<? extends HMaster>)
