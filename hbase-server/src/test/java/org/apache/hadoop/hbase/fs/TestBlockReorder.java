@@ -234,10 +234,11 @@ public class TestBlockReorder {
   }
 
 
-  public static class MyHMaster extends HMaster {
+  public static class ReorderMaster extends HMaster {
     public MyHMaster(Configuration conf) throws IOException, KeeperException,
         InterruptedException {
       super(conf);
+      LOG.warn("AAAAAAAAAAAAA");
     }
 
     @Override
@@ -271,7 +272,7 @@ public class TestBlockReorder {
     byte[] sb = "sb".getBytes();
     htu.startMiniZKCluster();
 
-    MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1, MyHMaster.class, null);
+    MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1, ReorderMaster.class, null);
     hbm.waitForActiveAndReadyMaster();
     hbm.getRegionServer(0).waitForServerOnline();
 
