@@ -234,14 +234,12 @@ public class TestBlockReorder {
     hbm.getRegionServer(0).waitForServerOnline();
 
     // We want to have a datanode with the same name as the region server, so
-    //  we're going to get the regionservername, start a new datanode with this name.
-    //  We can't stop a datanode (nasty hdfs bugs), so we need to increase the replication count
-    // and this mean having a new region server.
+    //  we're going to get the regionservername, and start a new datanode with this name.
     String host4 = hbm.getRegionServer(0).getServerName().getHostname();
+    LOG.info("Starting a new datanode with the name=" + host4);
     cluster.startDataNodes(conf, 1, true, null, new String[]{"/r4"}, new String[]{host4}, null);
     cluster.waitClusterUp();
 
-    // We're going to increase this for the new RS.
     final int repCount = 3;
     HRegionServer targetRs = hbm.getRegionServer(0);
 
@@ -254,7 +252,7 @@ public class TestBlockReorder {
     // with the same node will be used. We can't really stop an existing datanode, this would
     // make us fall in nasty hdfs bugs/issues. So we're going to try multiple times.
 
-    // Now we need to find the log file, its locations, and kook at it
+    // Now we need to find the log file, its locations, and look at it
     String rootDir = FileSystem.get(conf).makeQualified(new Path(
         conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME +
             "/" + targetRs.getServerName().toString())).toUri().getPath();
@@ -283,19 +281,24 @@ public class TestBlockReorder {
       for (HdfsFileStatus hf : hfs) {
         LOG.info("Log file found: " + hf.getLocalName() + " in " + rootDir);
         String logFile = rootDir + "/" + hf.getLocalName();
-        LOG.info("Checking log file: " + logFile);
         FileStatus fsLog = rfs.getFileStatus(new Path(logFile));
 
+        LOG.info("Checking log file: " + logFile);
         // Now checking that the hook is up and running
         // We can't call directly getBlockLocations, it's not available in HFileSystem
         // We're trying multiple times to be sure, as the order is random
-        for (BlockLocation bl : rfs.getFileBlockLocations(fsLog, 0, 1)) {
+
+        BlockLocation[] bls = rfs.getFileBlockLocations(fsLog, 0, 1);
+        if (bls.length > 0) {
+          BlockLocation bl = bls[0];
+
+          LOG.info(bl.getHosts().length + " replicas for block 0 in " + logFile);
           for (int i = 0; i < bl.getHosts().length - 1; i++) {
             Assert.assertNotSame(bl.getHosts()[i], host4);
           }
           if (host4.equals(bl.getHosts().length)) {
             nbTest++;
-            LOG.info(logFile+ " is on the new datanode and is ok");
+            LOG.info(logFile + " is on the new datanode and is ok");
             if (bl.getHosts().length == 3) {
               // We can test this case from the file system as well
               // Checking the underlying file system. Multiple times as the order is random
