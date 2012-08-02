@@ -19,8 +19,6 @@
 package org.apache.hadoop.hbase.fs;
 
 
-import com.google.protobuf.RpcController;
-import com.google.protobuf.ServiceException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.commons.logging.impl.Log4JLogger;
@@ -35,13 +33,8 @@ import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.MiniHBaseCluster;
-import org.apache.hadoop.hbase.ServerLoad;
-import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.master.HMaster;
-import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
-import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hdfs.DFSClient;
@@ -55,18 +48,18 @@ import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.server.datanode.DataNode;
 import org.apache.log4j.Level;
-import org.apache.zookeeper.KeeperException;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.ServerSocket;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Tests for the hdfs fix from HBASE-6435.
@@ -228,36 +221,6 @@ public class TestBlockReorder {
     }
   }
 
-
-  public static class ReorderMaster extends HMaster {
-    public ReorderMaster(Configuration conf) throws IOException, KeeperException,
-        InterruptedException {
-      super(conf);
-    }
-
-    /**
-     * We're reimplementing this to set a specific name. This name will be the same
-     * as the one in the dfs list.
-     */
-    @Override
-    public RegionServerStatusProtos.RegionServerStartupResponse regionServerStartup(
-        RpcController controller, RegionServerStatusProtos.RegionServerStartupRequest request)
-        throws ServiceException {
-      LOG.warn("regionServerStartup " + this.getClass().getName());
-
-      ServerName sn = new ServerName(host1 + ":" + request.getPort(), request.getServerStartCode());
-      this.serverManager.recordNewServer(sn, ServerLoad.EMPTY_SERVERLOAD);
-
-      RegionServerStatusProtos.RegionServerStartupResponse.Builder resp = createConfigurationSubset();
-      HBaseProtos.NameStringPair.Builder entry = HBaseProtos.NameStringPair.newBuilder()
-          .setName(HConstants.KEY_FOR_HOSTNAME_SEEN_BY_MASTER)
-          .setValue(host1);
-      resp.addMapEntries(entry.build());
-
-      return resp.build();
-    }
-  }
-
   /**
    * Test that the hook works within HBase, including when there are multiple blocks.
    */
@@ -270,17 +233,17 @@ public class TestBlockReorder {
     hbm.waitForActiveAndReadyMaster();
     hbm.getRegionServer(0).waitForServerOnline();
 
+    // We want to have a datanode with the same name as the region server, so
+    //  we're going to get the regionservername, start a new datanode with this name.
+    //  We can't stop a datanode (nasty hdfs bugs), so we need to increase the replication count
+    // and this mean having a new region server.
     String host4 = hbm.getRegionServer(0).getServerName().getHostname();
     cluster.startDataNodes(conf, 1, true, null, new String[]{"/r4"}, new String[]{host4}, null);
     cluster.waitClusterUp();
 
     // We're going to increase this for the new RS.
-    final int repCount = 4;
-    conf.setInt("dfs.replication", repCount);
-
-    hbm.startRegionServer();
-    HRegionServer targetRs = hbm.getRegionServer(1);
-    while(targetRs.isOnline()) { Thread.sleep(1); }
+    final int repCount = 3;
+    HRegionServer targetRs = hbm.getRegionServer(0);
 
     // We use the regionserver file system & conf as we expect it to have the hook.
     conf = targetRs.getConfiguration();
@@ -288,74 +251,64 @@ public class TestBlockReorder {
     HTable h = htu.createTable("table".getBytes(), sb);
     htu.waitTableAvailable(sb, 10000);
 
-    String encodedRegion = h.getRegionLocation(sb).getRegionInfo().getEncodedName();
-    if (targetRs.getFromOnlineRegions(encodedRegion) == null) {
-      htu.getHBaseAdmin().move(
-          h.getRegionLocation(sb).getRegionInfo().getEncodedNameAsBytes(),
-          hbm.getRegionServer(1).getServerName().getVersionedBytes()
-      );
-    }
-    Thread.sleep(1000);
-    htu.waitTableAvailable(sb, 10000);
+    // Now, we have 4 datanodes and a replication count of 3. So we don't know if the datanode
+    // with the same node will be used. We can't really stop an existing datanode, this would
+    // make us fall in nasty hdfs bugs/issues. So we're going to try multiple times.
 
-    Assert.assertNotNull(targetRs.getFromOnlineRegions(encodedRegion));
-
-    // Insert enough data to get multiple blocks
-    for (int i = 0; i < 1024; i++) {
-      Put p = new Put(sb);
-      p.add(sb, sb, sb);
-      h.put(p);
-    }
-
-    // Now we need to find the log file, its locations, and stop it
+    // Now we need to find the log file, its locations, and kook at it
     String rootDir = FileSystem.get(conf).makeQualified(new Path(
         conf.get(HConstants.HBASE_DIR) + "/" + HConstants.HREGION_LOGDIR_NAME +
             "/" + targetRs.getServerName().toString())).toUri().getPath();
 
-    DirectoryListing dl = dfs.getClient().listPaths(rootDir, HdfsFileStatus.EMPTY_NAME);
-    // If we don't find anything it means that we're wrong on the path naming rules
-    Assert.assertNotNull("Can't find: " + rootDir, dl);
-    HdfsFileStatus[] hfs = dl.getPartialListing();
-
-    // As we wrote a put, we should have at least one log file.
-    Assert.assertTrue(hfs.length >= 1);
-    for (HdfsFileStatus hf : hfs) {
-      LOG.info("Log file found: " + hf.getLocalName() + " in " + rootDir);
-    }
-
-    // We will try only one file
-    Assert.assertNotNull(hfs[hfs.length - 1]);
-    String logFile = rootDir + "/" + hfs[hfs.length - 1].getLocalName();
-    LOG.info("Checking log file: " + logFile);
-
-    // Checking the underlying file system. Multiple times as the order is random
-    testFromDFS(dfs, logFile, repCount);
-
-    // Now checking that the hook is up and running
-    // We can't call directly getBlockLocations, it's not available in HFileSystem
-    // We're trying ten times to be sure, as the order is random
-    FileStatus fsLog = rfs.getFileStatus(new Path(logFile));
-    for (int i = 0; i < 10; i++) {
-      BlockLocation[] blocs;
-      // The NN gets the block list asynchronously, so we may need multiple tries to get the list
-      final long max = System.currentTimeMillis() + 10000;
-      do {
-        Assert.assertTrue("Can't get enouth replica.", System.currentTimeMillis() < max);
-        blocs = rfs.getFileBlockLocations(fsLog, 0, 1);
-        Assert.assertNotNull("Can't get block locations for " + logFile, blocs);
-        Assert.assertTrue(blocs.length > 0);
-      } while (blocs[0].getHosts().length != repCount);
-
-      Assert.assertEquals(host1, blocs[0].getHosts()[repCount - 1]);
-      for (int y = 0; y < repCount - 1; y++) {
-        Assert.assertNotSame(host1, blocs[0].getHosts()[y]);
-      }
-    }
-
-    // now from the master
     DistributedFileSystem mdfs = (DistributedFileSystem)
         hbm.getMaster().getMasterFileSystem().getFileSystem();
-    testFromDFS(mdfs, logFile, repCount);
+
+
+    int nbTest = 0;
+    while (nbTest < 20) {
+      htu.getHBaseAdmin().rollHLogWriter(targetRs.getServerName().toString());
+
+      // We need a sleep as the namenode is informed asynchronously
+      Thread.sleep(100);
+
+      // insert one put to ensure a minimal size
+      Put p = new Put(sb);
+      p.add(sb, sb, sb);
+      h.put(p);
+
+      DirectoryListing dl = dfs.getClient().listPaths(rootDir, HdfsFileStatus.EMPTY_NAME);
+      HdfsFileStatus[] hfs = dl.getPartialListing();
+
+      // As we wrote a put, we should have at least one log file.
+      Assert.assertTrue(hfs.length >= 1);
+      for (HdfsFileStatus hf : hfs) {
+        LOG.info("Log file found: " + hf.getLocalName() + " in " + rootDir);
+        String logFile = rootDir + "/" + hf.getLocalName();
+        LOG.info("Checking log file: " + logFile);
+        FileStatus fsLog = rfs.getFileStatus(new Path(logFile));
+
+        // Now checking that the hook is up and running
+        // We can't call directly getBlockLocations, it's not available in HFileSystem
+        // We're trying multiple times to be sure, as the order is random
+        for (BlockLocation bl : rfs.getFileBlockLocations(fsLog, 0, 1)) {
+          for (int i = 0; i < bl.getHosts().length - 1; i++) {
+            Assert.assertNotSame(bl.getHosts()[i], host4);
+          }
+          if (host4.equals(bl.getHosts().length)) {
+            nbTest++;
+            LOG.info(logFile+ " is on the new datanode and is ok");
+            if (bl.getHosts().length == 3) {
+              // We can test this case from the file system as well
+              // Checking the underlying file system. Multiple times as the order is random
+              testFromDFS(dfs, logFile, repCount);
+
+              // now from the master
+              testFromDFS(mdfs, logFile, repCount);
+            }
+          }
+        }
+      }
+    }
   }
 
   private void testFromDFS(DistributedFileSystem dfs, String src, int repCount) throws Exception {

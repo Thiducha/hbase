@@ -244,7 +244,7 @@ Server {
   private MasterFileSystem fileSystemManager;
 
   // server manager to deal with region server info
-  protected ServerManager serverManager;
+  private ServerManager serverManager;
 
   // manager of assignment nodes in zookeeper
   AssignmentManager assignmentManager;
@@ -1094,7 +1094,6 @@ Server {
   public RegionServerStartupResponse regionServerStartup(
       RpcController controller, RegionServerStartupRequest request) throws ServiceException {
     // Register with server manager
-    LOG.warn("regionServerStartup");
     try {
       InetAddress ia = getRemoteInetAddress(request.getPort(), request.getServerStartCode());
       ServerName rs = this.serverManager.regionServerStartup(ia, request.getPort(),
