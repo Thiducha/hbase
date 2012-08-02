@@ -66,7 +66,6 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.net.InetAddress;
 import java.net.ServerSocket;
 
 /**
@@ -280,9 +279,8 @@ public class TestBlockReorder {
     conf.setInt("dfs.replication", repCount);
 
     hbm.startRegionServer();
-    hbm.waitOnRegionServer(2);
-
     HRegionServer targetRs = hbm.getRegionServer(1);
+    while(targetRs.isOnline()) { Thread.sleep(1); }
 
     // We use the regionserver file system & conf as we expect it to have the hook.
     conf = targetRs.getConfiguration();
