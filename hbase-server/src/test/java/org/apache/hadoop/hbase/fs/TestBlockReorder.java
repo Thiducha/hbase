@@ -299,16 +299,16 @@ public class TestBlockReorder {
           }
           String last = bl.getHosts()[bl.getHosts().length - 1];
           LOG.info(last +"    "+logFile);
-          if (host4.equals(last)) {
+          if (host4.equals(bl.getHosts().length)) {
             nbTest++;
             LOG.info(logFile + " is on the new datanode and is ok");
             if (bl.getHosts().length == 3) {
               // We can test this case from the file system as well
               // Checking the underlying file system. Multiple times as the order is random
-              testFromDFS(dfs, logFile, repCount);
+              testFromDFS(dfs, logFile, repCount, host4);
 
               // now from the master
-              testFromDFS(mdfs, logFile, repCount);
+              testFromDFS(mdfs, logFile, repCount, host4);
             }
           }
         }
@@ -316,7 +316,8 @@ public class TestBlockReorder {
     }
   }
 
-  private void testFromDFS(DistributedFileSystem dfs, String src, int repCount) throws Exception {
+  private void testFromDFS(DistributedFileSystem dfs, String src, int repCount, String localhost)
+      throws Exception {
     // Multiple times as the order is random
     for (int i = 0; i < 10; i++) {
       LocatedBlocks l;
@@ -337,7 +338,7 @@ public class TestBlockReorder {
       } while (!done);
 
       for (int y = 0; y < l.getLocatedBlocks().size() && done; y++) {
-        Assert.assertEquals(host1, l.get(y).getLocations()[repCount - 1].getHostName());
+        Assert.assertEquals(localhost, l.get(y).getLocations()[repCount - 1].getHostName());
       }
     }
   }
