@@ -249,7 +249,6 @@ public class TestBlockReorder {
     conf = targetRs.getConfiguration();
     HFileSystem rfs = (HFileSystem) targetRs.getFileSystem();
     HTable h = htu.createTable("table".getBytes(), sb);
-    htu.waitTableAvailable(sb, 10000);
 
     // Now, we have 4 datanodes and a replication count of 3. So we don't know if the datanode
     // with the same node will be used. We can't really stop an existing datanode, this would
