@@ -76,11 +76,20 @@ public class MiniHBaseCluster {
    * @throws IOException
    */
   public MiniHBaseCluster(Configuration conf, int numMasters,
-      int numRegionServers)
-  throws IOException, InterruptedException {
+                             int numRegionServers)
+      throws IOException, InterruptedException {
     this.conf = conf;
     conf.set(HConstants.MASTER_PORT, "0");
-    init(numMasters, numRegionServers);
+    init(numMasters, numRegionServers, null, null);
+  }
+
+  public MiniHBaseCluster(Configuration conf, int numMasters, int numRegionServers,
+         Class<? extends HMaster> masterClass,
+         Class<? extends MiniHBaseCluster.MiniHBaseClusterRegionServer> regionserverClass)
+      throws IOException, InterruptedException {
+    this.conf = conf;
+    conf.set(HConstants.MASTER_PORT, "0");
+    init(numMasters, numRegionServers, masterClass, regionserverClass);
   }
 
   public Configuration getConfiguration() {
@@ -186,21 +195,17 @@ public class MiniHBaseCluster {
     }
   }
 
-  private void init(final int nMasterNodes, final int nRegionNodes)
+  private void init(final int nMasterNodes, final int nRegionNodes,
+                 Class<? extends HMaster> masterClass,
+                 Class<? extends MiniHBaseCluster.MiniHBaseClusterRegionServer> regionserverClass)
   throws IOException, InterruptedException {
     try {
-      String masterClassName = conf.get("test.hbase.master.class",
-          HMaster.class.getName());
-      String regionserverClassName = conf.get("test.hbase.regionserver.class",
-          MiniHBaseCluster.MiniHBaseClusterRegionServer.class.getName());
-
-      Class<? extends HMaster> masterClass = (Class<? extends HMaster>)
-          Class.forName(masterClassName, false, getClass().getClassLoader());
-
-      Class<? extends MiniHBaseCluster.MiniHBaseClusterRegionServer> regionserverClass =
-          (Class<? extends MiniHBaseCluster.MiniHBaseClusterRegionServer>)
-          Class.forName(regionserverClassName, false, getClass().getClassLoader());
-
+      if (masterClass == null){
+        masterClass =  HMaster.class;
+      }
+      if (regionserverClass == null){
+        regionserverClass = MiniHBaseCluster.MiniHBaseClusterRegionServer.class;
+      }
 
       // start up a LocalHBaseCluster
       hbaseCluster = new LocalHBaseCluster(conf, nMasterNodes, 0,

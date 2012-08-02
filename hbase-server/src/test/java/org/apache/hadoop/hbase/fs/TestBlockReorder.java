@@ -263,9 +263,7 @@ public class TestBlockReorder {
     byte[] sb = "sb".getBytes();
     htu.startMiniZKCluster();
 
-    conf.set("test.hbase.master.class", MyHMaster.class.getName());
-
-    MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1);
+    MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1, MyHMaster.class, null);
     hbm.waitForActiveAndReadyMaster();
     hbm.getRegionServer(0).waitForServerOnline();
 

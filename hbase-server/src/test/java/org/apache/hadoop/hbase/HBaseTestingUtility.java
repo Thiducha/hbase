@@ -656,6 +656,11 @@ public class HBaseTestingUtility {
     return startMiniHBaseCluster(numMasters, numSlaves);
   }
 
+  public MiniHBaseCluster startMiniHBaseCluster(final int numMasters, final int numSlaves)
+      throws IOException, InterruptedException{
+    return startMiniHBaseCluster(numMasters, numSlaves, null, null);
+  }
+
   /**
    * Starts up mini hbase cluster.  Usually used after call to
    * {@link #startMiniCluster(int, int)} when doing stepped startup of clusters.
@@ -668,7 +673,8 @@ public class HBaseTestingUtility {
    * @see {@link #startMiniCluster()}
    */
   public MiniHBaseCluster startMiniHBaseCluster(final int numMasters,
-      final int numSlaves)
+        final int numSlaves, Class<? extends HMaster> masterClass,
+        Class<? extends MiniHBaseCluster.MiniHBaseClusterRegionServer> regionserverClass)
   throws IOException, InterruptedException {
     // Now do the mini hbase cluster.  Set the hbase.rootdir in config.
     createRootDir();
