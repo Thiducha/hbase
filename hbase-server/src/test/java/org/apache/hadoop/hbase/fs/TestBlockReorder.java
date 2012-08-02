@@ -52,17 +52,12 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
-import sun.rmi.runtime.NewThreadAction;
 
-import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Date;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -87,11 +82,10 @@ public class TestBlockReorder {
 
   @Before
   public void setUp() throws Exception {
-    //host1 = InetAddress.getByName("127.0.0.1").getHostName();
-    host1 = guessHBaseHostname();
-    LOG.info("My locahost name is "+host1);
     // A trick to active block reorder on the unit tests. We want to have the same name for the
     //  hdfs node name and the hbase regionserver name.
+    host1 = guessHBaseHostname();
+    LOG.info("My locahost name is "+host1);
 
     htu = new HBaseTestingUtility();
     htu.getConfiguration().setInt("dfs.block.size", 1024);// For the test with multiple blocks
@@ -275,16 +269,7 @@ public class TestBlockReorder {
     MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1);
     hbm.waitForActiveAndReadyMaster();
     hbm.getRegionServer(0).waitForServerOnline();
-                                 /*
-    // We want to have one with the same name as the rs to check the reorder
-    final String rsHostname = hbm.getRegionServer(0).getServerName().getHostname();
-    LOG.info("Starting a new datanode with name="+rsHostname);
-    cluster.startDataNodes(
-        conf, 1, true, null, new String[]{"/r4"}, new String[]{rsHostname}, null);
-    cluster.waitClusterUp();
-    // We want only 3 datanodes to be sure the new one will used
-    cluster.stopDataNode(0);
-                             */
+
     // We use the regionserver file system & conf as we expect it to have the hook.
     conf = hbm.getRegionServer(0).getConfiguration();
     HFileSystem rfs = (HFileSystem) hbm.getRegionServer(0).getFileSystem();

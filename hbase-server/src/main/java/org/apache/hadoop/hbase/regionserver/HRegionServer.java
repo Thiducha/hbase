@@ -1748,7 +1748,7 @@ public class  HRegionServer implements ClientProtocol,
    * logs but it does close socket in case want to bring up server on old
    * hostname+port immediately.
    */
-  public void kill() {
+  protected void kill() {
     this.killed = true;
     abort("Simulated kill");
   }
