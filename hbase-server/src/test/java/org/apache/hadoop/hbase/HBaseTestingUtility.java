@@ -685,7 +685,8 @@ public class HBaseTestingUtility {
     conf.setInt("hbase.master.wait.on.regionservers.maxtostart", numSlaves);
 
     Configuration c = new Configuration(this.conf);
-    this.hbaseCluster = new MiniHBaseCluster(c, numMasters, numSlaves);
+    this.hbaseCluster =
+        new MiniHBaseCluster(c, numMasters, numSlaves, masterClass, regionserverClass);
     // Don't leave here till we've done a successful scan of the .META.
     HTable t = new HTable(c, HConstants.META_TABLE_NAME);
     ResultScanner s = t.getScanner(new Scan());
