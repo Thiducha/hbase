@@ -235,7 +235,7 @@ public class TestBlockReorder {
 
 
   public static class ReorderMaster extends HMaster {
-    public MyHMaster(Configuration conf) throws IOException, KeeperException,
+    public ReorderMaster(Configuration conf) throws IOException, KeeperException,
         InterruptedException {
       super(conf);
       LOG.warn("AAAAAAAAAAAAA");
