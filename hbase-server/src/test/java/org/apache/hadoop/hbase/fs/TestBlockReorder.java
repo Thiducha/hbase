@@ -292,8 +292,9 @@ public class TestBlockReorder {
         if (bls.length > 0) {
           BlockLocation bl = bls[0];
 
-          LOG.info(bl.getHosts().length + " replicas for block 0 in " + logFile+ " "+bl.getHosts());
+          LOG.info(bl.getHosts().length + " replicas for block 0 in " + logFile+ " ");
           for (int i = 0; i < bl.getHosts().length - 1; i++) {
+            LOG.info(bl.getHosts()[i] +"    "+logFile);
             Assert.assertNotSame(bl.getHosts()[i], host4);
           }
           if (host4.equals(bl.getHosts().length)) {
