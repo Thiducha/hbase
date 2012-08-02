@@ -113,7 +113,6 @@ public class TestBlockReorder {
     htu.shutdownMiniCluster();
   }
 
-
   /**
    * Test that we're can add a hook, and that this hook works when we try to read the file in HDFS.
    */
@@ -170,7 +169,8 @@ public class TestBlockReorder {
         break;
       }
     }
-    Assert.assertTrue("didn't find the server to kill, was looking for " + lookup + " found " + sb, ok);
+    Assert.assertTrue(
+        "didn't find the server to kill, was looking for " + lookup + " found " + sb, ok);
     LOG.info("ipc port= " + ipcPort);
 
     // Add the hook, with an implementation checking that we don't use the port we've just killed.
@@ -244,6 +244,8 @@ public class TestBlockReorder {
     public RegionServerStatusProtos.RegionServerStartupResponse regionServerStartup(
         RpcController controller, RegionServerStatusProtos.RegionServerStartupRequest request)
         throws ServiceException {
+      LOG.warn("regionServerStartup "+this.getClass().getName());
+
       //super.regionServerStartup(controller, request);
 
       //InetAddress ia = getRemoteInetAddress(request.getPort(), request.getServerStartCode());

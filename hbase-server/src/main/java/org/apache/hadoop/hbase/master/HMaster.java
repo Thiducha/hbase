@@ -1094,6 +1094,7 @@ Server {
   public RegionServerStartupResponse regionServerStartup(
       RpcController controller, RegionServerStartupRequest request) throws ServiceException {
     // Register with server manager
+    LOG.warn("regionServerStartup");
     try {
       InetAddress ia = getRemoteInetAddress(request.getPort(), request.getServerStartCode());
       ServerName rs = this.serverManager.regionServerStartup(ia, request.getPort(),
