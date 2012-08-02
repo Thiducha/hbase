@@ -251,7 +251,6 @@ public class TestBlockReorder {
       ServerName sn = new ServerName(host1+":"+request.getPort(),request.getServerStartCode());
       this.serverManager.recordNewServer(sn, ServerLoad.EMPTY_SERVERLOAD);
 
-
       RegionServerStatusProtos.RegionServerStartupResponse.Builder resp = createConfigurationSubset();
       HBaseProtos.NameStringPair.Builder entry = HBaseProtos.NameStringPair.newBuilder()
           .setName(HConstants.KEY_FOR_HOSTNAME_SEEN_BY_MASTER)
@@ -261,7 +260,6 @@ public class TestBlockReorder {
       return resp.build();
     }
   }
-
 
   /**
    * Test that the hook works within HBase, including when there are multiple blocks.
@@ -476,4 +474,8 @@ public class TestBlockReorder {
     Assert.assertEquals(host3, l.get(0).getLocations()[1].getHostName());
     Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
   }
+
+  @org.junit.Rule
+  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
+      new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
