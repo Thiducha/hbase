@@ -233,7 +233,7 @@ public class TestBlockReorder {
   }
 
 
-  static class MyHMaster extends HMaster {
+  public static class MyHMaster extends HMaster {
     public MyHMaster(Configuration conf) throws IOException, KeeperException,
         InterruptedException {
       super(conf);
