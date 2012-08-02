@@ -52,14 +52,18 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
+import sun.rmi.runtime.NewThreadAction;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.util.Date;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Tests for the hdfs fix from HBASE-6435.
@@ -77,14 +81,15 @@ public class TestBlockReorder {
   private MiniDFSCluster cluster;
   private HBaseTestingUtility htu;
   private DistributedFileSystem dfs;
-  private final String host1 = "host2";
+  private final String host1 = "host1";
   private final String host2 = "host2";
   private final String host3 = "host3";
 
   @Before
   public void setUp() throws Exception {
     //host1 = InetAddress.getByName("127.0.0.1").getHostName();
-    //LOG.info("My locahost name is "+host1);
+    String h = guessHBaseHostname();
+    LOG.info("My locahost name is "+h);
     // A trick to active block reorder on the unit tests. We want to have the same name for the
     //  hdfs node name and the hbase regionserver name.
 
@@ -225,12 +230,46 @@ public class TestBlockReorder {
       return res;
     }
   }
+  static class SocketThread extends Thread{
+    public volatile boolean done = false;
+    private AtomicInteger port = new AtomicInteger(-1);
+    public void run(){
+      try {
+        ServerSocket ss = new ServerSocket();
+        port.set( ss.getLocalPort() );
+        ss.accept();
+        while(!done){
+          Thread.sleep(1);
+        }
+        ss.close();
+      } catch (Exception e) {
+        LOG.error(e);
+      }
+    }
+    public int getPort() throws InterruptedException {
+      while (port.get() <0){
+        Thread.sleep(1);
+      }
+      return port.get();
+    }
+  }
+
+  public String guessHBaseHostname() throws Exception {
+    SocketThread st = new SocketThread();
+    st.start();
+    int port = st.getPort();
+    Socket s = new Socket("127.0.0.1", port);
+    String res = s.getInetAddress().getHostName();
+    s.close();
+    st.done = true;
+    return res;
+  }
 
   /**
    * Test that the hook works within HBase, including when there are multiple blocks.
    */
   @Test()
-  public void testHBaseeCluster() throws Exception {
+  public void testHBaseCluster() throws Exception {
     byte[] sb = "sb".getBytes();
     htu.startMiniZKCluster();
     MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1);
