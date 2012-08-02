@@ -19,6 +19,8 @@
 package org.apache.hadoop.hbase.fs;
 
 
+import com.google.protobuf.RpcController;
+import com.google.protobuf.ServiceException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.commons.logging.impl.Log4JLogger;
@@ -32,9 +34,15 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.LargeTests;
+import org.apache.hadoop.hbase.LocalHBaseCluster;
 import org.apache.hadoop.hbase.MiniHBaseCluster;
+import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.master.HMaster;
+import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
+import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos;
+import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
@@ -47,17 +55,21 @@ import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.server.datanode.DataNode;
 import org.apache.log4j.Level;
+import org.apache.zookeeper.KeeperException;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -76,17 +88,12 @@ public class TestBlockReorder {
   private MiniDFSCluster cluster;
   private HBaseTestingUtility htu;
   private DistributedFileSystem dfs;
-  private String host1;
-  private final String host2 = "host2";
-  private final String host3 = "host3";
+  private static final String host1 = "host1";
+  private static final String host2 = "host2";
+  private static final String host3 = "host3";
 
   @Before
   public void setUp() throws Exception {
-    // A trick to active block reorder on the unit tests. We want to have the same name for the
-    //  hdfs node name and the hbase regionserver name.
-    host1 = guessHBaseHostname();
-    LOG.info("My locahost name is "+host1);
-
     htu = new HBaseTestingUtility();
     htu.getConfiguration().setInt("dfs.block.size", 1024);// For the test with multiple blocks
     htu.getConfiguration().setBoolean("dfs.support.append", true);
@@ -224,40 +231,29 @@ public class TestBlockReorder {
       return res;
     }
   }
-  static class SocketThread extends Thread{
-    public volatile boolean done = false;
-    private AtomicInteger port = new AtomicInteger(-1);
-    public void run(){
-      try {
-        ServerSocket ss = new ServerSocket(0);
-        port.set( ss.getLocalPort() );
-        ss.accept();
-        while(!done){
-          Thread.sleep(1);
-        }
-        ss.close();
-      } catch (Exception e) {
-        LOG.error(e);
-      }
+
+
+  static class MyHMaster extends HMaster {
+    public MyHMaster(Configuration conf) throws IOException, KeeperException,
+        InterruptedException {
+      super(conf);
     }
-    public int getPort() throws InterruptedException {
-      while (port.get() <0){
-        Thread.sleep(1);
-      }
-      return port.get();
+
+    @Override
+    public RegionServerStatusProtos.RegionServerStartupResponse regionServerStartup(
+        RpcController controller, RegionServerStatusProtos.RegionServerStartupRequest request) throws ServiceException {
+      super.regionServerStartup(controller, request);
+
+      RegionServerStatusProtos.RegionServerStartupResponse.Builder resp = createConfigurationSubset();
+      HBaseProtos.NameStringPair.Builder entry = HBaseProtos.NameStringPair.newBuilder()
+          .setName(HConstants.KEY_FOR_HOSTNAME_SEEN_BY_MASTER)
+          .setValue(host1);
+      resp.addMapEntries(entry.build());
+
+      return resp.build();
     }
   }
 
-  public String guessHBaseHostname() throws Exception {
-    SocketThread st = new SocketThread();
-    st.start();
-    int port = st.getPort();
-    Socket s = new Socket("127.0.0.1", port);
-    String res = s.getInetAddress().getHostName();
-    s.close();
-    st.done = true;
-    return res;
-  }
 
   /**
    * Test that the hook works within HBase, including when there are multiple blocks.
@@ -266,6 +262,9 @@ public class TestBlockReorder {
   public void testHBaseCluster() throws Exception {
     byte[] sb = "sb".getBytes();
     htu.startMiniZKCluster();
+
+    conf.set("test.hbase.master.class", MyHMaster.class.getName());
+
     MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1);
     hbm.waitForActiveAndReadyMaster();
     hbm.getRegionServer(0).waitForServerOnline();

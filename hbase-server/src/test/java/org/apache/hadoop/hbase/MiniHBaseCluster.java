@@ -189,9 +189,22 @@ public class MiniHBaseCluster {
   private void init(final int nMasterNodes, final int nRegionNodes)
   throws IOException, InterruptedException {
     try {
+      String masterClassName = conf.get("test.hbase.master.class",
+          HMaster.class.getName());
+      String regionserverClassName = conf.get("test.hbase.master.class",
+          MiniHBaseCluster.MiniHBaseClusterRegionServer.class.getName());
+
+      Class<? extends HMaster> masterClass = (Class<? extends HMaster>)
+          Class.forName(masterClassName, false, getClass().getClassLoader());
+
+      Class<? extends MiniHBaseCluster.MiniHBaseClusterRegionServer> regionserverClass =
+          (Class<? extends MiniHBaseCluster.MiniHBaseClusterRegionServer>)
+          Class.forName(regionserverClassName, false, getClass().getClassLoader());
+
+
       // start up a LocalHBaseCluster
       hbaseCluster = new LocalHBaseCluster(conf, nMasterNodes, 0,
-        HMaster.class, MiniHBaseCluster.MiniHBaseClusterRegionServer.class);
+          masterClass, regionserverClass);
 
       // manually add the regionservers as other users
       for (int i=0; i<nRegionNodes; i++) {
