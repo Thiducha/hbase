@@ -77,14 +77,14 @@ public class TestBlockReorder {
   private MiniDFSCluster cluster;
   private HBaseTestingUtility htu;
   private DistributedFileSystem dfs;
-  private String host1 = null;
+  private final String host1 = "host2";
   private final String host2 = "host2";
   private final String host3 = "host3";
 
   @Before
   public void setUp() throws Exception {
-    host1 = InetAddress.getByName("127.0.0.1").getHostName();
-    LOG.info("My locahost name is "+host1);
+    //host1 = InetAddress.getByName("127.0.0.1").getHostName();
+    //LOG.info("My locahost name is "+host1);
     // A trick to active block reorder on the unit tests. We want to have the same name for the
     //  hdfs node name and the hbase regionserver name.
 
@@ -230,12 +230,19 @@ public class TestBlockReorder {
    * Test that the hook works within HBase, including when there are multiple blocks.
    */
   @Test()
-  public void testHBaseCluster() throws Exception {
+  public void testHBaseeCluster() throws Exception {
     byte[] sb = "sb".getBytes();
     htu.startMiniZKCluster();
     MiniHBaseCluster hbm = htu.startMiniHBaseCluster(1, 1);
     hbm.waitForActiveAndReadyMaster();
     hbm.getRegionServer(0).waitForServerOnline();
+
+    // We want to have one with the same name as the rs to check the reorder
+    final String rsHostname = hbm.getRegionServer(0).getServerName().getHostname();
+    cluster.startDataNodes(
+        conf, 1, true, null, new String[]{"/r4"}, new String[]{rsHostname}, null);
+    cluster.stopDataNode(0);
+
     // We use the regionserver file system & conf as we expect it to have the hook.
     conf = hbm.getRegionServer(0).getConfiguration();
     HFileSystem rfs = (HFileSystem) hbm.getRegionServer(0).getFileSystem();
