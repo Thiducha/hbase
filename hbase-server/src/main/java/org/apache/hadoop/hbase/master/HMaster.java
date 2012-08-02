@@ -244,7 +244,7 @@ Server {
   private MasterFileSystem fileSystemManager;
 
   // server manager to deal with region server info
-  private ServerManager serverManager;
+  protected ServerManager serverManager;
 
   // manager of assignment nodes in zookeeper
   AssignmentManager assignmentManager;

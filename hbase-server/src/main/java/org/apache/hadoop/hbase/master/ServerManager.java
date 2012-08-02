@@ -266,7 +266,7 @@ public class ServerManager {
    * @param hsl
    * @param serverName The remote servers name.
    */
-  void recordNewServer(final ServerName serverName, final ServerLoad sl) {
+  public void recordNewServer(final ServerName serverName, final ServerLoad sl) {
     LOG.info("Registering server=" + serverName);
     this.onlineServers.put(serverName, sl);
     this.serverConnections.remove(serverName);

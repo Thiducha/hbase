@@ -36,6 +36,7 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.LocalHBaseCluster;
 import org.apache.hadoop.hbase.MiniHBaseCluster;
+import org.apache.hadoop.hbase.ServerLoad;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
@@ -241,8 +242,15 @@ public class TestBlockReorder {
 
     @Override
     public RegionServerStatusProtos.RegionServerStartupResponse regionServerStartup(
-        RpcController controller, RegionServerStatusProtos.RegionServerStartupRequest request) throws ServiceException {
-      super.regionServerStartup(controller, request);
+        RpcController controller, RegionServerStatusProtos.RegionServerStartupRequest request)
+        throws ServiceException {
+      //super.regionServerStartup(controller, request);
+
+      //InetAddress ia = getRemoteInetAddress(request.getPort(), request.getServerStartCode());
+
+      ServerName sn = new ServerName(host1+":"+request.getPort(),request.getServerStartCode());
+      this.serverManager.recordNewServer(sn, ServerLoad.EMPTY_SERVERLOAD);
+
 
       RegionServerStatusProtos.RegionServerStartupResponse.Builder resp = createConfigurationSubset();
       HBaseProtos.NameStringPair.Builder entry = HBaseProtos.NameStringPair.newBuilder()
