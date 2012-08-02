@@ -242,6 +242,8 @@ public class TestBlockReorder {
     LOG.info("Starting a new datanode with name="+rsHostname);
     cluster.startDataNodes(
         conf, 1, true, null, new String[]{"/r4"}, new String[]{rsHostname}, null);
+    cluster.waitClusterUp();
+    // We want only 3 datanodes to be sure the new one will used
     cluster.stopDataNode(0);
 
     // We use the regionserver file system & conf as we expect it to have the hook.
@@ -273,7 +275,7 @@ public class TestBlockReorder {
     }
 
     // We will try only one file
-    Assert.assertNotNull(hfs[0]);
+    Assert.assertNotNull(hfs[hfs.length - 1]);
     String logFile = rootDir + "/" + hfs[0].getLocalName();
     LOG.info("Checking log file: " + logFile);
 
