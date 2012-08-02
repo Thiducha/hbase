@@ -58,8 +58,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.ServerSocket;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Tests for the hdfs fix from HBASE-6435.
@@ -262,7 +260,7 @@ public class TestBlockReorder {
 
 
     int nbTest = 0;
-    while (nbTest < 20) {
+    while (nbTest < 10) {
       htu.getHBaseAdmin().rollHLogWriter(targetRs.getServerName().toString());
 
       // We need a sleep as the namenode is informed asynchronously
@@ -299,7 +297,7 @@ public class TestBlockReorder {
           }
           String last = bl.getHosts()[bl.getHosts().length - 1];
           LOG.info(last +"    "+logFile);
-          if (host4.equals(bl.getHosts().length)) {
+          if (host4.equals(last)) {
             nbTest++;
             LOG.info(logFile + " is on the new datanode and is ok");
             if (bl.getHosts().length == 3) {
