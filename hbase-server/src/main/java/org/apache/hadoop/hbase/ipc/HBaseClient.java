@@ -1292,6 +1292,9 @@ public class HBaseClient {
     //block above. The reason for that is if the server happens to be slow,
     //it will take longer to establish a connection and that will slow the
     //entire system down.
+    //Moreover, if the connection is currently created, there will be many threads
+    // waiting here; as setupIOstreams is synchronized. If the connection fails with a
+    // timeout, they will all fail simultaneously. This is checked in setupIOstreams.
     connection.setupIOstreams();
     return connection;
   }
