@@ -363,8 +363,8 @@ public class HBaseClient {
      * @return true if the call was added.
      */
     protected synchronized boolean addCall(Call call) {
-      if (shouldCloseConnection.get())
-        return false;
+      //if (shouldCloseConnection.get())
+      //  return false;
       calls.put(call.id, call);
       notify();
       return true;
