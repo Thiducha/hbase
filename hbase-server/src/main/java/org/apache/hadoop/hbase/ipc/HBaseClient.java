@@ -358,16 +358,11 @@ public class HBaseClient {
     /**
      * Add a call to this connection's call queue and notify
      * a listener; synchronized.
-     * Returns false if called during shutdown.
      * @param call to add
-     * @return true if the call was added.
      */
-    protected synchronized boolean addCall(Call call) {
-      //if (shouldCloseConnection.get())
-      //  return false;
+    protected synchronized void addCall(Call call) {
       calls.put(call.id, call);
       notify();
-      return true;
     }
 
     /** This class sends a ping to the remote side when timeout on
@@ -1284,15 +1279,14 @@ public class HBaseClient {
      * refs for keys in HashMap properly. For now its ok.
      */
     ConnectionId remoteId = new ConnectionId(addr, protocol, ticket, rpcTimeout);
-    do {
-      synchronized (connections) {
-        connection = connections.get(remoteId);
-        if (connection == null) {
-          connection = new Connection(remoteId);
-          connections.put(remoteId, connection);
-        }
+    synchronized (connections) {
+      connection = connections.get(remoteId);
+      if (connection == null) {
+        connection = new Connection(remoteId);
+        connections.put(remoteId, connection);
       }
-    } while (!connection.addCall(call));
+    }
+    connection.addCall(call);
 
     //we don't invoke the method below inside "synchronized (connections)"
     //block above. The reason for that is if the server happens to be slow,
