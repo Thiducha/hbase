@@ -361,19 +361,22 @@ public class HBaseClient {
      * @param call to add
      */
     protected synchronized void addCall(Call call) {
-      if (shouldCloseConnection.get()) {
+      // If the connection is about to close, we forward this to the call as if the call was
+      //  already added to the calls list. This allow
+      if (this.shouldCloseConnection.get()) {
         if (this.closeException == null) {
-          this.closeException = new CallTimeoutException("Call id=" + call.id);
+          call.setException( new IOException(
+              "Call "+call.id+" not added as the connection "+remoteId+" is closing"));
+        }else{
+          call.setException(this.closeException);
         }
-        call.setException(this.closeException);
         synchronized (call) {
           call.notifyAll();
         }
-        return;
+      } else {
+        calls.put(call.id, call);
+        notify();
       }
-
-      calls.put(call.id, call);
-      notify();
     }
 
     /** This class sends a ping to the remote side when timeout on
