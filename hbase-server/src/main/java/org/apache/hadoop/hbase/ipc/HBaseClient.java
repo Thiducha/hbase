@@ -361,6 +361,17 @@ public class HBaseClient {
      * @param call to add
      */
     protected synchronized void addCall(Call call) {
+      if (shouldCloseConnection.get()) {
+        if (this.closeException == null) {
+          this.closeException = new CallTimeoutException("Call id=" + call.id);
+        }
+        call.setException(this.closeException);
+        synchronized (call) {
+          call.notifyAll();
+        }
+        return;
+      }
+
       calls.put(call.id, call);
       notify();
     }
