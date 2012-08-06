@@ -361,8 +361,9 @@ public class HBaseClient {
      * @param call to add
      */
     protected synchronized void addCall(Call call) {
-      // If the connection is about to close, we forward this to the call as if the call was
-      //  already added to the calls list. This allow
+      // If the connection is about to close, we manage this as if the call was already added
+      //  to the connection calls list. If not, the connection creations are serialized, as
+      //  mentionned in HBASE-6364
       if (this.shouldCloseConnection.get()) {
         if (this.closeException == null) {
           call.setException( new IOException(
