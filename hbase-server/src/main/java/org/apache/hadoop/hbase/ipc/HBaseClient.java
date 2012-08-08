@@ -41,6 +41,8 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Random;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -67,6 +69,7 @@ import org.apache.hadoop.hbase.security.TokenInfo;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.security.token.AuthenticationTokenIdentifier;
 import org.apache.hadoop.hbase.security.token.AuthenticationTokenSelector;
+import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.PoolMap;
 import org.apache.hadoop.hbase.util.PoolMap.PoolType;
 import org.apache.hadoop.io.DataOutputBuffer;
@@ -111,6 +114,7 @@ public class HBaseClient {
   protected final boolean tcpKeepAlive; // if T then use keepalives
   protected int pingInterval; // how often sends ping to the server in msecs
   protected int socketTimeout; // socket timeout
+  protected DeadServers deadServers;
 
   protected final SocketFactory socketFactory;           // how to create sockets
   private int refCount = 1;
@@ -121,6 +125,44 @@ public class HBaseClient {
   final static int DEFAULT_PING_INTERVAL = 60000;  // 1 min
   final static int DEFAULT_SOCKET_TIMEOUT = 20000; // 20 seconds
   final static int PING_CALL_ID = -1;
+
+
+  /**
+   * A class to manage a list of dead servers.
+   */
+  static class DeadServers {
+    private SortedMap<Long, String> deadServers = new TreeMap<Long, String>();
+    private final int recheckServersTimeout;
+
+    DeadServers(Configuration conf) {
+      this.recheckServersTimeout = conf.getInt("hbase.ipc.client.recheckServersTimeout", 10000);
+    }
+
+    /**
+     * Add an address to the list of the dead list.
+     */
+    public synchronized void addToDeadServers(InetSocketAddress address) {
+      final long expiry = EnvironmentEdgeManager.currentTimeMillis() + recheckServersTimeout;
+      deadServers.put(expiry, address.toString());
+    }
+
+    /**
+     * Check if the server should be considered as dead. Clean the old entries of the list.
+     * @return true if the server is in the dead servers list
+     */
+    public synchronized boolean isDeadServer(InetSocketAddress address) {
+      if (!deadServers.isEmpty()) {
+        final long now = EnvironmentEdgeManager.currentTimeMillis();
+        deadServers = deadServers.tailMap(now);
+        if (deadServers.containsValue(address.toString())) {
+          return true;
+        }
+      }
+      return false;
+    }
+  }
+
+
 
   /**
    * set the ping interval value in configuration
@@ -357,26 +399,30 @@ public class HBaseClient {
 
     /**
      * Add a call to this connection's call queue and notify
-     * a listener; synchronized.
+     * a listener; synchronized. If the connection is dead, the call is not added, and the
+     * caller is notified.
      * @param call to add
+     * @return true if the call wa added, false otherwise.
      */
-    protected synchronized void addCall(Call call) {
+    protected synchronized boolean addCall(Call call) {
       // If the connection is about to close, we manage this as if the call was already added
       //  to the connection calls list. If not, the connection creations are serialized, as
-      //  mentionned in HBASE-6364
-      if (this.shouldCloseConnection.get()) {
+      //  mentioned in HBASE-6364
+      if (this.shouldCloseConnection.get() || deadServers.isDeadServer(this.getRemoteAddress())) {
         if (this.closeException == null) {
           call.setException( new IOException(
-              "Call "+call.id+" not added as the connection "+remoteId+" is closing"));
-        }else{
+              "Call " + call.id + " not added as the connection " + remoteId + " is closing"));
+        }else {
           call.setException(this.closeException);
         }
         synchronized (call) {
           call.notifyAll();
         }
+        return false;
       } else {
         calls.put(call.id, call);
         notify();
+        return true;
       }
     }
 
@@ -686,7 +732,8 @@ public class HBaseClient {
 
     protected synchronized void setupIOstreams()
         throws IOException, InterruptedException {
-      if (socket != null || shouldCloseConnection.get()) {
+      if (socket != null || shouldCloseConnection.get() ||
+          deadServers.isDeadServer(this.getRemoteAddress())) {
         return;
       }
 
@@ -706,7 +753,7 @@ public class HBaseClient {
             final InputStream in2 = inStream;
             final OutputStream out2 = outStream;
             UserGroupInformation ticket = remoteId.getTicket().getUGI();
-            if (authMethod == AuthMethod.KERBEROS) {;
+            if (authMethod == AuthMethod.KERBEROS) {
               if (ticket != null && ticket.getRealUser() != null) {
                 ticket = ticket.getRealUser();
               }
@@ -752,6 +799,7 @@ public class HBaseClient {
           return;
         }
       } catch (IOException e) {
+        deadServers.addToDeadServers(remoteId.address);
         markClosed(e);
         close();
 
@@ -1301,7 +1349,9 @@ public class HBaseClient {
         connections.put(remoteId, connection);
       }
     }
-    connection.addCall(call);
+    if (!connection.addCall(call)){
+      return connection;
+    }
 
     //we don't invoke the method below inside "synchronized (connections)"
     //block above. The reason for that is if the server happens to be slow,
