@@ -125,6 +125,7 @@ public class HBaseClient {
   final static int DEFAULT_PING_INTERVAL = 60000;  // 1 min
   final static int DEFAULT_SOCKET_TIMEOUT = 20000; // 20 seconds
   final static int PING_CALL_ID = -1;
+  public static int sleep = 0;
 
 
   /**
@@ -751,6 +752,8 @@ public class HBaseClient {
         close();
         throw e;
       }
+
+      if (sleep == remoteId.getAddress().getPort()) Thread.sleep(5000);
 
       try {
         if (LOG.isDebugEnabled()) {
