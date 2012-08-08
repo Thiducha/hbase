@@ -126,6 +126,8 @@ public class HBaseClient {
   final static int DEFAULT_SOCKET_TIMEOUT = 20000; // 20 seconds
   final static int PING_CALL_ID = -1;
 
+  public static int sleep = 0;
+
 
   /**
    * A class to manage a list of dead servers.
@@ -750,6 +752,11 @@ public class HBaseClient {
         markClosed(e);
         close();
         throw e;
+      }
+
+      if (sleep>0 && sleep == remoteId.getAddress().getPort()){
+        Thread.sleep(5000);
+        LOG.info("Finish sleeping");
       }
 
       try {
