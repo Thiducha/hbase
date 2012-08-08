@@ -126,8 +126,6 @@ public class HBaseClient {
   final static int DEFAULT_SOCKET_TIMEOUT = 20000; // 20 seconds
   final static int PING_CALL_ID = -1;
 
-  public static int sleep = 0;
-
 
   /**
    * A class to manage a list of dead servers.
@@ -145,7 +143,7 @@ public class HBaseClient {
      */
     public synchronized void addToDeadServers(InetSocketAddress address) {
       final long expiry = EnvironmentEdgeManager.currentTimeMillis() + recheckServersTimeout;
-      //deadServers.put(expiry, address.toString());
+      deadServers.put(expiry, address.toString());
     }
 
     /**
@@ -754,11 +752,6 @@ public class HBaseClient {
         throw e;
       }
 
-      if (sleep>0 && sleep == remoteId.getAddress().getPort()){
-        Thread.sleep(5000);
-        LOG.info("Finish sleeping");
-      }
-
       try {
         if (LOG.isDebugEnabled()) {
           LOG.debug("Connecting to "+server);
@@ -1365,8 +1358,6 @@ public class HBaseClient {
      * refs for keys in HashMap properly. For now its ok.
      */
     ConnectionId remoteId = new ConnectionId(addr, protocol, ticket, rpcTimeout);
-    do {
-      call.error = null;
     synchronized (connections) {
       connection = connections.get(remoteId);
       if (connection == null) {
@@ -1374,9 +1365,7 @@ public class HBaseClient {
         connections.put(remoteId, connection);
       }
     }
-      connection.addCall(call);
-
-    }while(call.error != null);
+    connection.addCall(call);
 
     //we don't invoke the method below inside "synchronized (connections)"
     //block above. The reason for that is if the server happens to be slow,
