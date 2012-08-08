@@ -135,7 +135,7 @@ public class HBaseClient {
     private final int recheckServersTimeout;
 
     DeadServers(Configuration conf) {
-      this.recheckServersTimeout = conf.getInt("hbase.ipc.client.recheckServersTimeout", 10000);
+      this.recheckServersTimeout = conf.getInt("hbase.ipc.client.recheckServersTimeout", 2000);
     }
 
     /**
@@ -407,6 +407,8 @@ public class HBaseClient {
      * Add a call to this connection's call queue and notify
      * a listener; synchronized. If the connection is dead, the call is not added, and the
      * caller is notified.
+     * This function can return connection that are already marked as 'shouldCloseConnection'
+     *  This is up to the user code to check this status.
      * @param call to add
      */
     protected synchronized void addCall(Call call) {
