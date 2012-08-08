@@ -1,3 +1,21 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.hadoop.hbase.ipc;
 
 
@@ -8,8 +26,6 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
-import org.apache.hadoop.hbase.ipc.HBaseClient;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -30,7 +46,6 @@ public class Test_HBASE_6364 {
 
   private HBaseRecoveryTestingUtility hrtu = new HBaseRecoveryTestingUtility();
 
-
   @Test
   public void test_6364() throws Exception {
     LOG.info("Start");
@@ -41,7 +56,6 @@ public class Test_HBASE_6364 {
 
     hrtu.createTable(10, 0);
 
-    //hrtu.stopDirtyRegionServerTakePorts(1); // Can't be used here. We want a connect timeout, not a read timeout.
     HBaseClient.sleep =
         hrtu.getHBaseCluster().getRegionServer(1).getRpcServer().getListenerAddress().getPort();
     hrtu.stopDirtyRegionServer(1);
@@ -73,31 +87,7 @@ public class Test_HBASE_6364 {
 
     LOG.info("Time: " + (System.currentTimeMillis()-start) + " nb errors: "+errors.get());
     HBaseClient.sleep = 0;
+    hrtu.stopCleanCluster();
     LOG.info("Done");
   }
-
-  @Test
-  public void test_6364_2() throws Exception {
-    LOG.info("Start");
-
-    hrtu.startClusterSynchronous(1, 1);
-    hrtu.startNewRegionServer();
-    hrtu.moveTableTo(".META.", 1); // We will have only meta on this server
-
-    final int nbRS = 40; // Get 20 new servers an split a table on them
-    for (int i=0; i<nbRS; i++) hrtu.startNewRegionServer();
-    hrtu.createTable(nbRS, 2, 1+nbRS); // with the move, the cache gets partially broken
-
-    HBaseClient.sleep =
-        hrtu.getHBaseCluster().getRegionServer(1).getRpcServer().getListenerAddress().getPort();
-    hrtu.stopDirtyRegionServer(1);
-
-    final long start = System.currentTimeMillis();
-    hrtu.new TestPuts(100).checkPuts();
-    LOG.info("Time: "+(System.currentTimeMillis()-start));
-    HBaseClient.sleep = 0;
-
-    LOG.info("Done");
-  }
-
 }

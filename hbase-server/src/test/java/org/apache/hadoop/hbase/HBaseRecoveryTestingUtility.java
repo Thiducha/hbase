@@ -49,7 +49,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
   private static final Log LOG = LogFactory.getLog(HBaseRecoveryTestingUtility.class);
 
   private byte[] rb = ("rb_" + new Random(System.currentTimeMillis()).nextInt()).getBytes();
-  private HTable table;
+  private HTable testTable;
 
   static {
     Logger.getLogger(DFSClient.class).setLevel(Level.DEBUG);
@@ -229,7 +229,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
 
   public void breakCache(int fakeRS) throws Exception {
     LOG.info("START breakCache " + fakeRS);
-    HConnection hci = table.getConnection();
+    HConnection hci = testTable.getConnection();
 
     Method updateCachedLocation = hci.getClass().getDeclaredMethod("updateCachedLocation",
         HRegionLocation.class, String.class, Integer.class );
@@ -237,7 +237,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
 
     int fakePort = getHBaseCluster().getRegionServer(fakeRS).getRpcServer().getListenerAddress().getPort();
     String fakeHostname = getHBaseCluster().getRegionServer(fakeRS).getRpcServer().getListenerAddress().getHostName();
-    for (HRegionLocation hrl : table.getRegionsInRange(HConstants.EMPTY_START_ROW, HConstants.EMPTY_END_ROW)) {
+    for (HRegionLocation hrl : testTable.getRegionsInRange(HConstants.EMPTY_START_ROW, HConstants.EMPTY_END_ROW)) {
       LOG.info("Breaking cache by setting " + fakeHostname + ":" + fakePort + " for region " + hrl);
       updateCachedLocation.invoke(hrl, fakeHostname, fakePort);
     }
@@ -250,9 +250,9 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
 
   public void createTable(int nRegions, int minRS, int maxRS) throws IOException {
     LOG.info("START createTable " + Bytes.toString(rb));
-    table = super.createTable(rb, new byte[][]{rb}, 1, "0000000000".getBytes(),
+    testTable = super.createTable(rb, new byte[][]{rb}, 1, "0000000000".getBytes(),
         "9999999999".getBytes(), nRegions);
-    moveTableTo(Bytes.toString(table.getTableName()), minRS, maxRS);
+    moveTableTo(Bytes.toString(testTable.getTableName()), minRS, maxRS);
     LOG.info("DONE createTable " + Bytes.toString(rb));
   }
 
@@ -263,12 +263,12 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
 
 
   public byte[] getTestTableName() {
-    return table.getTableName();
+    return testTable.getTableName();
   }
 
 
   public HTable getTestTable() {
-    return table;
+    return testTable;
   }
 
   private ArrayList<byte[]> allPuts = new ArrayList<byte[]>();
@@ -278,8 +278,20 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
   public void testAllPuts() throws IOException {
     for (byte[] allPut : allPuts) {
       Get g = new Get(allPut);
-      Assert.assertArrayEquals(table.get(g).getRow(), allPut);
+      Assert.assertArrayEquals(testTable.get(g).getRow(), allPut);
     }
+  }
+
+  public void stopCleanCluster() throws Exception {
+    for (ServerSocket ss: portsTaken){
+      ss.close();
+    }
+
+    if (testTable != null){
+      testTable.close();
+    }
+
+    super.shutdownMiniCluster();
   }
 
   public class TestPuts {
@@ -299,8 +311,8 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     private ArrayList<byte[]> pastPuts = new ArrayList<byte[]>();
 
     public TestPuts(int nbPut) throws Exception {
-      if (keys == null || keys.length != table.getStartKeys().length) {
-        keys = table.getStartKeys();
+      if (keys == null || keys.length != testTable.getStartKeys().length) {
+        keys = testTable.getStartKeys();
         curReg = 0;
       }
 
@@ -319,20 +331,20 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
         allPuts.add(keys[curReg]);
         curReg = ++curReg % keys.length;
       }
-      table.put(puts);
+      testTable.put(puts);
     }
 
     public void checkPuts() throws Exception {
       for (byte[] pastPut : pastPuts) {
         Get g = new Get(pastPut);
-        Assert.assertArrayEquals(table.get(g).getRow(), pastPut);
+        Assert.assertArrayEquals(testTable.get(g).getRow(), pastPut);
       }
     }
   }
 
   public void flushSynchronous(int RS) throws Exception {
     LOG.info("flush");
-    getHBaseAdmin().flush(table.getTableName());
+    getHBaseAdmin().flush(testTable.getTableName());
 
     Field cacheFlusher = HRegionServer.class.getDeclaredField("cacheFlusher");
     cacheFlusher.setAccessible(true);
@@ -353,11 +365,11 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
   }
 
   public void cleanTableLocationCache() throws Exception {
-    HConnection hci = table.getConnection();
+    HConnection hci = testTable.getConnection();
     Method delete = hci.getClass().getDeclaredMethod("deleteCachedLocation", byte[].class, byte[].class);
     delete.setAccessible(true);
-    for (byte[] b : table.getStartKeys()) {
-      delete.invoke(hci, table.getTableName(), b);
+    for (byte[] b : testTable.getStartKeys()) {
+      delete.invoke(hci, testTable.getTableName(), b);
     }
     //hci.clearRegionCache();
   }
