@@ -135,7 +135,7 @@ public class HBaseClient {
     private final int recheckServersTimeout;
 
     DeadServers(Configuration conf) {
-      this.recheckServersTimeout = conf.getInt("hbase.ipc.client.recheckServersTimeout", 10000);
+      this.recheckServersTimeout = conf.getInt("hbase.ipc.client.recheckServersTimeout", 0);
     }
 
     /**
