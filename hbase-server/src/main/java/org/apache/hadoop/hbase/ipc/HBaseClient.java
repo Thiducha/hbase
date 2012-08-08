@@ -1351,7 +1351,7 @@ public class HBaseClient {
       }
     }
     if (!connection.addCall(call)){
-      return connection;
+      throw call.error;
     }
 
     //we don't invoke the method below inside "synchronized (connections)"
