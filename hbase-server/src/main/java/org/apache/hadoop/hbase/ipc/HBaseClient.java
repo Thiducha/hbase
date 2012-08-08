@@ -145,7 +145,7 @@ public class HBaseClient {
      */
     public synchronized void addToDeadServers(InetSocketAddress address) {
       final long expiry = EnvironmentEdgeManager.currentTimeMillis() + recheckServersTimeout;
-      deadServers.put(expiry, address.toString());
+      //deadServers.put(expiry, address.toString());
     }
 
     /**
@@ -1365,6 +1365,8 @@ public class HBaseClient {
      * refs for keys in HashMap properly. For now its ok.
      */
     ConnectionId remoteId = new ConnectionId(addr, protocol, ticket, rpcTimeout);
+    do {
+      call.error = null;
     synchronized (connections) {
       connection = connections.get(remoteId);
       if (connection == null) {
@@ -1372,7 +1374,9 @@ public class HBaseClient {
         connections.put(remoteId, connection);
       }
     }
-    connection.addCall(call);
+      connection.addCall(call);
+
+    }while(call.error != null);
 
     //we don't invoke the method below inside "synchronized (connections)"
     //block above. The reason for that is if the server happens to be slow,
