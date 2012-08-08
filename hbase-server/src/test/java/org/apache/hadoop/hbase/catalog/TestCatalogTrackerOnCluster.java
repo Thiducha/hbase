@@ -43,7 +43,6 @@ public class TestCatalogTrackerOnCluster {
    */
   @Test public void testBadOriginalRootLocation() throws Exception {
     UTIL.getConfiguration().setInt("ipc.socket.timeout", 3000);
-    //UTIL.getConfiguration().setInt("hbase.ipc.client.recheckServersTimeout", 3000);
     // Launch cluster so it does bootstrapping.
     UTIL.startMiniCluster();
     // Shutdown hbase.

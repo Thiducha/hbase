@@ -57,8 +57,11 @@ public class Test_HBASE_6364 {
     hrtu.createTable(10, 0);
     hrtu.getTestTable().close();
 
-    HBaseClient.sleep =
-        hrtu.getHBaseCluster().getRegionServer(1).getRpcServer().getListenerAddress().getPort();
+
+    // Need a static 'int sleep' with a test in HBaseClient#setupIOstreams
+    // if (sleep == remoteId.getAddress().getPort()) Thread.sleep(5000);
+    //
+    // HBaseClient.sleep = hrtu.getHBaseCluster().getRegionServer(1).getRpcServer().getListenerAddress().getPort();
     hrtu.stopDirtyRegionServer(1);
 
     final long start = System.currentTimeMillis();
@@ -66,6 +69,10 @@ public class Test_HBASE_6364 {
     final AtomicInteger counter = new AtomicInteger(0);
     final AtomicInteger errors = new AtomicInteger(0);
 
+    // Sometimes, for whatever reason, the we don't have any connection to meta and the whole
+    //  process takes a few milli seconds. This both with the fixed and the unfixed version.
+    // If not, the fixed version will last a few seconds more than the sleep time, and the
+    //  unfixed version around nbTest * sleepTime
     final int nbTest = 20;
     for (int i=0; i<nbTest; i++){
       Thread t = new Thread(){
@@ -87,7 +94,7 @@ public class Test_HBASE_6364 {
     while(counter.get() < nbTest){ Thread.sleep(1); }
 
     LOG.info("Time: " + (System.currentTimeMillis()-start) + " nb errors: "+errors.get());
-    HBaseClient.sleep = 0;
+
     hrtu.stopCleanCluster();
     LOG.info("Done");
   }
