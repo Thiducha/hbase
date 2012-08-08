@@ -1102,6 +1102,7 @@ public class HBaseClient {
     this.clusterId = conf.get(HConstants.CLUSTER_ID, "default");
     this.connections = new PoolMap<ConnectionId, Connection>(
         getPoolType(conf), getPoolSize(conf));
+    this.deadServers = new DeadServers(conf);
   }
 
   /**
