@@ -162,6 +162,12 @@ public class HBaseClient {
     }
   }
 
+  public static class DeadServerIOException extends IOException{
+    public DeadServerIOException(String s){
+      super(s);
+    }
+  }
+
 
 
   /**
@@ -402,13 +408,12 @@ public class HBaseClient {
      * a listener; synchronized. If the connection is dead, the call is not added, and the
      * caller is notified.
      * @param call to add
-     * @return true if the call was added, false otherwise.
      */
-    protected synchronized boolean addCall(Call call) {
+    protected synchronized void addCall(Call call) {
       // If the connection is about to close, we manage this as if the call was already added
       //  to the connection calls list. If not, the connection creations are serialized, as
       //  mentioned in HBASE-6364
-      if (this.shouldCloseConnection.get() || deadServers.isDeadServer(this.getRemoteAddress())) {
+      if (this.shouldCloseConnection.get()) {
         if (this.closeException == null) {
           call.setException( new IOException(
               "Call " + call.id + " not added as the connection " + remoteId + " is closing"));
@@ -418,11 +423,9 @@ public class HBaseClient {
         synchronized (call) {
           call.notifyAll();
         }
-        return false;
       } else {
         calls.put(call.id, call);
         notify();
-        return true;
       }
     }
 
@@ -734,6 +737,17 @@ public class HBaseClient {
         throws IOException, InterruptedException {
       if (socket != null || shouldCloseConnection.get()) {
         return;
+      }
+
+      if (deadServers.isDeadServer(remoteId.getAddress())){
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Connection to "+server+" aborted, as this server is in the dead servers list");
+        }
+        IOException e = new DeadServerIOException(
+            "This server is is the dead server list: "+server);
+        markClosed(e);
+        close();
+        throw e;
       }
 
       try {
@@ -1349,9 +1363,7 @@ public class HBaseClient {
         connections.put(remoteId, connection);
       }
     }
-    if (!connection.addCall(call)){
-      throw call.error;
-    }
+    connection.addCall(call);
 
     //we don't invoke the method below inside "synchronized (connections)"
     //block above. The reason for that is if the server happens to be slow,
