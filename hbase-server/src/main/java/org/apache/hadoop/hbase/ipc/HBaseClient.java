@@ -402,7 +402,7 @@ public class HBaseClient {
      * a listener; synchronized. If the connection is dead, the call is not added, and the
      * caller is notified.
      * @param call to add
-     * @return true if the call wa added, false otherwise.
+     * @return true if the call was added, false otherwise.
      */
     protected synchronized boolean addCall(Call call) {
       // If the connection is about to close, we manage this as if the call was already added
