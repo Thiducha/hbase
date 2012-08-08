@@ -732,8 +732,7 @@ public class HBaseClient {
 
     protected synchronized void setupIOstreams()
         throws IOException, InterruptedException {
-      if (socket != null || shouldCloseConnection.get() ||
-          deadServers.isDeadServer(this.getRemoteAddress())) {
+      if (socket != null || shouldCloseConnection.get()) {
         return;
       }
 
