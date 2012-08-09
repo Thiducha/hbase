@@ -83,7 +83,7 @@ public class Test_HBASE_6364 {
           throw e;
         } finally {
           if (this.remoteId.getAddress().getPort() == badPort && sleep) {
-            LOG.info("sleeping");
+            LOG.info("sleeping on call to port="+badPort);
             Thread.sleep(5000);
           }
         }
@@ -101,7 +101,6 @@ public class Test_HBASE_6364 {
     hrtu.moveTableTo(".META.", 1); // We will have only meta on this server
 
     hrtu.createTable(10, 0);
-
 
     DelayedHBaseClient.badPort =
         hrtu.getHBaseCluster().getRegionServer(1).getRpcServer().getListenerAddress().getPort();
@@ -144,6 +143,7 @@ public class Test_HBASE_6364 {
     Assert.assertTrue((System.currentTimeMillis() - start) < 20000);
     Assert.assertEquals(errors.get(), 0);
 
+    DelayedHBaseClient.badPort = 0;
     hrtu.stopCleanCluster();
     LOG.info("Done");
   }
