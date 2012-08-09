@@ -76,6 +76,9 @@ public class Test_HBASE_6364 {
       protected synchronized void setupIOstreams() throws IOException, InterruptedException {
         // We need to do the sleep before calling the super implementation. If not the sleep time
         // will make the server going out of the dead servers list because of the expiry time.
+
+
+        // We don't sleep if it would be detected.
         if (socket != null || shouldCloseConnection.get()) {
           return;
         }
