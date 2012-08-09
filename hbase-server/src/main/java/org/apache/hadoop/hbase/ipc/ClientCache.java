@@ -59,21 +59,32 @@ class ClientCache {
       SocketFactory factory) {
     return getClient(conf, factory, HbaseObjectWritable.class);
   }
+  @SuppressWarnings("unchecked")
   protected synchronized HBaseClient getClient(Configuration conf,
       SocketFactory factory, Class<? extends Writable> valueClass) {
     HBaseClient client = clients.get(factory);
     if (client == null) {
-      @SuppressWarnings("unchecked")
       Class<? extends HBaseClient> hbaseClientClass = (Class<? extends HBaseClient>) conf
           .getClass(HConstants.HBASECLIENT_IMPL, HBaseClient.class);
 
       // Make an hbase client instead of hadoop Client.
       try {
-        Constructor<? extends HBaseClient> cst = hbaseClientClass.getConstructor(
-            Writable.class, Configuration.class, SocketFactory.class);
+        Constructor<? extends HBaseClient> cst = null;
+        for (Constructor<?> c:hbaseClientClass.getConstructors()){
+          Class<?>[] ps= c.getParameterTypes();
+          if (ps.length == 3 && Writable.class.isAssignableFrom(ps[0]) &&
+              Configuration.class.isAssignableFrom(ps[1]) &&
+              SocketFactory.class.isAssignableFrom(ps[2])){
+            cst = (Constructor<? extends HBaseClient>) c;
+            break;
+          }
+        }
+
+        if (cst == null){
+           throw new RuntimeException("No matching constructor in class "+
+               hbaseClientClass.getName());
+        }
         client = cst.newInstance(valueClass, conf, factory);
-      } catch (NoSuchMethodException e) {
-        throw new RuntimeException(e);
       } catch (InvocationTargetException e) {
         throw new RuntimeException(e);
       } catch (InstantiationException e) {

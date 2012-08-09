@@ -22,33 +22,23 @@ package org.apache.hadoop.hbase.ipc;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HBaseRecoveryTestingUtility;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
-import org.apache.hadoop.hbase.io.HbaseObjectWritable;
 import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.io.Writable;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import javax.net.SocketFactory;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.InetAddress;
-import java.net.Socket;
-import java.net.SocketAddress;
-import java.net.SocketException;
-import java.net.SocketImpl;
-import java.net.UnknownHostException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.apache.hadoop.hbase.ipc.HBaseClient.*;
 
 @Category(LargeTests.class)
 public class Test_HBASE_6364 {
@@ -74,6 +64,7 @@ public class Test_HBASE_6364 {
     }
 
     public static int badPort = 1;
+
     class MyConnection extends HBaseClient.Connection {
 
       MyConnection(ConnectionId remoteId) throws IOException {
@@ -82,60 +73,25 @@ public class Test_HBASE_6364 {
 
       protected void setupIOstreams() throws IOException, InterruptedException {
         boolean sleep = true;
-        IOException toRethrow = null;
         try {
           super.setupIOstreams();
-        } catch (IOException e) {
-          toRethrow = e;
-          if (toRethrow instanceof DeadServerIOException) {
-            sleep = false;
+        } catch (DeadServerIOException e) {
+          sleep = false;
+          throw e;
+        } finally {
+          if (this.remoteId.getAddress().getPort() == badPort && sleep) {
+            Thread.sleep(5000);
           }
-        }
-        if (this.remoteId.getAddress().getPort() == badPort && sleep) {
-          Thread.sleep(5000);
         }
       }
     }
-  }
-
-  public static class MySocketFactory extends SocketFactory {
-    SocketFactory ss;
-
-
-    @Override
-    public Socket createSocket(String s, int i) throws IOException, UnknownHostException {
-      return ss.createSocket(s, i);
-    }
-
-    @Override
-    public Socket createSocket(String s, int i, InetAddress inetAddress, int i1) throws IOException, UnknownHostException {
-      return ss.createSocket(s, i, inetAddress, i1);
-    }
-
-    @Override
-    public Socket createSocket(InetAddress inetAddress, int i) throws IOException {
-      return ss.createSocket(inetAddress, i);
-    }
-
-    @Override
-    public Socket createSocket(InetAddress inetAddress, int i, InetAddress inetAddress1, int i1) throws IOException {
-      return ss.createSocket(inetAddress, i, inetAddress1, i1);
-    }
-  }
-
-  @Test
-  public void testParallelGetConnectionOnDeadHost() {
-    Configuration c = HBaseConfiguration.create();
-    c.clear();
-
-    HBaseClient hbc = new HBaseClient(HbaseObjectWritable.class, c);
   }
 
   @Test
   public void test_6364() throws Exception {
     LOG.info("Start");
     hrtu.getConfiguration().setClass(HConstants.HBASECLIENT_IMPL,
-        DelayedHBaseClient.class, HBaseClient.class  );
+        DelayedHBaseClient.class, HBaseClient.class);
     hrtu.startClusterSynchronous(1, 1);
     hrtu.startNewRegionServer();
     hrtu.moveTableTo(".META.", 1); // We will have only meta on this server
@@ -179,6 +135,9 @@ public class Test_HBASE_6364 {
     }
 
     LOG.info("Time: " + (System.currentTimeMillis() - start) + " nb errors: " + errors.get());
+
+    Assert.assertTrue((System.currentTimeMillis() - start) < 12000);
+    Assert.assertEquals(errors.get(), 0);
 
     hrtu.stopCleanCluster();
     LOG.info("Done");
