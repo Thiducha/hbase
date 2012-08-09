@@ -72,7 +72,7 @@ class ClientCache {
         Constructor<? extends HBaseClient> cst = null;
         for (Constructor<?> c:hbaseClientClass.getConstructors()){
           Class<?>[] ps= c.getParameterTypes();
-          if (ps.length == 3 && Writable.class.isAssignableFrom(ps[0]) &&
+          if (ps.length == 3 && Class.class.isAssignableFrom(ps[0]) &&
               Configuration.class.isAssignableFrom(ps[1]) &&
               SocketFactory.class.isAssignableFrom(ps[2])){
             cst = (Constructor<? extends HBaseClient>) c;
