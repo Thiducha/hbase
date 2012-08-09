@@ -103,9 +103,12 @@ public class Test_HBASE_6364 {
     hrtu.createTable(10, 0);
     hrtu.getTestTable().close();
 
-    DelayedHBaseClient.badPort =
+    int port =
         hrtu.getHBaseCluster().getRegionServer(1).getRpcServer().getListenerAddress().getPort();
+
     hrtu.stopDirtyRegionServer(1);
+    DelayedHBaseClient.badPort = port;
+
 
     final long start = System.currentTimeMillis();
 

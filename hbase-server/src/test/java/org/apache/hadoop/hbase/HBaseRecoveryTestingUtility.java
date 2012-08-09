@@ -117,9 +117,8 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     while (!rs.isStopped()){
       Thread.sleep(1);
     }
-    //The thread is still alive and won't die...
+    LOG.info("Server is stopped, waiting for the region server thread to finish");
     if (rst.isAlive()){ rst.join(); }
-    //Thread.sleep(500);
 
     LOG.info("DONE stopDirtyRegionServer " + rsPos + " stopped");
   }
