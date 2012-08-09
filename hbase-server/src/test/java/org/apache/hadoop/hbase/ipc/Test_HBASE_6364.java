@@ -97,11 +97,12 @@ public class Test_HBASE_6364 {
     hrtu.moveTableTo(".META.", 1); // We will have only meta on this server
 
     hrtu.createTable(10, 0);
-    hrtu.getTestTable().close();
+
 
     DelayedHBaseClient.badPort =
         hrtu.getHBaseCluster().getRegionServer(1).getRpcServer().getListenerAddress().getPort();
     hrtu.stopDirtyRegionServer(1);
+    hrtu.cleanTableLocationCache();
 
     final long start = System.currentTimeMillis();
 
@@ -136,7 +137,7 @@ public class Test_HBASE_6364 {
 
     LOG.info("Time: " + (System.currentTimeMillis() - start) + " nb errors: " + errors.get());
 
-    Assert.assertTrue((System.currentTimeMillis() - start) < 12000);
+    Assert.assertTrue((System.currentTimeMillis() - start) < 20000);
     Assert.assertEquals(errors.get(), 0);
 
     hrtu.stopCleanCluster();

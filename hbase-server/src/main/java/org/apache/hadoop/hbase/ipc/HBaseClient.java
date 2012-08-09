@@ -287,7 +287,9 @@ public class HBaseClient {
         new AuthenticationTokenSelector());
   }
 
-
+  /**
+   * Creates a connection. Can be overridden by a subclass for testing.
+   */
   protected Connection createConnection(ConnectionId remoteId) throws IOException {
     return new Connection(remoteId);
   }
