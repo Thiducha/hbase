@@ -101,11 +101,11 @@ public class Test_HBASE_6364 {
     hrtu.moveTableTo(".META.", 1); // We will have only meta on this server
 
     hrtu.createTable(10, 0);
+    hrtu.getTestTable().close();
 
     DelayedHBaseClient.badPort =
         hrtu.getHBaseCluster().getRegionServer(1).getRpcServer().getListenerAddress().getPort();
     hrtu.stopDirtyRegionServer(1);
-    hrtu.cleanTableLocationCache();
 
     final long start = System.currentTimeMillis();
 
