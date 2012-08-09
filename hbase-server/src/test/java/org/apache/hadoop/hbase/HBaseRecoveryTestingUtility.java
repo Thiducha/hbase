@@ -99,18 +99,22 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     LOG.info("DONE stopCleanRegionServer " + rs + " Killed");
   }
 
-  public void stopDirtyRegionServer(int rs) throws Exception {
-    LOG.info("START stopDirtyRegionServer Region Server " + rs + " " + getHBaseCluster().getRegionServer(rs).getServerName());
-    LOG.info("Number of live regions " + getHBaseCluster().getRegionServer(rs).getCopyOfOnlineRegionsSortedBySize().size());
-    for (HRegion r : getHBaseCluster().getRegionServer(rs).getCopyOfOnlineRegionsSortedBySize().values()) {
+  public void stopDirtyRegionServer(int rsPos) throws Exception {
+    HRegionServer rs = getHBaseCluster().getRegionServer(rsPos);
+    LOG.info("START stopDirtyRegionServer Region Server " + rsPos + " " + rs.getServerName());
+    LOG.info("Number of live regions " + rs.getCopyOfOnlineRegionsSortedBySize().size());
+    for (HRegion r : rs.getCopyOfOnlineRegionsSortedBySize().values()) {
       LOG.info("Closing server with region " + r.getRegionNameAsString());
     }
 
     Method kill = HRegionServer.class.getDeclaredMethod("kill");
     kill.setAccessible(true);
-    kill.invoke(getHBaseCluster().getRegionServer(rs));
+    kill.invoke(rs);
+    while (rs.isOnline() || !rs.isStopped()){
+      Thread.sleep(1);
+    }
 
-    LOG.info("DONE stopDirtyRegionServer " + rs + " Killed");
+    LOG.info("DONE stopDirtyRegionServer " + rsPos + " Killed");
   }
 
   private ArrayList<ServerSocket> portsTaken = new ArrayList<ServerSocket>();
