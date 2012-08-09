@@ -117,11 +117,11 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     while (rs.isOnline() || !rs.isStopped()){
       Thread.sleep(1);
     }
-    if (rst.isAlive()){
-      rst.join();
-    }
+    //The thread is still alive and won't die...
+    //if (rst.isAlive()){ rst.join(); }
+    Thread.sleep(500);
 
-    LOG.info("DONE stopDirtyRegionServer " + rsPos + " Killed");
+    LOG.info("DONE stopDirtyRegionServer " + rsPos + " stopped");
   }
 
   private ArrayList<ServerSocket> portsTaken = new ArrayList<ServerSocket>();
