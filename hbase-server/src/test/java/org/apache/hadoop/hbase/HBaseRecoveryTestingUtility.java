@@ -114,12 +114,12 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     kill.setAccessible(true);
     kill.invoke(rs);
 
-    while (rs.isOnline() || !rs.isStopped()){
+    while (!rs.isStopped()){
       Thread.sleep(1);
     }
     //The thread is still alive and won't die...
-    //if (rst.isAlive()){ rst.join(); }
-    Thread.sleep(500);
+    if (rst.isAlive()){ rst.join(); }
+    //Thread.sleep(500);
 
     LOG.info("DONE stopDirtyRegionServer " + rsPos + " stopped");
   }
