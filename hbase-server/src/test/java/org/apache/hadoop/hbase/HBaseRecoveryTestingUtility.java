@@ -31,6 +31,7 @@ import org.apache.hadoop.hbase.coprocessor.SampleRegionWALObserver;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.JVMClusterUtil;
 import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.log4j.Level;
@@ -96,12 +97,14 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
   public void stopCleanRegionServer(int rs) {
     LOG.info("START stopCleanRegionServer " + rs + " " + getHBaseCluster().getRegionServer(rs).getServerName());
     getHBaseCluster().stopRegionServer(rs);
-    LOG.info("DONE stopCleanRegionServer " + rs + " Killed");
+    LOG.info("DONE stopCleanRegionServer " + rs + " stopped");
   }
 
   public void stopDirtyRegionServer(int rsPos) throws Exception {
     HRegionServer rs = getHBaseCluster().getRegionServer(rsPos);
     LOG.info("START stopDirtyRegionServer Region Server " + rsPos + " " + rs.getServerName());
+    JVMClusterUtil.RegionServerThread rst =
+        getHBaseCluster().hbaseCluster.getRegionServers().get(rsPos);
     LOG.info("Number of live regions " + rs.getCopyOfOnlineRegionsSortedBySize().size());
     for (HRegion r : rs.getCopyOfOnlineRegionsSortedBySize().values()) {
       LOG.info("Closing server with region " + r.getRegionNameAsString());
@@ -110,7 +113,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     Method kill = HRegionServer.class.getDeclaredMethod("kill");
     kill.setAccessible(true);
     kill.invoke(rs);
-    while (rs.isOnline() || !rs.isStopped()){
+    while (rs.isOnline() || !rs.isStopped() || rst.isAlive()){
       Thread.sleep(1);
     }
 
