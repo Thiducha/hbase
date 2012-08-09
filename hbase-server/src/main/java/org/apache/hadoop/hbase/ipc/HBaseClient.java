@@ -130,7 +130,7 @@ public class HBaseClient {
   /**
    * A class to manage a list of dead servers.
    */
-  private static class DeadServers {
+  protected static class DeadServers {
     private SortedMap<Long, String> deadServers = new TreeMap<Long, String>();
     private final int recheckServersTimeout;
 

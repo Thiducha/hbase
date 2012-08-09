@@ -74,19 +74,19 @@ public class Test_HBASE_6364 {
       // We call the original implementation and add a sleep if we were on the bad port, to
       //  simulate delayed timeout.
       protected void setupIOstreams() throws IOException, InterruptedException {
-        boolean sleep = true;
-        try {
-          super.setupIOstreams();
-        } catch (DeadServerIOException e) {
-          // We don't sleep if the server was detected as already dead
-          sleep = false;
-          throw e;
-        } finally {
-          if (this.remoteId.getAddress().getPort() == badPort && sleep) {
-            LOG.info("sleeping on call to port="+badPort);
-            Thread.sleep(5000);
-          }
+        // We need to do the sleep before, if not the sleep time will be added to the timeout
+        //  and the dead server will expire.
+        if (socket != null || shouldCloseConnection.get()) {
+          return;
         }
+
+        if (this.remoteId.getAddress().getPort() == badPort &&
+            !deadServers.isDeadServer(remoteId.getAddress())) {
+          LOG.info("sleeping on call to port=" + badPort);
+          Thread.sleep(5000);
+        }
+
+        super.setupIOstreams();
       }
     }
   }
