@@ -113,6 +113,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     Method kill = HRegionServer.class.getDeclaredMethod("kill");
     kill.setAccessible(true);
     kill.invoke(rs);
+
     while (rs.isOnline() || !rs.isStopped() || rst.isAlive()){
       Thread.sleep(1);
     }
