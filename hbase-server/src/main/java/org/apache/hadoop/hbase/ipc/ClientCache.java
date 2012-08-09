@@ -18,12 +18,15 @@
 
 package org.apache.hadoop.hbase.ipc;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.Map;
 
 import javax.net.SocketFactory;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.io.HbaseObjectWritable;
 import org.apache.hadoop.io.Writable;
 
@@ -60,8 +63,25 @@ class ClientCache {
       SocketFactory factory, Class<? extends Writable> valueClass) {
     HBaseClient client = clients.get(factory);
     if (client == null) {
+      @SuppressWarnings("unchecked")
+      Class<? extends HBaseClient> hbaseClientClass = (Class<? extends HBaseClient>) conf
+          .getClass(HConstants.HBASECLIENT_IMPL, HBaseClient.class);
+
       // Make an hbase client instead of hadoop Client.
-      client = new HBaseClient(valueClass, conf, factory);
+      try {
+        Constructor<? extends HBaseClient> cst = hbaseClientClass.getConstructor(
+            Writable.class, Configuration.class, SocketFactory.class);
+        client = cst.newInstance(valueClass, conf, factory);
+      } catch (NoSuchMethodException e) {
+        throw new RuntimeException(e);
+      } catch (InvocationTargetException e) {
+        throw new RuntimeException(e);
+      } catch (InstantiationException e) {
+        throw new RuntimeException(e);
+      } catch (IllegalAccessException e) {
+        throw new RuntimeException(e);
+      }
+
       clients.put(factory, client);
     } else {
       client.incCount();

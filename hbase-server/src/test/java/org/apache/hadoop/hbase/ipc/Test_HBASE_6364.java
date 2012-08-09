@@ -21,19 +21,34 @@ package org.apache.hadoop.hbase.ipc;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HBaseRecoveryTestingUtility;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.io.HbaseObjectWritable;
 import org.apache.hadoop.hdfs.DFSClient;
+import org.apache.hadoop.io.Writable;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
+import javax.net.SocketFactory;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.net.SocketAddress;
+import java.net.SocketException;
+import java.net.SocketImpl;
+import java.net.UnknownHostException;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.apache.hadoop.hbase.ipc.HBaseClient.*;
 
 @Category(LargeTests.class)
 public class Test_HBASE_6364 {
@@ -46,10 +61,81 @@ public class Test_HBASE_6364 {
 
   private HBaseRecoveryTestingUtility hrtu = new HBaseRecoveryTestingUtility();
 
+  public static class DelayedHBaseClient extends HBaseClient {
+    public DelayedHBaseClient(Class<? extends Writable> valueClass, Configuration conf,
+                              SocketFactory factory) {
+      super(valueClass, conf, factory);
+      LOG.info("DelayedHBaseClient created");
+    }
+
+    protected Connection createConnection(ConnectionId remoteId) throws IOException {
+      LOG.info("DelayedHBaseClient createConnection");
+      return new MyConnection(remoteId);
+    }
+
+    public static int badPort = 1;
+    class MyConnection extends HBaseClient.Connection {
+
+      MyConnection(ConnectionId remoteId) throws IOException {
+        super(remoteId);
+      }
+
+      protected void setupIOstreams() throws IOException, InterruptedException {
+        boolean sleep = true;
+        IOException toRethrow = null;
+        try {
+          super.setupIOstreams();
+        } catch (IOException e) {
+          toRethrow = e;
+          if (toRethrow instanceof DeadServerIOException) {
+            sleep = false;
+          }
+        }
+        if (this.remoteId.getAddress().getPort() == badPort && sleep) {
+          Thread.sleep(5000);
+        }
+      }
+    }
+  }
+
+  public static class MySocketFactory extends SocketFactory {
+    SocketFactory ss;
+
+
+    @Override
+    public Socket createSocket(String s, int i) throws IOException, UnknownHostException {
+      return ss.createSocket(s, i);
+    }
+
+    @Override
+    public Socket createSocket(String s, int i, InetAddress inetAddress, int i1) throws IOException, UnknownHostException {
+      return ss.createSocket(s, i, inetAddress, i1);
+    }
+
+    @Override
+    public Socket createSocket(InetAddress inetAddress, int i) throws IOException {
+      return ss.createSocket(inetAddress, i);
+    }
+
+    @Override
+    public Socket createSocket(InetAddress inetAddress, int i, InetAddress inetAddress1, int i1) throws IOException {
+      return ss.createSocket(inetAddress, i, inetAddress1, i1);
+    }
+  }
+
+  @Test
+  public void testParallelGetConnectionOnDeadHost() {
+    Configuration c = HBaseConfiguration.create();
+    c.clear();
+
+    HBaseClient hbc = new HBaseClient(HbaseObjectWritable.class, c);
+  }
+
   @Test
   public void test_6364() throws Exception {
     LOG.info("Start");
-
+    hrtu.getConfiguration().setClass(HConstants.HBASECLIENT_IMPL,
+        DelayedHBaseClient.class, HBaseClient.class  );
     hrtu.startClusterSynchronous(1, 1);
     hrtu.startNewRegionServer();
     hrtu.moveTableTo(".META.", 1); // We will have only meta on this server
@@ -57,11 +143,8 @@ public class Test_HBASE_6364 {
     hrtu.createTable(10, 0);
     hrtu.getTestTable().close();
 
-
-    // Need a static 'int sleep' with a test in HBaseClient#setupIOstreams
-    // if (sleep == remoteId.getAddress().getPort()) Thread.sleep(5000);
-    //
-    // HBaseClient.sleep = hrtu.getHBaseCluster().getRegionServer(1).getRpcServer().getListenerAddress().getPort();
+    DelayedHBaseClient.badPort =
+        hrtu.getHBaseCluster().getRegionServer(1).getRpcServer().getListenerAddress().getPort();
     hrtu.stopDirtyRegionServer(1);
 
     final long start = System.currentTimeMillis();
@@ -74,12 +157,12 @@ public class Test_HBASE_6364 {
     // If not, the fixed version will last a few seconds more than the sleep time, and the
     //  unfixed version around nbTest * sleepTime
     final int nbTest = 20;
-    for (int i=0; i<nbTest; i++){
-      Thread t = new Thread(){
-        public void run(){
+    for (int i = 0; i < nbTest; i++) {
+      Thread t = new Thread() {
+        public void run() {
           try {
             HTable h = new HTable(hrtu.getConfiguration(), hrtu.getTestTableName());
-            h.get(new Get(HConstants.EMPTY_START_ROW)) ;
+            h.get(new Get(HConstants.EMPTY_START_ROW));
             h.close();
           } catch (IOException e) {
             errors.incrementAndGet();
@@ -87,13 +170,15 @@ public class Test_HBASE_6364 {
             counter.incrementAndGet();
           }
         }
-      } ;
+      };
       t.start();
     }
 
-    while(counter.get() < nbTest){ Thread.sleep(1); }
+    while (counter.get() < nbTest) {
+      Thread.sleep(1);
+    }
 
-    LOG.info("Time: " + (System.currentTimeMillis()-start) + " nb errors: "+errors.get());
+    LOG.info("Time: " + (System.currentTimeMillis() - start) + " nb errors: " + errors.get());
 
     hrtu.stopCleanCluster();
     LOG.info("Done");

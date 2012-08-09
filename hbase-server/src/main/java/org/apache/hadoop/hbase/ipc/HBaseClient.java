@@ -286,6 +286,12 @@ public class HBaseClient {
     tokenHandlers.put(AuthenticationTokenIdentifier.AUTH_TOKEN_TYPE.toString(),
         new AuthenticationTokenSelector());
   }
+
+
+  protected Connection createConnection(ConnectionId remoteId) throws IOException {
+    return new Connection(remoteId);
+  }
+
   /** Thread that reads responses and notifies callers.  Each connection owns a
    * socket connected to a remote address.  Calls are multiplexed through this
    * socket: responses may be delivered out of order. */
@@ -309,7 +315,7 @@ public class HBaseClient {
     protected final AtomicBoolean shouldCloseConnection = new AtomicBoolean();  // indicate if the connection is closed
     protected IOException closeException; // close reason
 
-    public Connection(ConnectionId remoteId) throws IOException {
+    Connection(ConnectionId remoteId) throws IOException {
       if (remoteId.getAddress().isUnresolved()) {
         throw new UnknownHostException("unknown host: " +
                                        remoteId.getAddress().getHostName());
@@ -1361,7 +1367,7 @@ public class HBaseClient {
     synchronized (connections) {
       connection = connections.get(remoteId);
       if (connection == null) {
-        connection = new Connection(remoteId);
+        connection = createConnection(remoteId);
         connections.put(remoteId, connection);
       }
     }
