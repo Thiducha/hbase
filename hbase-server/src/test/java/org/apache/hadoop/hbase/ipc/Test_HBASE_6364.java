@@ -59,7 +59,7 @@ public class Test_HBASE_6364 {
     }
 
     protected Connection createConnection(ConnectionId remoteId) throws IOException {
-      LOG.info("DelayedHBaseClient createConnection");
+      LOG.info("createConnection");
       return new MyConnection(remoteId);
     }
 
@@ -71,15 +71,19 @@ public class Test_HBASE_6364 {
         super(remoteId);
       }
 
+      // We call the original implementation and add a sleep if we were on the bad port, to
+      //  simulate delayed timeout.
       protected void setupIOstreams() throws IOException, InterruptedException {
         boolean sleep = true;
         try {
           super.setupIOstreams();
         } catch (DeadServerIOException e) {
+          // We don't sleep if the server was detected as already dead
           sleep = false;
           throw e;
         } finally {
           if (this.remoteId.getAddress().getPort() == badPort && sleep) {
+            LOG.info("sleeping");
             Thread.sleep(5000);
           }
         }
