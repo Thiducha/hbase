@@ -73,9 +73,9 @@ public class Test_HBASE_6364 {
 
       // We call the original implementation and add a sleep if we were on the bad port, to
       //  simulate delayed timeout.
-      protected void setupIOstreams() throws IOException, InterruptedException {
-        // We need to do the sleep before, if not the sleep time will be added to the timeout
-        //  and the dead server will expire.
+      protected synchronized void setupIOstreams() throws IOException, InterruptedException {
+        // We need to do the sleep before calling the super implementation. If not the sleep time
+        // will make the server going out of the dead servers list because of the expiry time.
         if (socket != null || shouldCloseConnection.get()) {
           return;
         }
