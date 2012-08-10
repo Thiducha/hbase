@@ -39,12 +39,9 @@ import java.security.PrivilegedExceptionAction;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Random;
-import java.util.SortedMap;
-import java.util.TreeMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -146,7 +143,7 @@ public class HBaseClient {
     }
 
     /**
-     * Add an address to the list of the dead list.
+     * Add an address to the list of the failed servers list.
      */
     public synchronized void addToFailedServers(InetSocketAddress address) {
       final long expiry = EnvironmentEdgeManager.currentTimeMillis() + recheckServersTimeout;
@@ -180,8 +177,8 @@ public class HBaseClient {
     }
   }
 
-  public static class BadServerException extends IOException {
-    public BadServerException(String s) {
+  public static class FailedServerException extends IOException {
+    public FailedServerException(String s) {
       super(s);
     }
   }
@@ -306,6 +303,7 @@ public class HBaseClient {
 
   /**
    * Creates a connection. Can be overridden by a subclass for testing.
+   * @param remoteId - the ConnectionId to use for the connection creation.
    */
   protected Connection createConnection(ConnectionId remoteId) throws IOException {
     return new Connection(remoteId);
@@ -432,8 +430,8 @@ public class HBaseClient {
      * Add a call to this connection's call queue and notify
      * a listener; synchronized. If the connection is dead, the call is not added, and the
      * caller is notified.
-     * This function can return connection that are already marked as 'shouldCloseConnection'
-     *  This is up to the user code to check this status.
+     * This function can return a connection that is already marked as 'shouldCloseConnection'
+     *  It is up to the user code to check this status.
      * @param call to add
      */
     protected synchronized void addCall(Call call) {
@@ -442,9 +440,9 @@ public class HBaseClient {
       //  mentioned in HBASE-6364
       if (this.shouldCloseConnection.get()) {
         if (this.closeException == null) {
-          call.setException( new IOException(
+          call.setException(new IOException(
               "Call " + call.id + " not added as the connection " + remoteId + " is closing"));
-        }else {
+        } else {
           call.setException(this.closeException);
         }
         synchronized (call) {
@@ -771,7 +769,7 @@ public class HBaseClient {
           LOG.debug("Not trying to connect to " + server +
               " this server is in the failed servers list");
         }
-        IOException e = new BadServerException(
+        IOException e = new FailedServerException(
             "This server is in the failed servers list: " + server);
         markClosed(e);
         close();
