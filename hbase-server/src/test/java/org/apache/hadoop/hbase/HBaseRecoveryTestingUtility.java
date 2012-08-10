@@ -114,11 +114,11 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     kill.setAccessible(true);
     kill.invoke(rs);
 
-    while (!rs.isStopped()){
+    while (!rs.isStopped()) {
       Thread.sleep(1);
     }
     LOG.info("Server is stopped, waiting for the region server thread to finish");
-    if (rst.isAlive()){
+    if (rst.isAlive()) {
       rst.join();
     }
 
@@ -244,7 +244,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     HConnection hci = testTable.getConnection();
 
     Method updateCachedLocation = hci.getClass().getDeclaredMethod("updateCachedLocation",
-        HRegionLocation.class, String.class, Integer.class );
+        HRegionLocation.class, String.class, Integer.class);
     updateCachedLocation.setAccessible(true);
 
     int fakePort = getHBaseCluster().getRegionServer(fakeRS).getRpcServer().getListenerAddress().getPort();
@@ -295,11 +295,11 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
   }
 
   public void stopCleanCluster() throws Exception {
-    for (ServerSocket ss: portsTaken){
+    for (ServerSocket ss : portsTaken) {
       ss.close();
     }
 
-    if (testTable != null){
+    if (testTable != null) {
       testTable.close();
     }
 

@@ -38,6 +38,8 @@ import java.net.UnknownHostException;
 import java.security.PrivilegedExceptionAction;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Random;
@@ -70,6 +72,7 @@ import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.security.token.AuthenticationTokenIdentifier;
 import org.apache.hadoop.hbase.security.token.AuthenticationTokenSelector;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
+import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.PoolMap;
 import org.apache.hadoop.hbase.util.PoolMap.PoolType;
 import org.apache.hadoop.io.DataOutputBuffer;
@@ -126,14 +129,15 @@ public class HBaseClient {
   final static int DEFAULT_SOCKET_TIMEOUT = 20000; // 20 seconds
   final static int PING_CALL_ID = -1;
 
-  public final static String FAILED_SERVER_EXPIRY_KEY = "hbase.ipc.client.recheck.servers.expiry";
+  public final static String FAILED_SERVER_EXPIRY_KEY = "hbase.ipc.client.failed.servers.expiry";
   public final static int FAILED_SERVER_EXPIRY_DEFAULT = 2000;
 
   /**
    * A class to manage a list of servers that failed recently.
    */
   protected static class FailedServers {
-    private SortedMap<Long, String> failedServers = new TreeMap<Long, String>();
+    private final LinkedList<Pair<Long, String>> failedServers = new
+        LinkedList<Pair<Long, java.lang.String>>();
     private final int recheckServersTimeout;
 
     FailedServers(Configuration conf) {
@@ -144,33 +148,43 @@ public class HBaseClient {
     /**
      * Add an address to the list of the dead list.
      */
-    public synchronized void addToDeadServers(InetSocketAddress address) {
+    public synchronized void addToFailedServers(InetSocketAddress address) {
       final long expiry = EnvironmentEdgeManager.currentTimeMillis() + recheckServersTimeout;
-      failedServers.put(expiry, address.toString());
+      failedServers.addFirst(new Pair<Long, String>(expiry, address.toString()));
     }
 
     /**
-     * Check if the server should be considered as dead. Clean the old entries of the list.
-     * @return true if the server is in the dead servers list
+     * Check if the server should be considered as bad. Clean the old entries of the list.
+     *
+     * @return true if the server is in the failed servers list
      */
-    public synchronized boolean isFailedServer(InetSocketAddress address) {
+    public synchronized boolean isFailedServer(final InetSocketAddress address) {
       if (!failedServers.isEmpty()) {
+        final String lookup = address.toString();
         final long now = EnvironmentEdgeManager.currentTimeMillis();
-        failedServers = failedServers.tailMap(now);
-        if (failedServers.containsValue(address.toString())) {
-          return true;
+
+        // iterate and clean expired entries
+        Iterator<Pair<Long, String>> it = failedServers.iterator();
+        while (it.hasNext()) {
+          Pair<Long, String> cur = it.next();
+          if (cur.getFirst() < now) {
+            it.remove();
+          } else {
+            if (lookup.equals(cur.getSecond())) {
+              return true;
+            }
+          }
         }
       }
       return false;
     }
   }
 
-  public static class BadServerException extends IOException{
-    public BadServerException(String s){
+  public static class BadServerException extends IOException {
+    public BadServerException(String s) {
       super(s);
     }
   }
-
 
 
   /**
@@ -752,12 +766,13 @@ public class HBaseClient {
         return;
       }
 
-      if (failedServers.isFailedServer(remoteId.getAddress())){
+      if (failedServers.isFailedServer(remoteId.getAddress())) {
         if (LOG.isDebugEnabled()) {
-          LOG.debug("Connection to "+server+" aborted, as this server is in the dead servers list");
+          LOG.debug("Connection to " + server +
+              " aborted, this server is in the failed servers list");
         }
         IOException e = new BadServerException(
-            "This server is is the dead server list: "+server);
+            "This server is is the failed server list: " + server);
         markClosed(e);
         close();
         throw e;
@@ -825,7 +840,7 @@ public class HBaseClient {
           return;
         }
       } catch (IOException e) {
-        failedServers.addToDeadServers(remoteId.address);
+        failedServers.addToFailedServers(remoteId.address);
         markClosed(e);
         close();
 
