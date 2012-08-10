@@ -114,7 +114,7 @@ public class HBaseClient {
   protected final boolean tcpKeepAlive; // if T then use keepalives
   protected int pingInterval; // how often sends ping to the server in msecs
   protected int socketTimeout; // socket timeout
-  protected DeadServers deadServers;
+  protected FailedServers failedServers;
 
   protected final SocketFactory socketFactory;           // how to create sockets
   private int refCount = 1;
@@ -126,16 +126,19 @@ public class HBaseClient {
   final static int DEFAULT_SOCKET_TIMEOUT = 20000; // 20 seconds
   final static int PING_CALL_ID = -1;
 
+  public final static String FAILED_SERVER_EXPIRY_KEY = "hbase.ipc.client.recheck.servers.expiry";
+  public final static int FAILED_SERVER_EXPIRY_DEFAULT = 2000;
 
   /**
-   * A class to manage a list of dead servers.
+   * A class to manage a list of servers that failed recently.
    */
-  protected static class DeadServers {
-    private SortedMap<Long, String> deadServers = new TreeMap<Long, String>();
+  protected static class FailedServers {
+    private SortedMap<Long, String> failedServers = new TreeMap<Long, String>();
     private final int recheckServersTimeout;
 
-    DeadServers(Configuration conf) {
-      this.recheckServersTimeout = conf.getInt("hbase.ipc.client.recheckServersTimeout", 2000);
+    FailedServers(Configuration conf) {
+      this.recheckServersTimeout = conf.getInt(
+          FAILED_SERVER_EXPIRY_KEY, FAILED_SERVER_EXPIRY_DEFAULT);
     }
 
     /**
@@ -143,18 +146,18 @@ public class HBaseClient {
      */
     public synchronized void addToDeadServers(InetSocketAddress address) {
       final long expiry = EnvironmentEdgeManager.currentTimeMillis() + recheckServersTimeout;
-      deadServers.put(expiry, address.toString());
+      failedServers.put(expiry, address.toString());
     }
 
     /**
      * Check if the server should be considered as dead. Clean the old entries of the list.
      * @return true if the server is in the dead servers list
      */
-    public synchronized boolean isDeadServer(InetSocketAddress address) {
-      if (!deadServers.isEmpty()) {
+    public synchronized boolean isFailedServer(InetSocketAddress address) {
+      if (!failedServers.isEmpty()) {
         final long now = EnvironmentEdgeManager.currentTimeMillis();
-        deadServers = deadServers.tailMap(now);
-        if (deadServers.containsValue(address.toString())) {
+        failedServers = failedServers.tailMap(now);
+        if (failedServers.containsValue(address.toString())) {
           return true;
         }
       }
@@ -162,8 +165,8 @@ public class HBaseClient {
     }
   }
 
-  public static class DeadServerIOException extends IOException{
-    public DeadServerIOException(String s){
+  public static class BadServerException extends IOException{
+    public BadServerException(String s){
       super(s);
     }
   }
@@ -749,11 +752,11 @@ public class HBaseClient {
         return;
       }
 
-      if (deadServers.isDeadServer(remoteId.getAddress())){
+      if (failedServers.isFailedServer(remoteId.getAddress())){
         if (LOG.isDebugEnabled()) {
           LOG.debug("Connection to "+server+" aborted, as this server is in the dead servers list");
         }
-        IOException e = new DeadServerIOException(
+        IOException e = new BadServerException(
             "This server is is the dead server list: "+server);
         markClosed(e);
         close();
@@ -822,7 +825,7 @@ public class HBaseClient {
           return;
         }
       } catch (IOException e) {
-        deadServers.addToDeadServers(remoteId.address);
+        failedServers.addToDeadServers(remoteId.address);
         markClosed(e);
         close();
 
@@ -1125,7 +1128,7 @@ public class HBaseClient {
     this.clusterId = conf.get(HConstants.CLUSTER_ID, "default");
     this.connections = new PoolMap<ConnectionId, Connection>(
         getPoolType(conf), getPoolSize(conf));
-    this.deadServers = new DeadServers(conf);
+    this.failedServers = new FailedServers(conf);
   }
 
   /**

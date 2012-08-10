@@ -27,6 +27,7 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.io.Writable;
 import org.apache.log4j.Level;
@@ -84,7 +85,7 @@ public class Test_HBASE_6364 {
         }
 
         if (this.remoteId.getAddress().getPort() == badPort &&
-            !deadServers.isDeadServer(remoteId.getAddress())) {
+            !failedServers.isFailedServer(remoteId.getAddress())) {
           LOG.info("sleeping on call to port=" + badPort);
           Thread.sleep(5000);
         }
@@ -113,7 +114,7 @@ public class Test_HBASE_6364 {
     DelayedHBaseClient.badPort = port;
 
 
-    final long start = System.currentTimeMillis();
+    final long start = EnvironmentEdgeManager.currentTimeMillis();
 
     final AtomicInteger counter = new AtomicInteger(0);
     final AtomicInteger errors = new AtomicInteger(0);
@@ -146,7 +147,7 @@ public class Test_HBASE_6364 {
 
     LOG.info("Time: " + (System.currentTimeMillis() - start) + " nb errors: " + errors.get());
 
-    Assert.assertTrue((System.currentTimeMillis() - start) < 20000);
+    Assert.assertTrue((EnvironmentEdgeManager.currentTimeMillis() - start) < 20000);
     Assert.assertEquals(errors.get(), 0);
 
     DelayedHBaseClient.badPort = 0;
