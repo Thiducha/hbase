@@ -135,7 +135,7 @@ public class HBaseClient {
   /**
    * A class to manage a list of servers that failed recently.
    */
-  protected static class FailedServers {
+  static class FailedServers {
     private final LinkedList<Pair<Long, String>> failedServers = new
         LinkedList<Pair<Long, java.lang.String>>();
     private final int recheckServersTimeout;

@@ -60,7 +60,7 @@ public class EnvironmentEdgeManager {
    *
    * @param edge the new edge.
    */
-  static void injectEdge(EnvironmentEdge edge) {
+  public static void injectEdge(EnvironmentEdge edge) {
     if (edge == null) {
       reset();
     } else {
