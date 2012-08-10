@@ -768,11 +768,11 @@ public class HBaseClient {
 
       if (failedServers.isFailedServer(remoteId.getAddress())) {
         if (LOG.isDebugEnabled()) {
-          LOG.debug("Connection to " + server +
-              " aborted, this server is in the failed servers list");
+          LOG.debug("Not trying to connect to " + server +
+              " this server is in the failed servers list");
         }
         IOException e = new BadServerException(
-            "This server is is the failed server list: " + server);
+            "This server is in the failed servers list: " + server);
         markClosed(e);
         close();
         throw e;
