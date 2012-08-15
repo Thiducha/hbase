@@ -649,7 +649,7 @@ public class  HRegionServer implements ClientProtocol,
       for (int i = 0; i < nbBlocks; i++) {
         reservedSpace.add(new byte[HConstants.DEFAULT_SIZE_RESERVATION_BLOCK]);
       }
-      HFileSystem.addLocationOrderHack(conf);
+      HFileSystem.addLocationsOrderHack(conf);
     } catch (Throwable t) {
       // Call stop if error or process will stick around for ever since server
       // puts up non-daemon threads.

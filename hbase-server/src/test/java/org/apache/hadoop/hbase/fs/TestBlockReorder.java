@@ -16,17 +16,14 @@ import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.MiniHBaseCluster;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.regionserver.TestParallelPut;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
 import org.apache.hadoop.hdfs.server.datanode.DataNode;
 import org.junit.After;
-import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -109,7 +106,7 @@ public class TestBlockReorder {
 
 
     // Add the hook, with an implementation checking that we don't use the port we've just killed.
-    HFileSystem.addLocationOrderHack(conf, new HFileSystem.ReorderBlocks() {
+    HFileSystem.addLocationsOrderHack(conf, new HFileSystem.ReorderBlocks() {
       @Override
       public void reorderBlocks(Configuration c, LocatedBlocks lbs, String src) {
         for (LocatedBlock lb : lbs.getLocatedBlocks()) {

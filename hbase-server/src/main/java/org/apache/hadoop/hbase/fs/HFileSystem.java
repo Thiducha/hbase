@@ -36,7 +36,6 @@ import org.apache.hadoop.fs.FilterFileSystem;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hdfs.DFSClient;
@@ -178,42 +177,45 @@ public class HFileSystem extends FilterFileSystem {
     return fs;
   }
 
-  public static void addLocationOrderHack(Configuration conf) throws IOException {
-    addLocationOrderHack(conf, new LogReorderBlocks());
+  public static void addLocationsOrderHack(Configuration conf) throws IOException {
+    addLocationsOrderHack(conf, new LogReorderBlocks());
   }
 
   /**
-   * Add an interceptor on the calls to tne namenode#getBlockLocations from the DFSClient
+   * Add an interceptor on the calls to the namenode#getBlockLocations from the DFSClient
    *  linked to this FileSystem. See HBASE-6435 for the background.
    *
-   * There should be no reason, except testing to create a specific ReorderBlocks.
+   * Package protected for testing reasons: There should be no reason to use it, except testing
+   * to create a specific ReorderBlocks.
+   *
+   * @return true if the reorde interceptor has been added, false otherwise.
    */
-  static void addLocationOrderHack(Configuration conf, final ReorderBlocks lrb)
+  static boolean addLocationsOrderHack(Configuration conf, final ReorderBlocks lrb)
       throws IOException {
     FileSystem fs = FileSystem.get(conf);
 
-      if (!(fs instanceof DistributedFileSystem)){
+    if (!(fs instanceof DistributedFileSystem)) {
       LOG.warn("The file system is not a DistributedFileSystem. Not adding block location reordering");
-      return;
+      return false;
     }
 
-    DistributedFileSystem dfs =(DistributedFileSystem)fs;
+    DistributedFileSystem dfs = (DistributedFileSystem) fs;
     DFSClient dfsc = dfs.getClient();
-    if (dfsc == null){
-        LOG.warn("The DistributedFileSystem does not contains a DFSClient." +
-            " Can't add the location block reordering hack. Continuing, but this is unexpected."
-        );
-      return;
+    if (dfsc == null) {
+      LOG.warn("The DistributedFileSystem does not contain a DFSClient." +
+          " Can't add the location block reordering hack. Continuing, but this is unexpected."
+      );
+      return false;
     }
 
-    if (dfsc.namenode == null){
+    if (dfsc.namenode == null) {
       LOG.warn("The DFSClient is not linked to a namenode" +
           " Can't add the location block reordering hack. Continuing, but this is unexpected."
       );
-      return;
+      return false;
     }
 
-    ClientProtocol cp1 =  createReordoringProxy(dfsc.namenode, lrb, conf);
+    ClientProtocol cp1 = createReorderingProxy(dfsc.namenode, lrb, conf);
 
     try {
       Field nf = DFSClient.class.getField("namenode");
@@ -225,15 +227,17 @@ public class HFileSystem extends FilterFileSystem {
       nf.set(dfsc, cp1);
       LOG.info("Added intercepting call to namenode get location");
     } catch (NoSuchFieldException impossible) {
+      return false;
     } catch (IllegalAccessException e) {
       LOG.warn("Can't modify the DFSClient#namenode field to add the location reorder.", e);
+      return false;
     }
+
+    return true;
   }
 
-  private static ClientProtocol createReordoringProxy(final ClientProtocol cp,
-                                                      final ReorderBlocks lrb,
-                                                      final Configuration conf
-) {
+  private static ClientProtocol createReorderingProxy(final ClientProtocol cp,
+      final ReorderBlocks lrb, final Configuration conf) {
     return (ClientProtocol) Proxy.newProxyInstance
         (cp.getClass().getClassLoader(),
             new Class[]{ClientProtocol.class},
@@ -252,18 +256,18 @@ public class HFileSystem extends FilterFileSystem {
             });
   }
 
-  static interface ReorderBlocks{
+  static interface ReorderBlocks {
     public void reorderBlocks(Configuration conf, LocatedBlocks lbs, String src);
   }
 
   /**
    * We're putting at lowest priority the hlog files blocks that are on the same datanode
-   *  as the original regionserver which created these files. This because we fear that the
-   *  datanode is actually dead, so if we use it it will timeout.
+   * as the original regionserver which created these files. This because we fear that the
+   * datanode is actually dead, so if we use it it will timeout.
    */
   static class LogReorderBlocks implements ReorderBlocks {
     public void reorderBlocks(Configuration conf, LocatedBlocks lbs, String src) {
-      LOG.info("intercepting a call to LocatedBlocks to reorder the blocks of the file " + src);
+      LOG.info("intercepting a call to getBlockLocations to reorder the blocks of the file " + src);
 
       ServerName sn = HLog.getServerNameFromHLogDirectoryName(conf, src);
       if (sn == null) return;
@@ -278,14 +282,13 @@ public class HFileSystem extends FilterFileSystem {
           boolean found = false;
           for (int i = 0; i < dnis.length - 1 && !found; i++) {
             if (hostName.equals(dnis[i].getHostName()) || hostName.equals(dnis[i].getHost())) {
-
               // advance the other locations by one and put this one at the last place.
               DatanodeInfo toLast = dnis[i];
-              System.arraycopy(dnis, i, dnis, i+1, dnis.length-i-1);
+              System.arraycopy(dnis, i, dnis, i + 1, dnis.length - i - 1);
               dnis[dnis.length - 1] = toLast;
               found = true;
-              LOG.debug("Moved the location "+toLast.getHostName()+" to the last place." +
-                  " locations size was "+dnis.length);
+              LOG.debug("Moved the location " + toLast.getHostName() + " to the last place." +
+                  " locations size was " + dnis.length);
             }
           }
         }
