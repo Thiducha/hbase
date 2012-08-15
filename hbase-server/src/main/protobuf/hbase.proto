@@ -185,6 +185,17 @@ message TimeRange {
   optional uint64 to = 2;
 }
 
+/* Comparison operators */
+enum CompareType {
+  LESS = 0;
+  LESS_OR_EQUAL = 1;
+  EQUAL = 2;
+  NOT_EQUAL = 3;
+  GREATER_OR_EQUAL = 4;
+  GREATER = 5;
+  NO_OP = 6;
+}
+
 /**
  * The type of the key in a KeyValue.
  */
@@ -236,4 +247,9 @@ message NameStringPair {
 message NameBytesPair {
   required string name = 1;
   optional bytes value = 2;
+}
+
+message BytesBytesPair {
+  required bytes first = 1;
+  required bytes second = 2;
 }

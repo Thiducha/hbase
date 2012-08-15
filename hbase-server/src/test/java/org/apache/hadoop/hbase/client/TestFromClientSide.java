@@ -46,7 +46,6 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.*;
-import org.apache.hadoop.hbase.client.HTable.DaemonThreadFactory;
 import org.apache.hadoop.hbase.client.metrics.ScanMetrics;
 import org.apache.hadoop.hbase.coprocessor.CoprocessorHost;
 import org.apache.hadoop.hbase.coprocessor.MultiRowMutationEndpoint;
@@ -68,6 +67,7 @@ import org.apache.hadoop.hbase.io.hfile.BlockCache;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
+import org.apache.hadoop.hbase.regionserver.HStore;
 import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
@@ -90,12 +90,12 @@ import static org.junit.Assert.*;
 @Category(LargeTests.class)
 public class TestFromClientSide {
   final Log LOG = LogFactory.getLog(getClass());
-  private final static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
+  protected final static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
   private static byte [] ROW = Bytes.toBytes("testRow");
   private static byte [] FAMILY = Bytes.toBytes("testFamily");
   private static byte [] QUALIFIER = Bytes.toBytes("testQualifier");
   private static byte [] VALUE = Bytes.toBytes("testValue");
-  private static int SLAVES = 3;
+  protected static int SLAVES = 3;
 
   /**
    * @throws java.lang.Exception
@@ -3939,7 +3939,7 @@ public class TestFromClientSide {
 
   /**
    * simple test that just executes parts of the client
-   * API that accept a pre-created HConnction instance
+   * API that accept a pre-created HConnection instance
    *
    * @throws IOException
    */
@@ -3952,7 +3952,7 @@ public class TestFromClientSide {
     ExecutorService pool = new ThreadPoolExecutor(1, Integer.MAX_VALUE,
         60, TimeUnit.SECONDS,
         new SynchronousQueue<Runnable>(),
-        new DaemonThreadFactory());
+        new DaemonThreadFactory("test-from-client-pool"));
     ((ThreadPoolExecutor)pool).allowCoreThreadTimeOut(true);
     HTable t = new HTable(tableName, conn, pool);
     HBaseAdmin ha = new HBaseAdmin(conn);
@@ -4594,7 +4594,7 @@ public class TestFromClientSide {
     String regionName = table.getRegionLocations().firstKey().getEncodedName();
     HRegion region = TEST_UTIL.getRSForFirstRegionInTable(
         tableName).getFromOnlineRegions(regionName);
-    Store store = region.getStores().values().iterator().next();
+    HStore store = region.getStores().values().iterator().next();
     CacheConfig cacheConf = store.getCacheConfig();
     cacheConf.setCacheDataOnWrite(true);
     cacheConf.setEvictOnClose(true);
@@ -4669,7 +4669,7 @@ public class TestFromClientSide {
     assertEquals(++expectedBlockMiss, cache.getStats().getMissCount());
   }
 
-  private void waitForStoreFileCount(Store store, int count, int timeout)
+  private void waitForStoreFileCount(HStore store, int count, int timeout)
   throws InterruptedException {
     long start = System.currentTimeMillis();
     while (start + timeout > System.currentTimeMillis() &&

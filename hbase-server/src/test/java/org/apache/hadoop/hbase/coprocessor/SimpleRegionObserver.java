@@ -29,10 +29,12 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Arrays;
+import java.util.NavigableSet;
 
 import com.google.common.collect.ImmutableList;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.hbase.CoprocessorEnvironment;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Put;
@@ -42,7 +44,10 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.InternalScanner;
+import org.apache.hadoop.hbase.regionserver.KeyValueScanner;
+import org.apache.hadoop.hbase.regionserver.Leases;
 import org.apache.hadoop.hbase.regionserver.RegionScanner;
+import org.apache.hadoop.hbase.regionserver.ScanType;
 import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.regionserver.StoreFile;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
@@ -63,11 +68,13 @@ public class SimpleRegionObserver extends BaseRegionObserver {
   boolean hadPreClose;
   boolean hadPostClose;
   boolean hadPreFlush;
+  boolean hadPreFlushScannerOpen;
   boolean hadPostFlush;
   boolean hadPreSplit;
   boolean hadPostSplit;
   boolean hadPreCompactSelect;
   boolean hadPostCompactSelect;
+  boolean hadPreCompactScanner;
   boolean hadPreCompact;
   boolean hadPostCompact;
   boolean hadPreGet = false;
@@ -87,9 +94,22 @@ public class SimpleRegionObserver extends BaseRegionObserver {
   boolean hadPreScannerClose = false;
   boolean hadPostScannerClose = false;
   boolean hadPreScannerOpen = false;
+  boolean hadPreStoreScannerOpen = false;
   boolean hadPostScannerOpen = false;
   boolean hadPreBulkLoadHFile = false;
   boolean hadPostBulkLoadHFile = false;
+
+  @Override
+  public void start(CoprocessorEnvironment e) throws IOException {
+    // this only makes sure that leases and locks are available to coprocessors
+    // from external packages
+    RegionCoprocessorEnvironment re = (RegionCoprocessorEnvironment)e;
+    Leases leases = re.getRegionServerServices().getLeases();
+    leases.createLease("x", 2000, null);
+    leases.cancelLease("x");
+    Integer lid = re.getRegion().getLock(null, Bytes.toBytes("some row"), true);
+    re.getRegion().releaseRowLock(lid);
+  }
 
   @Override
   public void preOpen(ObserverContext<RegionCoprocessorEnvironment> c) {
@@ -120,12 +140,20 @@ public class SimpleRegionObserver extends BaseRegionObserver {
   }
 
   @Override
-  public void preFlush(ObserverContext<RegionCoprocessorEnvironment> c) {
+  public InternalScanner preFlush(ObserverContext<RegionCoprocessorEnvironment> c, Store store, InternalScanner scanner) {
     hadPreFlush = true;
+    return scanner;
   }
 
   @Override
-  public void postFlush(ObserverContext<RegionCoprocessorEnvironment> c) {
+  public InternalScanner preFlushScannerOpen(final ObserverContext<RegionCoprocessorEnvironment> c,
+      Store store, KeyValueScanner memstoreScanner, InternalScanner s) throws IOException {
+    hadPreFlushScannerOpen = true;
+    return null;
+  }
+
+  @Override
+  public void postFlush(ObserverContext<RegionCoprocessorEnvironment> c, Store store, StoreFile resultFile) {
     hadPostFlush = true;
   }
 
@@ -167,6 +195,14 @@ public class SimpleRegionObserver extends BaseRegionObserver {
   }
 
   @Override
+  public InternalScanner preCompactScannerOpen(final ObserverContext<RegionCoprocessorEnvironment> c,
+      Store store, List<? extends KeyValueScanner> scanners, ScanType scanType, long earliestPutTs,
+      InternalScanner s) throws IOException {
+    hadPreCompactScanner = true;
+    return null;
+  }
+
+  @Override
   public void postCompact(ObserverContext<RegionCoprocessorEnvironment> e,
       Store store, StoreFile resultFile) {
     hadPostCompact = true;
@@ -181,6 +217,14 @@ public class SimpleRegionObserver extends BaseRegionObserver {
       final Scan scan,
       final RegionScanner s) throws IOException {
     hadPreScannerOpen = true;
+    return null;
+  }
+
+  @Override
+  public KeyValueScanner preStoreScannerOpen(final ObserverContext<RegionCoprocessorEnvironment> c,
+      final Store store, final Scan scan, final NavigableSet<byte[]> targetCols,
+      final KeyValueScanner s) throws IOException {
+    hadPreStoreScannerOpen = true;
     return null;
   }
 

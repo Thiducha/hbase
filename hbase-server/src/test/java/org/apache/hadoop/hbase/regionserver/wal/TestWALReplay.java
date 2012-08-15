@@ -45,17 +45,16 @@ import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.monitoring.MonitoredTask;
-import org.apache.hadoop.hbase.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.regionserver.FlushRequester;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
+import org.apache.hadoop.hbase.regionserver.HStore;
 import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.EnvironmentEdge;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Pair;
-import org.apache.hadoop.hbase.util.Strings;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -183,7 +182,7 @@ public class TestWALReplay {
     // flush region and make major compaction
     destServer.getOnlineRegion(destRegion.getRegionName()).flushcache();
     // wait to complete major compaction
-    for (Store store : destServer.getOnlineRegion(destRegion.getRegionName())
+    for (HStore store : destServer.getOnlineRegion(destRegion.getRegionName())
         .getStores().values()) {
       store.triggerMajorCompaction();
     }
@@ -212,8 +211,12 @@ public class TestWALReplay {
         Bytes.toBytes(destServer.getServerName().getServerName()));
     while (true) {
       ServerName serverName = master.getAssignmentManager()
-          .getRegionServerOfRegion(destRegion.getRegionInfo());
-      if (serverName != null && serverName.equals(destServer.getServerName())) break;
+        .getRegionStates().getRegionServerOfRegion(destRegion.getRegionInfo());
+      if (serverName != null && serverName.equals(destServer.getServerName())) {
+        TEST_UTIL.assertRegionOnServer(
+          destRegion.getRegionInfo(), serverName, 200);
+        break;
+      }
       Thread.sleep(10);
     }
   }
@@ -419,7 +422,7 @@ public class TestWALReplay {
         final AtomicInteger countOfRestoredEdits = new AtomicInteger(0);
         HRegion region3 = new HRegion(basedir, wal3, newFS, newConf, hri, htd, null) {
           @Override
-          protected boolean restoreEdit(Store s, KeyValue kv) {
+          protected boolean restoreEdit(HStore s, KeyValue kv) {
             boolean b = super.restoreEdit(s, kv);
             countOfRestoredEdits.incrementAndGet();
             return b;
@@ -709,12 +712,10 @@ public class TestWALReplay {
   // Flusher used in this test.  Keep count of how often we are called and
   // actually run the flush inside here.
   class TestFlusher implements FlushRequester {
-    private int count = 0;
     private HRegion r;
 
     @Override
     public void requestFlush(HRegion region) {
-      count++;
       try {
         r.flushcache();
       } catch (IOException e) {

@@ -29,7 +29,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -50,15 +49,20 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.Abortable;
 import org.apache.hadoop.hbase.Chore;
 import org.apache.hadoop.hbase.ClusterStatus;
+import org.apache.hadoop.hbase.CompatibilitySingletonFactory;
 import org.apache.hadoop.hbase.DeserializationException;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.MasterAdminProtocol;
+import org.apache.hadoop.hbase.MasterMonitorProtocol;
 import org.apache.hadoop.hbase.MasterNotRunningException;
 import org.apache.hadoop.hbase.NotAllMetaRegionsOnlineException;
 import org.apache.hadoop.hbase.PleaseHoldException;
+import org.apache.hadoop.hbase.RegionServerStatusProtocol;
 import org.apache.hadoop.hbase.Server;
+import org.apache.hadoop.hbase.ServerLoad;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.TableDescriptors;
 import org.apache.hadoop.hbase.TableNotDisabledException;
@@ -78,11 +82,9 @@ import org.apache.hadoop.hbase.executor.ExecutorService.ExecutorType;
 import org.apache.hadoop.hbase.fs.HFileSystem;
 import org.apache.hadoop.hbase.ipc.HBaseRPC;
 import org.apache.hadoop.hbase.ipc.HBaseServer;
-import org.apache.hadoop.hbase.MasterMonitorProtocol;
-import org.apache.hadoop.hbase.MasterAdminProtocol;
-import org.apache.hadoop.hbase.RegionServerStatusProtocol;
+import org.apache.hadoop.hbase.master.metrics.MXBeanImpl;
+import org.apache.hadoop.hbase.metrics.MBeanSource;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
-import org.apache.hadoop.hbase.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.protobuf.ResponseConverter;
 import org.apache.hadoop.hbase.ipc.ProtocolSignature;
 import org.apache.hadoop.hbase.ipc.RpcServer;
@@ -103,40 +105,15 @@ import org.apache.hadoop.hbase.master.metrics.MasterMetrics;
 import org.apache.hadoop.hbase.monitoring.MemoryBoundedLogMessageBuffer;
 import org.apache.hadoop.hbase.monitoring.MonitoredTask;
 import org.apache.hadoop.hbase.monitoring.TaskMonitor;
-import org.apache.hadoop.hbase.replication.regionserver.Replication;
-import org.apache.hadoop.hbase.security.User;
-import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.hbase.util.CompressionTest;
-import org.apache.hadoop.hbase.util.FSTableDescriptors;
-import org.apache.hadoop.hbase.util.FSUtils;
-import org.apache.hadoop.hbase.util.HFileArchiveUtil;
-import org.apache.hadoop.hbase.util.HasThread;
-import org.apache.hadoop.hbase.util.InfoServer;
-import org.apache.hadoop.hbase.util.Pair;
-import org.apache.hadoop.hbase.util.Sleeper;
-import org.apache.hadoop.hbase.util.Strings;
-import org.apache.hadoop.hbase.util.Threads;
-import org.apache.hadoop.hbase.util.VersionInfo;
-import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
-import org.apache.hadoop.hbase.zookeeper.ClusterStatusTracker;
-import org.apache.hadoop.hbase.zookeeper.DrainingServerTracker;
-import org.apache.hadoop.hbase.zookeeper.RegionServerTracker;
-import org.apache.hadoop.hbase.zookeeper.ZKUtil;
-import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
-import org.apache.hadoop.metrics.util.MBeanUtil;
-import org.apache.hadoop.net.DNS;
-import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.Watcher;
-import org.apache.hadoop.hbase.ServerLoad;
+import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.NameStringPair;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionSpecifier.RegionSpecifierType;
-import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
-import com.google.protobuf.RpcController;
-
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.AddColumnRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.AddColumnResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.AssignRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.AssignRegionResponse;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.BalanceRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.BalanceResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.CatalogScanRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.CatalogScanResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.CreateTableRequest;
@@ -153,10 +130,6 @@ import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.EnableTableR
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.EnableTableResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.IsCatalogJanitorEnabledRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.IsCatalogJanitorEnabledResponse;
-import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetSchemaAlterStatusRequest;
-import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetSchemaAlterStatusResponse;
-import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDescriptorsRequest;
-import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDescriptorsResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.ModifyColumnRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.ModifyColumnResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.ModifyTableRequest;
@@ -165,26 +138,53 @@ import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.MoveRegionRe
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.MoveRegionResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.OfflineRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.OfflineRegionResponse;
-import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.UnassignRegionRequest;
-import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.UnassignRegionResponse;
-import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerReportRequest;
-import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerReportResponse;
-import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorRequest;
-import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorResponse;
-import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
-import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupResponse;
-import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.BalanceRequest;
-import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.BalanceResponse;
-import org.apache.hadoop.hbase.protobuf.generated.MasterProtos.IsMasterRunningRequest;
-import org.apache.hadoop.hbase.protobuf.generated.MasterProtos.IsMasterRunningResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.SetBalancerRunningRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.SetBalancerRunningResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.ShutdownRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.ShutdownResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.StopMasterRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.StopMasterResponse;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.UnassignRegionRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.UnassignRegionResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetClusterStatusRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetClusterStatusResponse;
+import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetSchemaAlterStatusRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetSchemaAlterStatusResponse;
+import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDescriptorsRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDescriptorsResponse;
+import org.apache.hadoop.hbase.protobuf.generated.MasterProtos.IsMasterRunningRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterProtos.IsMasterRunningResponse;
+import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerReportRequest;
+import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerReportResponse;
+import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
+import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupResponse;
+import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorRequest;
+import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorResponse;
+import org.apache.hadoop.hbase.replication.regionserver.Replication;
+import org.apache.hadoop.hbase.security.User;
+import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.CompressionTest;
+import org.apache.hadoop.hbase.util.FSTableDescriptors;
+import org.apache.hadoop.hbase.util.HFileArchiveUtil;
+import org.apache.hadoop.hbase.util.HasThread;
+import org.apache.hadoop.hbase.util.InfoServer;
+import org.apache.hadoop.hbase.util.Pair;
+import org.apache.hadoop.hbase.util.Sleeper;
+import org.apache.hadoop.hbase.util.Strings;
+import org.apache.hadoop.hbase.util.Threads;
+import org.apache.hadoop.hbase.util.VersionInfo;
+import org.apache.hadoop.hbase.zookeeper.ClusterStatusTracker;
+import org.apache.hadoop.hbase.zookeeper.DrainingServerTracker;
+import org.apache.hadoop.hbase.zookeeper.RegionServerTracker;
+import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
+import org.apache.hadoop.hbase.zookeeper.ZKUtil;
+import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
+import org.apache.hadoop.metrics.util.MBeanUtil;
+import org.apache.hadoop.net.DNS;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.Watcher;
+
+import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
 
 /**
@@ -206,6 +206,7 @@ import com.google.protobuf.ServiceException;
  * @see Watcher
  */
 @InterfaceAudience.Private
+@SuppressWarnings("deprecation")
 public class HMaster extends HasThread
 implements MasterMonitorProtocol, MasterAdminProtocol, RegionServerStatusProtocol, MasterServices,
 Server {
@@ -334,7 +335,7 @@ Server {
     }
     int numHandlers = conf.getInt("hbase.master.handler.count",
       conf.getInt("hbase.regionserver.handler.count", 25));
-    this.rpcServer = HBaseRPC.getServer(this,
+    this.rpcServer = HBaseRPC.getServer(MasterMonitorProtocol.class, this,
       new Class<?>[]{MasterMonitorProtocol.class,
         MasterAdminProtocol.class, RegionServerStatusProtocol.class},
         initialIsa.getHostName(), // BindAddress is IP we got for this server.
@@ -402,6 +403,10 @@ Server {
       Thread.sleep(c.getInt("zookeeper.session.timeout", 180 * 1000));
     }
     
+  }
+
+  MasterMetrics getMetrics() {
+    return metrics;
   }
 
   /**
@@ -508,7 +513,7 @@ Server {
 
     this.balancer = LoadBalancerFactory.getLoadBalancer(conf);
     this.assignmentManager = new AssignmentManager(this, serverManager,
-        this.catalogTracker, this.balancer, this.executorService, this.metrics);
+      this.catalogTracker, this.balancer, this.executorService, this.metrics);
     zooKeeper.registerListenerFirst(assignmentManager);
 
     this.regionServerTracker = new RegionServerTracker(zooKeeper, this,
@@ -652,7 +657,7 @@ Server {
       }
     }
 
-    if (!masterRecovery) {      
+    if (!masterRecovery) {
       this.assignmentManager.startTimeOutMonitor();
     }
     // TODO: Should do this in background rather than block master startup
@@ -771,6 +776,8 @@ Server {
 
     // Work on ROOT region.  Is it in zk in transition?
     status.setStatus("Assigning ROOT region");
+    assignmentManager.getRegionStates().createRegionState(
+      HRegionInfo.ROOT_REGIONINFO);
     boolean rit = this.assignmentManager.
       processRegionInTransitionAndBlockUntilAssigned(HRegionInfo.ROOT_REGIONINFO);
     ServerName currentRootServer = null;
@@ -805,6 +812,8 @@ Server {
 
     // Work on meta region
     status.setStatus("Assigning META region");
+    assignmentManager.getRegionStates().createRegionState(
+      HRegionInfo.FIRST_META_REGIONINFO);
     rit = this.assignmentManager.
       processRegionInTransitionAndBlockUntilAssigned(HRegionInfo.FIRST_META_REGIONINFO);
     boolean metaRegionLocation = this.catalogTracker.verifyMetaRegionLocation(timeout);
@@ -1231,12 +1240,12 @@ Server {
     boolean balancerRan;
     synchronized (this.balancer) {
       // Only allow one balance run at at time.
-      if (this.assignmentManager.isRegionsInTransition()) {
-        LOG.debug("Not running balancer because " +
-          this.assignmentManager.getRegionsInTransition().size() +
-          " region(s) in transition: " +
-          org.apache.commons.lang.StringUtils.
-            abbreviate(this.assignmentManager.getRegionsInTransition().toString(), 256));
+      if (this.assignmentManager.getRegionStates().isRegionsInTransition()) {
+        Map<String, RegionState> regionsInTransition =
+          this.assignmentManager.getRegionStates().getRegionsInTransition();
+        LOG.debug("Not running balancer because " + regionsInTransition.size() +
+          " region(s) in transition: " + org.apache.commons.lang.StringUtils.
+            abbreviate(regionsInTransition.toString(), 256));
         return false;
       }
       if (this.serverManager.areDeadServersInProgress()) {
@@ -1258,7 +1267,7 @@ Server {
       }
 
       Map<String, Map<ServerName, List<HRegionInfo>>> assignmentsByTable =
-        this.assignmentManager.getAssignmentsByTable();
+        this.assignmentManager.getRegionStates().getAssignmentsByTable();
 
       List<RegionPlan> plans = new ArrayList<RegionPlan>();
       //Give the balancer the current cluster state.
@@ -1376,23 +1385,24 @@ Server {
       LOG.warn("moveRegion specifier type: expected: " + RegionSpecifierType.ENCODED_REGION_NAME
         + " actual: " + type);
     }
-    Pair<HRegionInfo, ServerName> p =
-	  this.assignmentManager.getAssignment(encodedRegionName);
-    if (p == null) {
-	  throw new ServiceException(
+    RegionState regionState = assignmentManager.getRegionStates().
+      getRegionState(Bytes.toString(encodedRegionName));
+    if (regionState == null) {
+      throw new ServiceException(
         new UnknownRegionException(Bytes.toStringBinary(encodedRegionName)));
     }
-    HRegionInfo hri = p.getFirst();
+
+    HRegionInfo hri = regionState.getRegion();
     ServerName dest;
     if (destServerName == null || destServerName.length == 0) {
       LOG.info("Passed destination servername is null/empty so " +
         "choosing a server at random");
       final List<ServerName> destServers = this.serverManager.createDestinationServersList(
-        p.getSecond());
+        regionState.getServerName());
       dest = balancer.randomAssignment(hri, destServers);
     } else {
       dest = new ServerName(Bytes.toString(destServerName));
-      if (dest.equals(p.getSecond())) {
+      if (dest.equals(regionState.getServerName())) {
         LOG.debug("Skipping move of region " + hri.getRegionNameAsString()
           + " because region already assigned to the same server " + dest + ".");
         return mrr;
@@ -1400,7 +1410,7 @@ Server {
     }
 
     // Now we can do the move
-    RegionPlan rp = new RegionPlan(p.getFirst(), p.getSecond(), dest);
+    RegionPlan rp = new RegionPlan(hri, regionState.getServerName(), dest);
 
     try {
       if (this.cpHost != null) {
@@ -1732,12 +1742,6 @@ Server {
     }
   }
 
-  public void clearFromTransition(HRegionInfo hri) {
-    if (this.assignmentManager.isRegionInTransition(hri) != null) {
-      this.assignmentManager.regionOffline(hri);
-    }
-  }
-
   @Override
   public GetClusterStatusResponse getClusterStatus(RpcController controller, GetClusterStatusRequest req)
   throws ServiceException {
@@ -1790,7 +1794,7 @@ Server {
       this.serverManager.getDeadServers(),
       this.serverName,
       backupMasters,
-      this.assignmentManager.copyRegionsInTransition(),
+      this.assignmentManager.getRegionStates().getRegionsInTransition(),
       this.getCoprocessors(), this.balanceSwitch);
   }
 
@@ -1955,12 +1959,11 @@ Server {
   public AssignmentManager getAssignmentManager() {
     return this.assignmentManager;
   }
-  
+
   public MemoryBoundedLogMessageBuffer getRegionServerFatalLogBuffer() {
     return rsFatals;
   }
 
-  @SuppressWarnings("deprecation")
   public void shutdown() {
     if (cpHost != null) {
       try {
@@ -2085,17 +2088,16 @@ Server {
         LOG.warn("assignRegion specifier type: expected: " + RegionSpecifierType.REGION_NAME
           + " actual: " + type);
       }
-      Pair<HRegionInfo, ServerName> pair =
-        MetaReader.getRegion(this.catalogTracker, regionName);
-      if (pair == null) throw new UnknownRegionException(Bytes.toString(regionName));
+      HRegionInfo regionInfo = assignmentManager.getRegionStates().getRegionInfo(regionName);
+      if (regionInfo == null) throw new UnknownRegionException(Bytes.toString(regionName));
       if (cpHost != null) {
-        if (cpHost.preAssign(pair.getFirst())) {
+        if (cpHost.preAssign(regionInfo)) {
           return arr;
         }
       }
-      assignRegion(pair.getFirst());
+      assignRegion(regionInfo);
      if (cpHost != null) {
-       cpHost.postAssign(pair.getFirst());
+       cpHost.postAssign(regionInfo);
      }
 
      return arr;
@@ -2194,7 +2196,7 @@ Server {
    * @return the average load
    */
   public double getAverageLoad() {
-    return this.assignmentManager.getAverageLoad();
+    return this.assignmentManager.getRegionStates().getAverageLoad();
   }
 
   /**
@@ -2258,10 +2260,10 @@ Server {
   /**
    * Register bean with platform management server
    */
-  @SuppressWarnings("deprecation")
   void registerMBean() {
     MXBeanImpl mxBeanInfo = MXBeanImpl.init(this);
-    MBeanUtil.registerMBean("Master", "Master", mxBeanInfo);
+    mxBean = CompatibilitySingletonFactory.getInstance(
+            MBeanSource.class).register("hbase", "HMaster,sub=MXBean", mxBeanInfo);
     LOG.info("Registered HMaster MXBean");
   }
 
