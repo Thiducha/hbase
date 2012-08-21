@@ -45,7 +45,7 @@ import org.apache.hadoop.hbase.backup.HFileArchiver;
 import org.apache.hadoop.hbase.catalog.MetaEditor;
 import org.apache.hadoop.hbase.catalog.MetaReader;
 import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.regionserver.Store;
+import org.apache.hadoop.hbase.regionserver.HStore;
 import org.apache.hadoop.hbase.regionserver.StoreFile;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.FSUtils;
@@ -153,14 +153,18 @@ class CatalogJanitor extends Chore {
 
       // Now work on our list of found parents. See if any we can clean up.
       int cleaned = 0;
-      HashSet<HRegionInfo> parentNotCleaned = new HashSet<HRegionInfo>(); //regions whose parents are still around
+    //regions whose parents are still around
+      HashSet<String> parentNotCleaned = new HashSet<String>();
       for (Map.Entry<HRegionInfo, Result> e : splitParents.entrySet()) {
-        if (!parentNotCleaned.contains(e.getKey()) && cleanParent(e.getKey(), e.getValue())) {
+        if (!parentNotCleaned.contains(e.getKey().getEncodedName()) &&
+            cleanParent(e.getKey(), e.getValue())) {
           cleaned++;
         } else {
-          // We could not clean the parent, so it's daughters should not be cleaned either (HBASE-6160)
-          parentNotCleaned.add(getDaughterRegionInfo(e.getValue(), HConstants.SPLITA_QUALIFIER));
-          parentNotCleaned.add(getDaughterRegionInfo(e.getValue(), HConstants.SPLITB_QUALIFIER));
+          // We could not clean the parent, so its daughters should not be cleaned either(HBASE-6160)
+          parentNotCleaned.add(
+              getDaughterRegionInfo(e.getValue(), HConstants.SPLITA_QUALIFIER).getEncodedName());
+          parentNotCleaned.add(
+              getDaughterRegionInfo(e.getValue(), HConstants.SPLITB_QUALIFIER).getEncodedName());
         }
       }
       if (cleaned != 0) {
@@ -336,7 +340,7 @@ class CatalogJanitor extends Chore {
     HTableDescriptor parentDescriptor = getTableDescriptor(parent.getTableName());
 
     for (HColumnDescriptor family: parentDescriptor.getFamilies()) {
-      Path p = Store.getStoreHomedir(tabledir, split.getEncodedName(),
+      Path p = HStore.getStoreHomedir(tabledir, split.getEncodedName(),
         family.getName());
       if (!fs.exists(p)) continue;
       // Look for reference files.  Call listStatus with anonymous instance of PathFilter.

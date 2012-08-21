@@ -15,26 +15,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.hbase.master.cleaner;
+option java_package = "org.apache.hadoop.hbase.ipc.protobuf.generated";
+option java_outer_classname = "TestDelayedRpcProtos";
+option java_generic_services = true;
+option java_generate_equals_and_hash = true;
 
-import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.conf.Configurable;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.Stoppable;
 
-/**
- * General interface for cleaning files from a folder (generally an archive or
- * backup folder). These are chained via the {@link CleanerChore} to determine
- * if a given file should be deleted.
- */
-@InterfaceAudience.Private
-public interface FileCleanerDelegate extends Configurable, Stoppable {
+message TestArg {
+  required bool delay = 1;
+}
 
-  /**
-   * Should the master delete the file or keep it?
-   * @param file full path to the file to check
-   * @return <tt>true</tt> if the file is deletable, <tt>false</tt> if not
-   */
-  public boolean isFileDeletable(Path file);
-
+message TestResponse {
+  required int32 response = 1;
 }

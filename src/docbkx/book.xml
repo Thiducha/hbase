@@ -478,6 +478,9 @@ htable.put(put);
             </footnote>. If the version you specified when deleting a row is
           larger than the version of any value in the row, then you can
           consider the complete row to be deleted.</para>
+          <para>For an informative discussion on how deletes and versioning interact, see
+          the thread <link xlink:href="http://comments.gmane.org/gmane.comp.java.hadoop.hbase.user/28421">Put w/ timestamp -> Deleteall -> Put w/ timestamp fails</link>
+          up on the user mailing list.</para>
           <para>Also see <xref linkend="keyvalue"/> for more information on the internal KeyValue format.
           </para>
         </section>
@@ -3536,6 +3539,8 @@ Comparator class used for Bloom filter keys, a UTF>8 encoded string stored   usi
 		</itemizedlist>
          </para>
          <para><link xlink:href="http://wiki.apache.org/hadoop/HBase/HBasePresentations">HBase Wiki</link> has a page with a number of presentations.
+         </para>
+         <para><link xlink:href="http://refcardz.dzone.com/refcardz/hbase">HBase RefCard</link> from DZone.
          </para>
        </section>
        <section xml:id="other.info.books"><title>HBase Books</title>
