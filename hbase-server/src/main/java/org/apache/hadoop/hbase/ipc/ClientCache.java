@@ -72,7 +72,7 @@ class ClientCache {
       try {
         Constructor<? extends HBaseClient> cst = hbaseClientClass.getConstructor(
             Configuration.class, SocketFactory.class);
-        client = cst.newInstance(valueClass, conf, factory);
+        client = cst.newInstance(conf, factory);
       } catch (InvocationTargetException e) {
         throw new RuntimeException(e);
       } catch (InstantiationException e) {
