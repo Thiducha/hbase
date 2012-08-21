@@ -55,13 +55,8 @@ class ClientCache {
    * @param factory socket factory
    * @return an IPC client
    */
-  protected synchronized HBaseClient getClient(Configuration conf,
-      SocketFactory factory) {
-    return getClient(conf, factory, HbaseObjectWritable.class);
-  }
   @SuppressWarnings("unchecked")
-  protected synchronized HBaseClient getClient(Configuration conf,
-      SocketFactory factory, Class<? extends Writable> valueClass) {
+  protected synchronized HBaseClient getClient(Configuration conf, SocketFactory factory) {
 
     HBaseClient client = clients.get(factory);
     if (client == null) {
