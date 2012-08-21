@@ -725,7 +725,7 @@ public class HBaseTestingUtility {
    * Shutdown HBase mini cluster.  Does not shutdown zk or dfs if running.
    * @throws IOException
    */
-  public void shutdownMiniHBaseCluster() throws IOException {
+  public void shutdownMiniHBaseCluster() throws Exception {
     if (hbaseAdmin != null) {
       hbaseAdmin.close();
       hbaseAdmin = null;
@@ -740,6 +740,10 @@ public class HBaseTestingUtility {
       this.hbaseCluster.shutdown();
       // Wait till hbase is down before going on to shutdown zk.
       this.hbaseCluster.join();
+      this.hbaseCluster.join();
+      while (this.hbaseCluster.getMaster().isActiveMaster()){
+        Thread.sleep(1);
+      }
       this.hbaseCluster = null;
     }
   }
