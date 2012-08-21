@@ -725,7 +725,7 @@ public class HBaseTestingUtility {
    * Shutdown HBase mini cluster.  Does not shutdown zk or dfs if running.
    * @throws IOException
    */
-  public void shutdownMiniHBaseCluster() throws Exception {
+  public void shutdownMiniHBaseCluster() throws IOException {
     if (hbaseAdmin != null) {
       hbaseAdmin.close();
       hbaseAdmin = null;

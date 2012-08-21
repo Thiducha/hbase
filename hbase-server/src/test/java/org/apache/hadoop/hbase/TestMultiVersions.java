@@ -56,7 +56,7 @@ import org.junit.experimental.categories.Category;
 public class TestMultiVersions {
   private static final Log LOG = LogFactory.getLog(TestMultiVersions.class);
   private static final HBaseTestingUtility UTIL = new HBaseTestingUtility();
-  private HBaseAdmin admin;
+  private HBaseAdmin admin = null;
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
@@ -76,7 +76,9 @@ public class TestMultiVersions {
 
   @After
   public void after() throws IOException {
-    this.admin.close();
+    if (admin != null) {
+      this.admin.close();
+    }
   }
 
   /**
@@ -139,12 +141,13 @@ public class TestMultiVersions {
     // Shut down and restart the HBase cluster
     table.close();
     this.admin.close();
+    this.admin = null;
     UTIL.shutdownMiniHBaseCluster();
     LOG.debug("HBase cluster shut down -- restarting");
     UTIL.startMiniHBaseCluster(1, 1);
     // Make a new connection.  Use new Configuration instance because old one
     // is tied to an HConnection that has since gone stale.
-    table = new HTable(new Configuration(UTIL.getConfiguration()), tableName);
+    table = new HTable(UTIL.getConfiguration(), tableName);
     // Overwrite previous value
     put = new Put(row, timestamp2, null);
     put.add(contents, contents, value2);
