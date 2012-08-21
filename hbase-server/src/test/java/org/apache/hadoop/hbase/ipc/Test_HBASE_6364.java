@@ -29,7 +29,6 @@ import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hdfs.DFSClient;
-import org.apache.hadoop.io.Writable;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.junit.Assert;
@@ -53,9 +52,8 @@ public class Test_HBASE_6364 {
   private HBaseRecoveryTestingUtility hrtu = new HBaseRecoveryTestingUtility();
 
   public static class DelayedHBaseClient extends HBaseClient {
-    public DelayedHBaseClient(Class<? extends Writable> valueClass, Configuration conf,
-                              SocketFactory factory) {
-      super(valueClass, conf, factory);
+    public DelayedHBaseClient(Configuration conf, SocketFactory factory) {
+      super(conf, factory);
       LOG.info("DelayedHBaseClient created");
     }
 

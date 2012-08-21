@@ -70,21 +70,8 @@ class ClientCache {
 
       // Make an hbase client instead of hadoop Client.
       try {
-        Constructor<? extends HBaseClient> cst = null;
-        for (Constructor<?> c:hbaseClientClass.getConstructors()){
-          Class<?>[] ps= c.getParameterTypes();
-          if (ps.length == 3 && Class.class.isAssignableFrom(ps[0]) &&
-              Configuration.class.isAssignableFrom(ps[1]) &&
-              SocketFactory.class.isAssignableFrom(ps[2])){
-            cst = (Constructor<? extends HBaseClient>) c;
-            break;
-          }
-        }
-
-        if (cst == null){
-           throw new RuntimeException("No matching constructor in class "+
-               hbaseClientClass.getName());
-        }
+        Constructor<? extends HBaseClient> cst = hbaseClientClass.getConstructor(
+            Configuration.class, SocketFactory.class);
         client = cst.newInstance(valueClass, conf, factory);
       } catch (InvocationTargetException e) {
         throw new RuntimeException(e);
@@ -92,6 +79,8 @@ class ClientCache {
         throw new RuntimeException(e);
       } catch (IllegalAccessException e) {
         throw new RuntimeException(e);
+      } catch (NoSuchMethodException e) {
+        throw new RuntimeException("No matching constructor in "+hbaseClientClass.getName(), e);
       }
 
       clients.put(factory, client);
