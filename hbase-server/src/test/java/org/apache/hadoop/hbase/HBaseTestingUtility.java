@@ -739,11 +739,11 @@ public class HBaseTestingUtility {
     if (this.hbaseCluster != null) {
       this.hbaseCluster.shutdown();
       // Wait till hbase is down before going on to shutdown zk.
-      this.hbaseCluster.join();
-      this.hbaseCluster.join();
       while (this.hbaseCluster.getMaster().isActiveMaster()){
-        Thread.sleep(1);
+        Thread.sleep(1000);
       }
+
+      this.hbaseCluster.join();
       this.hbaseCluster = null;
     }
   }
