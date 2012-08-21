@@ -134,10 +134,11 @@ public class TestMultiVersions {
     this.admin.createTable(desc);
     Put put = new Put(row, timestamp1, null);
     put.add(contents, contents, value1);
-    HTable table = new HTable(UTIL.getConfiguration(), tableName);
+    HTable table = new HTable(new Configuration(UTIL.getConfiguration()), tableName);
     table.put(put);
     // Shut down and restart the HBase cluster
     table.close();
+    this.admin.close();
     UTIL.shutdownMiniHBaseCluster();
     LOG.debug("HBase cluster shut down -- restarting");
     UTIL.startMiniHBaseCluster(1, 1);
