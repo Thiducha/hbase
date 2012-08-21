@@ -1,4 +1,6 @@
-/**
+/*
+ * Copyright The Apache Software Foundation
+ *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -15,26 +17,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.hbase.master.cleaner;
 
-import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.conf.Configurable;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.Stoppable;
-
-/**
- * General interface for cleaning files from a folder (generally an archive or
- * backup folder). These are chained via the {@link CleanerChore} to determine
- * if a given file should be deleted.
- */
-@InterfaceAudience.Private
-public interface FileCleanerDelegate extends Configurable, Stoppable {
-
-  /**
-   * Should the master delete the file or keep it?
-   * @param file full path to the file to check
-   * @return <tt>true</tt> if the file is deletable, <tt>false</tt> if not
-   */
-  public boolean isFileDeletable(Path file);
-
-}
+$(document).ready(
+  function(){
+	$('.nav-tabs a').on('shown', function(event) {
+    var top = $(document).scrollTop();
+    location.hash = $(event.target).attr('href').substr(1);
+    $(document).scrollTop(top);  
+    return false;
+    });
+            
+    if (location.hash !== '') {
+      var tabItem = $('a[href="' + location.hash + '"]');
+      tabItem.tab('show');
+      $(document).scrollTop(0);  
+      return false;  
+    }
+  }
+)

@@ -35,7 +35,7 @@ import org.apache.hadoop.io.Writable;
  * Enables reuse/sharing of clients on a per SocketFactory basis. A client 
  * establishes certain configuration dependent characteristics like timeouts, 
  * tcp-keepalive (true or false), etc. For more details on the characteristics,
- * look at {@link HBaseClient#HBaseClient(Class, Configuration, SocketFactory)}
+ * look at {@link HBaseClient#HBaseClient(Configuration, SocketFactory)}
  * Creation of dynamic proxies to protocols creates the clients (and increments
  * reference count once created), and stopping of the proxies leads to clearing
  * out references and when the reference drops to zero, the cache mapping is 
@@ -62,6 +62,7 @@ class ClientCache {
   @SuppressWarnings("unchecked")
   protected synchronized HBaseClient getClient(Configuration conf,
       SocketFactory factory, Class<? extends Writable> valueClass) {
+
     HBaseClient client = clients.get(factory);
     if (client == null) {
       Class<? extends HBaseClient> hbaseClientClass = (Class<? extends HBaseClient>) conf

@@ -56,6 +56,8 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.protobuf.generated.RPCProtos;
 import org.apache.hadoop.hbase.protobuf.generated.RPCProtos.RpcException;
+import org.apache.hadoop.hbase.protobuf.generated.RPCProtos.RpcRequestBody;
+import org.apache.hadoop.hbase.protobuf.generated.RPCProtos.RpcResponseBody;
 import org.apache.hadoop.hbase.protobuf.generated.RPCProtos.RpcResponseHeader;
 import org.apache.hadoop.hbase.protobuf.generated.RPCProtos.RpcResponseHeader.Status;
 import org.apache.hadoop.hbase.protobuf.generated.RPCProtos.ConnectionHeader;
@@ -72,10 +74,8 @@ import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.PoolMap;
 import org.apache.hadoop.hbase.util.PoolMap.PoolType;
-import org.apache.hadoop.io.DataOutputBuffer;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.io.Text;
-import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.ipc.RemoteException;
 import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.security.SecurityUtil;
@@ -83,11 +83,14 @@ import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenIdentifier;
 import org.apache.hadoop.security.token.TokenSelector;
-import org.apache.hadoop.util.ReflectionUtils;
+
+import com.google.protobuf.CodedOutputStream;
+import com.google.protobuf.Message;
+import com.google.protobuf.Message.Builder;
 
 
-/** A client for an IPC service.  IPC calls take a single {@link Writable} as a
- * parameter, and return a {@link Writable} as their value.  A service runs on
+/** A client for an IPC service.  IPC calls take a single Protobuf message as a
+ * parameter, and return a single Protobuf message as their value.  A service runs on
  * a port and is defined by a parameter class and a value class.
  *
  * <p>This is the org.apache.hadoop.ipc.Client renamed as HBaseClient and
@@ -102,7 +105,6 @@ public class HBaseClient {
       .getLog("org.apache.hadoop.ipc.HBaseClient");
   protected final PoolMap<ConnectionId, Connection> connections;
 
-  protected final Class<? extends Writable> valueClass;   // class of call values
   protected int counter;                            // counter for call ids
   protected final AtomicBoolean running = new AtomicBoolean(true); // if client runs
   final protected Configuration conf;
@@ -156,25 +158,29 @@ public class HBaseClient {
      * @return true if the server is in the failed servers list
      */
     public synchronized boolean isFailedServer(final InetSocketAddress address) {
-      if (!failedServers.isEmpty()) {
-        final String lookup = address.toString();
-        final long now = EnvironmentEdgeManager.currentTimeMillis();
+      if (failedServers.isEmpty()) {
+        return false;
+      }
 
-        // iterate and clean expired entries
-        Iterator<Pair<Long, String>> it = failedServers.iterator();
-        while (it.hasNext()) {
-          Pair<Long, String> cur = it.next();
-          if (cur.getFirst() < now) {
-            it.remove();
-          } else {
-            if (lookup.equals(cur.getSecond())) {
-              return true;
-            }
+      final String lookup = address.toString();
+      final long now = EnvironmentEdgeManager.currentTimeMillis();
+
+      // iterate, looking for the search entry and cleaning expired entries
+      Iterator<Pair<Long, String>> it = failedServers.iterator();
+      while (it.hasNext()) {
+        Pair<Long, String> cur = it.next();
+        if (cur.getFirst() < now) {
+          it.remove();
+        } else {
+          if (lookup.equals(cur.getSecond())) {
+            return true;
           }
         }
       }
+
       return false;
     }
+
   }
 
   public static class FailedServerException extends IOException {
@@ -249,13 +255,13 @@ public class HBaseClient {
   /** A call waiting for a value. */
   protected class Call {
     final int id;                                       // call id
-    final Writable param;                               // parameter
-    Writable value;                               // value, null if error
+    final RpcRequestBody param;                         // rpc request object
+    Message value;                               // value, null if error
     IOException error;                            // exception, null if value
     boolean done;                                 // true when call is done
     long startTime;
 
-    protected Call(Writable param) {
+    protected Call(RpcRequestBody param) {
       this.param = param;
       this.startTime = System.currentTimeMillis();
       synchronized (HBaseClient.this) {
@@ -285,7 +291,7 @@ public class HBaseClient {
      *
      * @param value return value of the call.
      */
-    public synchronized void setValue(Writable value) {
+    public synchronized void setValue(Message value) {
       this.value = value;
       callComplete();
     }
@@ -922,15 +928,19 @@ public class HBaseClient {
       try {
         if (LOG.isDebugEnabled())
           LOG.debug(getName() + " sending #" + call.id);
-        RpcRequestHeader.Builder builder = RPCProtos.RpcRequestHeader.newBuilder();
-        builder.setCallId(call.id);
-        DataOutputBuffer d = new DataOutputBuffer();
-        builder.build().writeDelimitedTo(d);
-        call.param.write(d);
+        RpcRequestHeader.Builder headerBuilder = RPCProtos.RpcRequestHeader.newBuilder();
+        headerBuilder.setCallId(call.id);
         //noinspection SynchronizeOnNonFinalField
         synchronized (this.out) { // FindBugs IS2_INCONSISTENT_SYNC
-          this.out.writeInt(d.getLength());
-          this.out.write(d.getData(), 0, d.getLength());
+          RpcRequestHeader header = headerBuilder.build();
+          int serializedHeaderSize = header.getSerializedSize();
+          int requestSerializedSize = call.param.getSerializedSize();
+          this.out.writeInt(serializedHeaderSize +
+              CodedOutputStream.computeRawVarint32Size(serializedHeaderSize) +
+              requestSerializedSize +
+              CodedOutputStream.computeRawVarint32Size(requestSerializedSize));
+          header.writeDelimitedTo(this.out);
+          call.param.writeDelimitedTo(this.out);
           this.out.flush();
         }
       } catch(IOException e) {
@@ -967,8 +977,17 @@ public class HBaseClient {
 
         Status status = response.getStatus();
         if (status == Status.SUCCESS) {
-          Writable value = ReflectionUtils.newInstance(valueClass, conf);
-          value.readFields(in);                 // read value
+          Message rpcResponseType;
+          try {
+            rpcResponseType = ProtobufRpcEngine.Invoker.getReturnProtoType(
+                ProtobufRpcEngine.Server.getMethod(remoteId.getProtocol(),
+                    call.param.getMethodName()));
+          } catch (Exception e) {
+            throw new RuntimeException(e); //local exception
+          }
+          Builder builder = rpcResponseType.newBuilderForType();
+          builder.mergeDelimitedFrom(in);
+          Message value = builder.build();
           // it's possible that this call may have been cleaned up due to a RPC
           // timeout, so check if it still exists before setting the value.
           if (call != null) {
@@ -1080,7 +1099,7 @@ public class HBaseClient {
     private final ParallelResults results;
     protected final int index;
 
-    public ParallelCall(Writable param, ParallelResults results, int index) {
+    public ParallelCall(RpcRequestBody param, ParallelResults results, int index) {
       super(param);
       this.results = results;
       this.index = index;
@@ -1095,12 +1114,12 @@ public class HBaseClient {
 
   /** Result collector for parallel calls. */
   protected static class ParallelResults {
-    protected final Writable[] values;
+    protected final Message[] values;
     protected int size;
     protected int count;
 
     public ParallelResults(int size) {
-      this.values = new Writable[size];
+      this.values = new RpcResponseBody[size];
       this.size = size;
     }
 
@@ -1117,15 +1136,12 @@ public class HBaseClient {
   }
 
   /**
-   * Construct an IPC client whose values are of the given {@link Writable}
+   * Construct an IPC client whose values are of the {@link Message}
    * class.
-   * @param valueClass value class
    * @param conf configuration
    * @param factory socket factory
    */
-  public HBaseClient(Class<? extends Writable> valueClass, Configuration conf,
-      SocketFactory factory) {
-    this.valueClass = valueClass;
+  public HBaseClient(Configuration conf, SocketFactory factory) {
     this.maxIdleTime =
       conf.getInt("hbase.ipc.client.connection.maxidletime", 10000); //10s
     this.maxRetries = conf.getInt("hbase.ipc.client.connect.max.retries", 0);
@@ -1149,8 +1165,8 @@ public class HBaseClient {
    * @param valueClass value class
    * @param conf configuration
    */
-  public HBaseClient(Class<? extends Writable> valueClass, Configuration conf) {
-    this(valueClass, conf, NetUtils.getDefaultSocketFactory(conf));
+  public HBaseClient(Configuration conf) {
+    this(conf, NetUtils.getDefaultSocketFactory(conf));
   }
 
   /**
@@ -1222,17 +1238,17 @@ public class HBaseClient {
   /** Make a call, passing <code>param</code>, to the IPC server running at
    * <code>address</code>, returning the value.  Throws exceptions if there are
    * network problems or if the remote code threw an exception.
-   * @param param writable parameter
+   * @param param RpcRequestBody parameter
    * @param address network address
-   * @return Writable
+   * @return Message
    * @throws IOException e
    */
-  public Writable call(Writable param, InetSocketAddress address)
+  public Message call(RpcRequestBody param, InetSocketAddress address)
   throws IOException, InterruptedException {
       return call(param, address, null, 0);
   }
 
-  public Writable call(Writable param, InetSocketAddress addr,
+  public Message call(RpcRequestBody param, InetSocketAddress addr,
                        User ticket, int rpcTimeout)
                        throws IOException, InterruptedException {
     return call(param, addr, null, ticket, rpcTimeout);
@@ -1243,7 +1259,7 @@ public class HBaseClient {
    * with the <code>ticket</code> credentials, returning the value.
    * Throws exceptions if there are network problems or if the remote code
    * threw an exception. */
-  public Writable call(Writable param, InetSocketAddress addr,
+  public Message call(RpcRequestBody param, InetSocketAddress addr,
                        Class<? extends VersionedProtocol> protocol,
                        User ticket, int rpcTimeout)
       throws InterruptedException, IOException {
@@ -1315,14 +1331,14 @@ public class HBaseClient {
    * corresponding address.  When all values are available, or have timed out
    * or errored, the collected results are returned in an array.  The array
    * contains nulls for calls that timed out or errored.
-   * @param params writable parameters
+   * @param params RpcRequestBody parameters
    * @param addresses socket addresses
-   * @return  Writable[]
+   * @return  RpcResponseBody[]
    * @throws IOException e
-   * @deprecated Use {@link #call(Writable[], InetSocketAddress[], Class, User)} instead
+   * @deprecated Use {@link #call(RpcRequestBody[], InetSocketAddress[], Class, User)} instead
    */
   @Deprecated
-  public Writable[] call(Writable[] params, InetSocketAddress[] addresses)
+  public Message[] call(RpcRequestBody[] params, InetSocketAddress[] addresses)
     throws IOException, InterruptedException {
     return call(params, addresses, null, null);
   }
@@ -1331,11 +1347,11 @@ public class HBaseClient {
    * corresponding address.  When all values are available, or have timed out
    * or errored, the collected results are returned in an array.  The array
    * contains nulls for calls that timed out or errored.  */
-  public Writable[] call(Writable[] params, InetSocketAddress[] addresses,
+  public Message[] call(RpcRequestBody[] params, InetSocketAddress[] addresses,
                          Class<? extends VersionedProtocol> protocol,
                          User ticket)
       throws IOException, InterruptedException {
-    if (addresses.length == 0) return new Writable[0];
+    if (addresses.length == 0) return new RpcResponseBody[0];
 
     ParallelResults results = new ParallelResults(params.length);
     // TODO this synchronization block doesnt make any sense, we should possibly fix it
