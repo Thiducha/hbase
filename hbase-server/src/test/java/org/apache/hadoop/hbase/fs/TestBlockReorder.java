@@ -85,7 +85,6 @@ public class TestBlockReorder {
     htu.getConfiguration().setInt("dfs.block.size", 1024);// For the test with multiple blocks
     htu.getConfiguration().setBoolean("dfs.support.append", true);
     htu.getConfiguration().setInt("dfs.replication", 3);
-    // We have a rack to get always the same location order but it does not work.
     htu.startMiniDFSCluster(3,
         new String[]{"/r1", "/r2", "/r3"}, new String[]{host1, host2, host3});
 
