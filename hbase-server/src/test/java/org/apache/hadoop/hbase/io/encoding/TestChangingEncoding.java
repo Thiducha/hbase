@@ -134,7 +134,7 @@ public class TestChangingEncoding {
       int batchId) throws Exception {
     LOG.debug("Writing test data batch " + batchId);
     HTable table = new HTable(conf, tableName);
-    table.setAutoFlush(true);
+    //table.setAutoFlush(true);
     for (int i = 0; i < NUM_ROWS_PER_BATCH; ++i) {
       Put put = new Put(getRowKey(batchId, i));
       for (int j = 0; j < NUM_COLS_PER_ROW; ++j) {
