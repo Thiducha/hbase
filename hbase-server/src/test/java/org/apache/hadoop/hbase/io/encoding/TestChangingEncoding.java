@@ -134,11 +134,13 @@ public class TestChangingEncoding {
       int batchId) throws Exception {
     LOG.debug("Writing test data batch " + batchId);
     HTable table = new HTable(conf, tableName);
+    table.setAutoFlush(false);
     for (int i = 0; i < NUM_ROWS_PER_BATCH; ++i) {
       Put put = new Put(getRowKey(batchId, i));
       for (int j = 0; j < NUM_COLS_PER_ROW; ++j) {
         put.add(CF_BYTES, getQualifier(j),
             getValue(batchId, i, j));
+        put.setWriteToWAL(false);
         table.put(put);
       }
     }
@@ -246,7 +248,7 @@ public class TestChangingEncoding {
     do {
       Threads.sleep(1);
       cont = rs.compactSplitThread.getCompactionQueueSize() == 0;
-    } while (cont || System.currentTimeMillis() > maxWaitime);
+    } while (cont && System.currentTimeMillis() < maxWaitime);
 
     while (rs.compactSplitThread.getCompactionQueueSize() > 0) {
       Threads.sleep(1);
