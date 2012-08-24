@@ -1026,7 +1026,7 @@ public class HRegion implements HeapSize { // , Writable{
         LOG.debug("waiting for " + writestate.compacting + " compactions"
             + (writestate.flushing ? " & cache flush" : "") + " to complete for region " + this);
         try {
-          writestate.wait();
+          writestate.wait(100);
         } catch (InterruptedException iex) {
           // essentially ignore and propagate the interrupt back up
           Thread.currentThread().interrupt();
