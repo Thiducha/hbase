@@ -58,6 +58,7 @@ public class TestColumnSeeking {
     HTableDescriptor htd = new HTableDescriptor(table);
     htd.addFamily(hcd);
     HRegionInfo info = new HRegionInfo(Bytes.toBytes(table), null, null, false);
+    HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
     HRegion region =
         HRegion.createHRegion(info, TEST_UTIL.getDataTestDir(), TEST_UTIL
             .getConfiguration(), htd);

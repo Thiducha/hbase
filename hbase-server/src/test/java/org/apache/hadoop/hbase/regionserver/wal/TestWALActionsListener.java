@@ -44,7 +44,7 @@ import static org.junit.Assert.*;
 public class TestWALActionsListener {
   protected static final Log LOG = LogFactory.getLog(TestWALActionsListener.class);
 
-  HBaseTestingUtility TEST_UTIL =
+  private final static HBaseTestingUtility TEST_UTIL =
       new HBaseTestingUtility();
 
   private final static byte[] SOME_BYTES =  Bytes.toBytes("t");
