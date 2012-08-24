@@ -26,7 +26,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.experimental.categories.Category;
 
 
-@Category(SmallTests.class)
+@Category(MediumTests.class)
 public class TestScanDeleteTracker extends HBaseTestCase {
 
   private ScanDeleteTracker sdt;
