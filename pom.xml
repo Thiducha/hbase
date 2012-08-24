@@ -443,6 +443,7 @@
                 <skip>${surefire.skipSecondPart}</skip>
                 <testFailureIgnore>false</testFailureIgnore>
                 <forkMode>perthread</forkMode>
+                <runOrder>balanced</runOrder>
                 <perCoreThreadCount>false</perCoreThreadCount>
                 <threadCount>${surefire.secondPartThreadCount}</threadCount>
                 <parallel>classes</parallel>

@@ -29,7 +29,7 @@ import org.apache.hadoop.hbase.regionserver.ScanQueryMatcher.MatchCode;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.experimental.categories.Category;
 
-@Category(SmallTests.class)
+@Category(MediumTests.class)
 public class TestScanWildcardColumnTracker extends HBaseTestCase {
 
   final static int VERSIONS = 2;

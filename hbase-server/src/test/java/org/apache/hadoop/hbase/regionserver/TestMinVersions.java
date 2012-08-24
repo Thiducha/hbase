@@ -35,7 +35,7 @@ import org.junit.experimental.categories.Category;
 /**
  * Test Minimum Versions feature (HBASE-4071).
  */
-@Category(SmallTests.class)
+@Category(MediumTests.class)
 public class TestMinVersions extends HBaseTestCase {
   private final byte[] T0 = Bytes.toBytes("0");
   private final byte[] T1 = Bytes.toBytes("1");
