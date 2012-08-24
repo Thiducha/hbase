@@ -41,9 +41,6 @@ import org.junit.experimental.categories.Category;
 
 @Category(SmallTests.class)
 public class TestColumnSeeking {
-
-
-
   static final Log LOG = LogFactory.getLog(TestColumnSeeking.class);
 
   @SuppressWarnings("unchecked")

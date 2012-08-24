@@ -86,8 +86,6 @@ public class TestByteBufferUtils {
     }
 
     testNumbers = Collections.unmodifiableSet(a);
-    System.err.println("Testing variable-length long serialization using: "
-        + testNumbers + " (count: " + testNumbers.size() + ")");
     assertEquals(1753, testNumbers.size());
     assertEquals(Long.MIN_VALUE, a.first().longValue());
     assertEquals(Long.MAX_VALUE, a.last().longValue());
