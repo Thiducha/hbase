@@ -134,7 +134,7 @@ public class TestChangingEncoding {
       int batchId) throws Exception {
     LOG.debug("Writing test data batch " + batchId);
     HTable table = new HTable(conf, tableName);
-    table.setAutoFlush(false);
+    //table.setAutoFlush(false);
     for (int i = 0; i < NUM_ROWS_PER_BATCH; ++i) {
       Put put = new Put(getRowKey(batchId, i));
       for (int j = 0; j < NUM_COLS_PER_ROW; ++j) {
@@ -246,8 +246,8 @@ public class TestChangingEncoding {
     final long maxWaitime = System.currentTimeMillis() + 500;
     boolean cont;
     do {
-      Threads.sleep(1);
       cont = rs.compactSplitThread.getCompactionQueueSize() == 0;
+      Threads.sleep(1);
     } while (cont && System.currentTimeMillis() < maxWaitime);
 
     while (rs.compactSplitThread.getCompactionQueueSize() > 0) {
