@@ -67,7 +67,7 @@ public class TestZooKeeperTableArchiveClient {
   private static final byte[] TABLE_NAME = Bytes.toBytes(STRING_TABLE_NAME);
   private static final int numRS = 2;
   private static final int maxTries = 5;
-  private static final long ttl = 1000;
+  private static final long ttl = 500;
   private static ZKTableArchiveClient archivingClient;
 
   /**
