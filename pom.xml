@@ -420,12 +420,9 @@
             <failIfNoTests>false</failIfNoTests>
             <skip>${surefire.skipFirstPart}</skip>
             <forkMode>${surefire.firstPartForkMode}</forkMode>
-            <parallel>${surefire.firstPartParallel}</parallel>
             <perCoreThreadCount>false</perCoreThreadCount>
             <threadCount>${surefire.firstPartThreadCount}</threadCount>
             <parallel>classes</parallel>
-            <!-- surefire hack, if not we're
-              using method parallelization class ! -->
             <testFailureIgnore>false</testFailureIgnore>
             <forkedProcessTimeoutInSeconds>900</forkedProcessTimeoutInSeconds>
             <argLine>-enableassertions -Xmx1900m
