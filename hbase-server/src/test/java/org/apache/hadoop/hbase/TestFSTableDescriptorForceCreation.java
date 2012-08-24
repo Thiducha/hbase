@@ -30,7 +30,7 @@ import org.apache.hadoop.hbase.util.FSTableDescriptors;
 import org.junit.*;
 import org.junit.experimental.categories.Category;
 
-@Category(SmallTests.class)
+@Category(MediumTests.class)
 public class TestFSTableDescriptorForceCreation {
   private static final HBaseTestingUtility UTIL = new HBaseTestingUtility();
 

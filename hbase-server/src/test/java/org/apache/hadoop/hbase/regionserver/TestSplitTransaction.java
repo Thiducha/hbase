@@ -49,7 +49,7 @@ import org.mockito.Mockito;
  * Test the {@link SplitTransaction} class against an HRegion (as opposed to
  * running cluster).
  */
-@Category(SmallTests.class)
+@Category(MediumTests.class)
 public class TestSplitTransaction {
   private final HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
   private final Path testdir =

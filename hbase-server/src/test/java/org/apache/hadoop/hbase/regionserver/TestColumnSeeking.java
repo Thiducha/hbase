@@ -42,8 +42,7 @@ import org.junit.experimental.categories.Category;
 @Category(SmallTests.class)
 public class TestColumnSeeking {
 
-  private final static HBaseTestingUtility TEST_UTIL =
-      new HBaseTestingUtility();
+
 
   static final Log LOG = LogFactory.getLog(TestColumnSeeking.class);
 
@@ -162,6 +161,8 @@ public class TestColumnSeeking {
   @SuppressWarnings("unchecked")
   @Test
   public void testReseeking() throws IOException {
+    HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
+
     String family = "Family";
     byte[] familyBytes = Bytes.toBytes("Family");
     String table = "TestSingleVersions";

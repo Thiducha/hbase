@@ -22,6 +22,7 @@ package org.apache.hadoop.hbase.client;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
+import org.apache.hadoop.hbase.MediumTests;
 import org.apache.hadoop.hbase.SmallTests;
 import org.junit.Test;
 
@@ -65,7 +66,7 @@ import org.junit.experimental.categories.Category;
  * Run tests that use the functionality of the Operation superclass for
  * Puts, Gets, Deletes, Scans, and MultiPuts.
  */
-@Category(SmallTests.class)
+@Category(MediumTests.class)
 public class TestOperation {
   private static byte [] ROW = Bytes.toBytes("testRow");
   private static byte [] FAMILY = Bytes.toBytes("testFamily");

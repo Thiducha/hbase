@@ -40,11 +40,9 @@ import static org.junit.Assert.*;
 @Category(SmallTests.class)
 public class TestReseekTo {
 
-  private final static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
-
   @Test
   public void testReseekTo() throws Exception {
-
+    HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
     Path ncTFile = new Path(TEST_UTIL.getDataTestDir(), "basic.hfile");
     FSDataOutputStream fout = TEST_UTIL.getTestFileSystem().create(ncTFile);
     CacheConfig cacheConf = new CacheConfig(TEST_UTIL.getConfiguration());
@@ -78,7 +76,6 @@ public class TestReseekTo {
     for (int i = 0; i < keyList.size(); i++) {
       Integer key = keyList.get(i);
       String value = valueList.get(i);
-      long start = System.nanoTime();
       scanner.seekTo(Bytes.toBytes(key));
       assertEquals(value, scanner.getValueString());
     }

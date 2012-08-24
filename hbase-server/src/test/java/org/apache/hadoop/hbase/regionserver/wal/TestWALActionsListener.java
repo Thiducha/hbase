@@ -40,11 +40,11 @@ import static org.junit.Assert.*;
 /**
  * Test that the actions are called while playing with an HLog
  */
-@Category(SmallTests.class)
+@Category(MediumTests.class)
 public class TestWALActionsListener {
   protected static final Log LOG = LogFactory.getLog(TestWALActionsListener.class);
 
-  private final static HBaseTestingUtility TEST_UTIL =
+  HBaseTestingUtility TEST_UTIL =
       new HBaseTestingUtility();
 
   private final static byte[] SOME_BYTES =  Bytes.toBytes("t");

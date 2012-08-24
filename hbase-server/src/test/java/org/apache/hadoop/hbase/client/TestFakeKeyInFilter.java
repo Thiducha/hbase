@@ -34,7 +34,6 @@ import org.junit.experimental.categories.Category;
  */
 @Category(SmallTests.class)
 public class TestFakeKeyInFilter extends BinaryComparator {
-  protected static HBaseTestingUtility UTIL = new HBaseTestingUtility();
 
   public TestFakeKeyInFilter() {
     super(Bytes.toBytes("foo"));
@@ -55,6 +54,8 @@ public class TestFakeKeyInFilter extends BinaryComparator {
    */
   @Test
   public void testForEmptyRowKey() throws Exception {
+    HBaseTestingUtility UTIL = new HBaseTestingUtility();
+
     byte[] table = Bytes.toBytes("testForEmptyRowKey");
     byte[] row = Bytes.toBytes("myRow");
     byte[] cf = Bytes.toBytes("myFamily");

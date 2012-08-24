@@ -29,6 +29,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
+import org.apache.hadoop.hbase.MediumTests;
 import org.apache.hadoop.hbase.SmallTests;
 import org.apache.hadoop.hbase.thrift.CallQueue.Call;
 import org.apache.hadoop.hbase.thrift.generated.Hbase;
@@ -47,7 +48,7 @@ import org.junit.Test;
  * Unit testing for CallQueue, a part of the
  * org.apache.hadoop.hbase.thrift package.
  */
-@Category(SmallTests.class)
+@Category(MediumTests.class)
 @RunWith(Parameterized.class)
 public class TestCallQueue {
 

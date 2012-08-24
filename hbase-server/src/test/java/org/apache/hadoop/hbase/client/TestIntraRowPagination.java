@@ -37,8 +37,6 @@ import org.junit.experimental.categories.Category;
 @Category(SmallTests.class)
 public class TestIntraRowPagination {
 
-  private static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
-
   /**
    * Test from client side for scan with maxResultPerCF set
    *
@@ -46,6 +44,8 @@ public class TestIntraRowPagination {
    */
   @Test
   public void testScanLimitAndOffset() throws Exception {
+    HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
+
     //byte [] TABLE = HTestConst.DEFAULT_TABLE_BYTES;
     byte [][] ROWS = HTestConst.makeNAscii(HTestConst.DEFAULT_ROW_BYTES, 2);
     byte [][] FAMILIES = HTestConst.makeNAscii(HTestConst.DEFAULT_CF_BYTES, 3);

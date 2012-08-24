@@ -53,7 +53,7 @@ import com.google.common.base.Throwables;
 /**
  * Test filters at the HRegion doorstep.
  */
-@Category(SmallTests.class)
+@Category(MediumTests.class)
 public class TestFilter {
   private final static Log LOG = LogFactory.getLog(TestFilter.class);
   private HRegion region;

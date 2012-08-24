@@ -43,7 +43,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 import com.google.common.collect.Lists;
 import org.junit.experimental.categories.Category;
 
-@Category(SmallTests.class)
+@Category(MediumTests.class)
 public class TestCompactSelection extends TestCase {
   private final static Log LOG = LogFactory.getLog(TestCompactSelection.class);
   private final static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();

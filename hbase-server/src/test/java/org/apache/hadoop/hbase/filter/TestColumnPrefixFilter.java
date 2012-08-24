@@ -39,11 +39,10 @@ import org.junit.experimental.categories.Category;
 @Category(SmallTests.class)
 public class TestColumnPrefixFilter {
 
-  private final static HBaseTestingUtility TEST_UTIL = new
-      HBaseTestingUtility();
-
   @Test
   public void testColumnPrefixFilter() throws IOException {
+    HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
+
     String family = "Family";
     HTableDescriptor htd = new HTableDescriptor("TestColumnPrefixFilter");
     htd.addFamily(new HColumnDescriptor(family));
@@ -106,6 +105,8 @@ public class TestColumnPrefixFilter {
 
   @Test
   public void testColumnPrefixFilterWithFilterList() throws IOException {
+    HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
+
     String family = "Family";
     HTableDescriptor htd = new HTableDescriptor("TestColumnPrefixFilter");
     htd.addFamily(new HColumnDescriptor(family));

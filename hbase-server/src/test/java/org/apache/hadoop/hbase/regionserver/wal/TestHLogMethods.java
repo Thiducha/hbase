@@ -45,7 +45,7 @@ public class TestHLogMethods {
   private static final byte[] TEST_REGION = Bytes.toBytes("test_region");;
   private static final byte[] TEST_TABLE = Bytes.toBytes("test_table");
   
-  private final HBaseTestingUtility util = new HBaseTestingUtility();
+
 
   /**
    * Assert that getSplitEditFilesSorted returns files in expected order and
@@ -53,6 +53,7 @@ public class TestHLogMethods {
    * @throws IOException
    */
   @Test public void testGetSplitEditFilesSorted() throws IOException {
+    HBaseTestingUtility util = new HBaseTestingUtility();
     FileSystem fs = FileSystem.get(util.getConfiguration());
     Path regiondir = util.getDataTestDir("regiondir");
     fs.delete(regiondir, true);
