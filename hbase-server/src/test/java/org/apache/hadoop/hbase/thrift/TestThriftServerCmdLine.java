@@ -198,14 +198,11 @@ public class TestThriftServerCmdLine {
     TSocket sock = new TSocket(InetAddress.getLocalHost().getHostName(),
         port);
     TTransport transport = sock;
-    if (specifyFramed || implType.isAlwaysFramed) {
-      transport = new TFramedTransport(transport);
-    }
+    final TTransport t =  (specifyFramed || implType.isAlwaysFramed) ?  new TFramedTransport(transport) : transport;
 
     sock.open();
     ExecutorService exs = null;
     try {
-      final TProtocol prot = specifyCompact ?  new TCompactProtocol(transport) :  new TBinaryProtocol(transport);
 
       exs = Executors.newFixedThreadPool(4);
       ArrayList<Future<?>> res = new ArrayList<Future<?>>();
@@ -214,6 +211,7 @@ public class TestThriftServerCmdLine {
         @Override
         public void run() {
           try {
+            final TProtocol prot = specifyCompact ?  new TCompactProtocol(t) :  new TBinaryProtocol(t);
             TestThriftServer.doTestTableCreateDrop(new Hbase.Client(prot));
           } catch (Exception e) {
             throw new RuntimeException(e);
@@ -224,6 +222,7 @@ public class TestThriftServerCmdLine {
         @Override
         public void run() {
           try {
+            final TProtocol prot = specifyCompact ?  new TCompactProtocol(t) :  new TBinaryProtocol(t);
             TestThriftServer.doTestGetRegionInfo(new Hbase.Client(prot));
           } catch (Exception e) {
             throw new RuntimeException(e);
@@ -234,6 +233,7 @@ public class TestThriftServerCmdLine {
         @Override
         public void run() {
           try {
+            final TProtocol prot = specifyCompact ?  new TCompactProtocol(t) :  new TBinaryProtocol(t);
             TestThriftServer.doTestGetTableRegions(new Hbase.Client(prot));
           } catch (Exception e) {
             throw new RuntimeException(e);
@@ -244,6 +244,7 @@ public class TestThriftServerCmdLine {
         @Override
         public void run() {
           try {
+            final TProtocol prot = specifyCompact ?  new TCompactProtocol(t) :  new TBinaryProtocol(t);
             TestThriftServer.doTestTableMutations(new Hbase.Client(prot));
           } catch (Exception e) {
             throw new RuntimeException(e);
