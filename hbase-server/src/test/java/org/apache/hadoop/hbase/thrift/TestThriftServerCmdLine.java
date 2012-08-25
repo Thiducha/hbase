@@ -212,7 +212,7 @@ public class TestThriftServerCmdLine {
 
             sock.open();
             final TProtocol prot = specifyCompact ?  new TCompactProtocol(t) :  new TBinaryProtocol(t);
-            TestThriftServer.doTestTableCreateDrop(new Hbase.Client(prot));
+            TestThriftServer.doTestTableCreateDrop( "1",  new Hbase.Client(prot));
           } catch (Exception e) {
             throw new RuntimeException(e);
           }
@@ -230,7 +230,7 @@ public class TestThriftServerCmdLine {
             sock.open();
 
             final TProtocol prot = specifyCompact ?  new TCompactProtocol(t) :  new TBinaryProtocol(t);
-            TestThriftServer.doTestGetRegionInfo(new Hbase.Client(prot));
+            TestThriftServer.doTestGetRegionInfo("2", new Hbase.Client(prot));
           } catch (Exception e) {
             throw new RuntimeException(e);
           }
@@ -248,7 +248,7 @@ public class TestThriftServerCmdLine {
             sock.open();
 
             final TProtocol prot = specifyCompact ?  new TCompactProtocol(t) :  new TBinaryProtocol(t);
-            TestThriftServer.doTestGetTableRegions(new Hbase.Client(prot));
+            TestThriftServer.doTestGetTableRegions("3", new Hbase.Client(prot));
           } catch (Exception e) {
             throw new RuntimeException(e);
           }
@@ -262,11 +262,9 @@ public class TestThriftServerCmdLine {
                 port);
             TTransport transport = sock;
             final TTransport t =  (specifyFramed || implType.isAlwaysFramed) ?  new TFramedTransport(transport) : transport;
-
             sock.open();
-
             final TProtocol prot = specifyCompact ?  new TCompactProtocol(t) :  new TBinaryProtocol(t);
-            TestThriftServer.doTestTableMutations(new Hbase.Client(prot));
+            TestThriftServer.doTestTableMutations("4", new Hbase.Client(prot));
           } catch (Exception e) {
             throw new RuntimeException(e);
           }

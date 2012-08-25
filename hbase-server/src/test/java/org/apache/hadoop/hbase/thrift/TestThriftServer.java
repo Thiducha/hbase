@@ -25,6 +25,12 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.DoubleBuffer;
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+import java.nio.LongBuffer;
+import java.nio.ShortBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -77,8 +83,8 @@ public class TestThriftServer {
   }
 
   // Static names for tables, columns, rows, and values
-  private static ByteBuffer tableAname = asByteBuffer("tableA");
-  private static ByteBuffer tableBname = asByteBuffer("tableB");
+  //private static ByteBuffer tableAname = asByteBuffer("tableA");
+  //private static ByteBuffer tableBname = asByteBuffer("tableB");
   private static ByteBuffer columnAname = asByteBuffer("columnA:");
   private static ByteBuffer columnAAname = asByteBuffer("columnA:A");
   private static ByteBuffer columnBname = asByteBuffer("columnB:");
@@ -115,11 +121,11 @@ public class TestThriftServer {
     doTestTableCreateDrop();
     doTestThriftMetrics();
     doTestTableMutations();
-    doTestTableTimestampsAndColumns();
-    doTestTableScanners();
-    doTestGetTableRegions();
+    doTestTableTimestampsAndColumns("");
+    doTestTableScanners("");
+    doTestGetTableRegions("");
     doTestFilterRegistration();
-    doTestGetRegionInfo();
+    doTestGetRegionInfo("");
     doTestIncrements();
   }
 
@@ -133,12 +139,12 @@ public class TestThriftServer {
   public void doTestTableCreateDrop() throws Exception {
     ThriftServerRunner.HBaseHandler handler =
       new ThriftServerRunner.HBaseHandler(UTIL.getConfiguration());
-    doTestTableCreateDrop(handler);
+    doTestTableCreateDrop("", handler);
   }
 
-  public static void doTestTableCreateDrop(Hbase.Iface handler) throws Exception {
-    createTestTables(handler);
-    dropTestTables(handler);
+  public static void doTestTableCreateDrop(String base, Hbase.Iface handler) throws Exception {
+    createTestTables(base, handler);
+    dropTestTables(base, handler);
   }
 
   public static final class MySlowHBaseHandler extends ThriftServerRunner.HBaseHandler
@@ -163,8 +169,8 @@ public class TestThriftServer {
     Configuration conf = UTIL.getConfiguration();
     ThriftMetrics metrics = getMetrics(conf);
     Hbase.Iface handler = getHandlerForMetricsTest(metrics, conf);
-    createTestTables(handler);
-    dropTestTables(handler);
+    createTestTables("metrics", handler);
+    dropTestTables("metrics", handler);
     verifyMetrics(metrics, "createTable_num_ops", 2);
     verifyMetrics(metrics, "deleteTable_num_ops", 2);
     verifyMetrics(metrics, "disableTable_num_ops", 2);
@@ -194,30 +200,30 @@ public class TestThriftServer {
                .createRecord(ThriftMetrics.CONTEXT_NAME).remove();
   }
 
-  public static void createTestTables(Hbase.Iface handler) throws Exception {
+  public static void createTestTables(String base, Hbase.Iface handler) throws Exception {
     // Create/enable/disable/delete tables, ensure methods act correctly
     assertEquals(handler.getTableNames().size(), 0);
-    handler.createTable(tableAname, getColumnDescriptors());
+    handler.createTable( getA(base), getColumnDescriptors());
     assertEquals(handler.getTableNames().size(), 1);
-    assertEquals(handler.getColumnDescriptors(tableAname).size(), 2);
-    assertTrue(handler.isTableEnabled(tableAname));
-    handler.createTable(tableBname, new ArrayList<ColumnDescriptor>());
+    assertEquals(handler.getColumnDescriptors(getA(base)).size(), 2);
+    assertTrue(handler.isTableEnabled(getA(base)));
+    handler.createTable(getA(base), new ArrayList<ColumnDescriptor>());
     assertEquals(handler.getTableNames().size(), 2);
   }
 
-  public static void dropTestTables(Hbase.Iface handler) throws Exception {
-    handler.disableTable(tableBname);
-    assertFalse(handler.isTableEnabled(tableBname));
-    handler.deleteTable(tableBname);
+  public static void dropTestTables(String base, Hbase.Iface handler) throws Exception {
+    handler.disableTable(getA(base));
+    assertFalse(handler.isTableEnabled(getA(base)));
+    handler.deleteTable(getB(base));
     assertEquals(handler.getTableNames().size(), 1);
-    handler.disableTable(tableAname);
-    assertFalse(handler.isTableEnabled(tableAname));
+    handler.disableTable(getA(base));
+    assertFalse(handler.isTableEnabled(getA(base)));
     /* TODO Reenable.
     assertFalse(handler.isTableEnabled(tableAname));
     handler.enableTable(tableAname);
     assertTrue(handler.isTableEnabled(tableAname));
     handler.disableTable(tableAname);*/
-    handler.deleteTable(tableAname);
+    handler.deleteTable(getA(base));
     assertEquals(handler.getTableNames().size(), 0);
   }
 
@@ -249,35 +255,43 @@ public class TestThriftServer {
   public void doTestIncrements() throws Exception {
     ThriftServerRunner.HBaseHandler handler =
         new ThriftServerRunner.HBaseHandler(UTIL.getConfiguration());
-    createTestTables(handler);
-    doTestIncrements(handler);
-    dropTestTables(handler);
+    createTestTables("", handler);
+    doTestIncrements("", handler);
+    dropTestTables("", handler);
   }
 
-  public static void doTestIncrements(HBaseHandler handler) throws Exception {
+  static ByteBuffer getA(String base){
+    return asByteBuffer(base+"tableAname");
+  }
+
+  static ByteBuffer getB(String base){
+    return asByteBuffer(base+"tableBname");
+  }
+
+  public static void doTestIncrements(String base, HBaseHandler handler) throws Exception {
     List<Mutation> mutations = new ArrayList<Mutation>(1);
     mutations.add(new Mutation(false, columnAAname, valueEname, true));
     mutations.add(new Mutation(false, columnAname, valueEname, true));
-    handler.mutateRow(tableAname, rowAname, mutations, null);
-    handler.mutateRow(tableAname, rowBname, mutations, null);
+    handler.mutateRow(getA(base), rowAname, mutations, null);
+    handler.mutateRow(getA(base), rowBname, mutations, null);
 
     List<TIncrement> increments = new ArrayList<TIncrement>();
-    increments.add(new TIncrement(tableAname, rowBname, columnAAname, 7));
-    increments.add(new TIncrement(tableAname, rowBname, columnAAname, 7));
-    increments.add(new TIncrement(tableAname, rowBname, columnAAname, 7));
+    increments.add(new TIncrement(getA(base), rowBname, columnAAname, 7));
+    increments.add(new TIncrement(getA(base), rowBname, columnAAname, 7));
+    increments.add(new TIncrement(getA(base), rowBname, columnAAname, 7));
 
     int numIncrements = 60000;
     for (int i = 0; i < numIncrements; i++) {
-      handler.increment(new TIncrement(tableAname, rowAname, columnAname, 2));
+      handler.increment(new TIncrement(getA(base), rowAname, columnAname, 2));
       handler.incrementRows(increments);
     }
 
     Thread.sleep(1000);
-    long lv = handler.get(tableAname, rowAname, columnAname, null).get(0).value.getLong();
+    long lv = handler.get(getA(base), rowAname, columnAname, null).get(0).value.getLong();
     assertEquals((100 + (2 * numIncrements)), lv );
 
 
-    lv = handler.get(tableAname, rowBname, columnAAname, null).get(0).value.getLong();
+    lv = handler.get(getA(base), rowBname, columnAAname, null).get(0).value.getLong();
     assertEquals((100 + (3 * 7 * numIncrements)), lv);
 
     assertTrue(handler.coalescer.getSuccessfulCoalescings() > 0);
@@ -294,22 +308,22 @@ public class TestThriftServer {
   public void doTestTableMutations() throws Exception {
     ThriftServerRunner.HBaseHandler handler =
       new ThriftServerRunner.HBaseHandler(UTIL.getConfiguration());
-    doTestTableMutations(handler);
+    doTestTableMutations("", handler);
   }
 
-  public static void doTestTableMutations(Hbase.Iface handler) throws Exception {
+  public static void doTestTableMutations(String base, Hbase.Iface handler) throws Exception {
     // Setup
-    handler.createTable(tableAname, getColumnDescriptors());
+    handler.createTable(getA(base), getColumnDescriptors());
 
     // Apply a few Mutations to rowA
     //     mutations.add(new Mutation(false, columnAname, valueAname));
     //     mutations.add(new Mutation(false, columnBname, valueBname));
-    handler.mutateRow(tableAname, rowAname, getMutations(), null);
+    handler.mutateRow(getA(base), rowAname, getMutations(), null);
 
     // Assert that the changes were made
     assertEquals(valueAname,
-      handler.get(tableAname, rowAname, columnAname, null).get(0).value);
-    TRowResult rowResult1 = handler.getRow(tableAname, rowAname, null).get(0);
+      handler.get(getA(base), rowAname, columnAname, null).get(0).value);
+    TRowResult rowResult1 = handler.getRow(getA(base), rowAname, null).get(0);
     assertEquals(rowAname, rowResult1.row);
     assertEquals(valueBname,
       rowResult1.columns.get(columnBname).value);
@@ -322,43 +336,43 @@ public class TestThriftServer {
     // rowBmutations.add(new Mutation(false, columnAname, valueCname));
     // rowBmutations.add(new Mutation(false, columnBname, valueDname));
     // batchMutations.add(new BatchMutation(rowBname, rowBmutations));
-    handler.mutateRows(tableAname, getBatchMutations(), null);
+    handler.mutateRows(getA(base), getBatchMutations(), null);
 
     // Assert that changes were made to rowA
-    List<TCell> cells = handler.get(tableAname, rowAname, columnAname, null);
+    List<TCell> cells = handler.get(getA(base), rowAname, columnAname, null);
     assertFalse(cells.size() > 0);
-    assertEquals(valueCname, handler.get(tableAname, rowAname, columnBname, null).get(0).value);
-    List<TCell> versions = handler.getVer(tableAname, rowAname, columnBname, MAXVERSIONS, null);
+    assertEquals(valueCname, handler.get(getA(base), rowAname, columnBname, null).get(0).value);
+    List<TCell> versions = handler.getVer(getA(base), rowAname, columnBname, MAXVERSIONS, null);
     assertEquals(valueCname, versions.get(0).value);
     assertEquals(valueBname, versions.get(1).value);
 
     // Assert that changes were made to rowB
-    TRowResult rowResult2 = handler.getRow(tableAname, rowBname, null).get(0);
+    TRowResult rowResult2 = handler.getRow(getA(base), rowBname, null).get(0);
     assertEquals(rowBname, rowResult2.row);
     assertEquals(valueCname, rowResult2.columns.get(columnAname).value);
     assertEquals(valueDname, rowResult2.columns.get(columnBname).value);
 
     // Apply some deletes
-    handler.deleteAll(tableAname, rowAname, columnBname, null);
-    handler.deleteAllRow(tableAname, rowBname, null);
+    handler.deleteAll(getA(base), rowAname, columnBname, null);
+    handler.deleteAllRow(getA(base), rowBname, null);
 
     // Assert that the deletes were applied
-    int size = handler.get(tableAname, rowAname, columnBname, null).size();
+    int size = handler.get(getA(base), rowAname, columnBname, null).size();
     assertEquals(0, size);
-    size = handler.getRow(tableAname, rowBname, null).size();
+    size = handler.getRow(getA(base), rowBname, null).size();
     assertEquals(0, size);
 
     // Try null mutation
     List<Mutation> mutations = new ArrayList<Mutation>();
     mutations.add(new Mutation(false, columnAname, null, true));
-    handler.mutateRow(tableAname, rowAname, mutations, null);
-    TRowResult rowResult3 = handler.getRow(tableAname, rowAname, null).get(0);
+    handler.mutateRow(getA(base), rowAname, mutations, null);
+    TRowResult rowResult3 = handler.getRow(getA(base), rowAname, null).get(0);
     assertEquals(rowAname, rowResult3.row);
     assertEquals(0, rowResult3.columns.get(columnAname).value.remaining());
 
     // Teardown
-    handler.disableTable(tableAname);
-    handler.deleteTable(tableAname);
+    handler.disableTable(getA(base));
+    handler.deleteTable(getA(base));
   }
 
   /**
@@ -368,37 +382,37 @@ public class TestThriftServer {
    *
    * @throws Exception
    */
-  public void doTestTableTimestampsAndColumns() throws Exception {
+  public void doTestTableTimestampsAndColumns(String base) throws Exception {
     // Setup
     ThriftServerRunner.HBaseHandler handler =
       new ThriftServerRunner.HBaseHandler(UTIL.getConfiguration());
-    handler.createTable(tableAname, getColumnDescriptors());
+    handler.createTable(getA(base), getColumnDescriptors());
 
     // Apply timestamped Mutations to rowA
     long time1 = System.currentTimeMillis();
-    handler.mutateRowTs(tableAname, rowAname, getMutations(), time1, null);
+    handler.mutateRowTs(getA(base), rowAname, getMutations(), time1, null);
 
     Thread.sleep(1000);
 
     // Apply timestamped BatchMutations for rowA and rowB
     long time2 = System.currentTimeMillis();
-    handler.mutateRowsTs(tableAname, getBatchMutations(), time2, null);
+    handler.mutateRowsTs(getA(base), getBatchMutations(), time2, null);
 
     // Apply an overlapping timestamped mutation to rowB
-    handler.mutateRowTs(tableAname, rowBname, getMutations(), time2, null);
+    handler.mutateRowTs(getA(base), rowBname, getMutations(), time2, null);
 
     // the getVerTs is [inf, ts) so you need to increment one.
     time1 += 1;
     time2 += 2;
 
     // Assert that the timestamp-related methods retrieve the correct data
-    assertEquals(2, handler.getVerTs(tableAname, rowAname, columnBname, time2,
+    assertEquals(2, handler.getVerTs(getA(base), rowAname, columnBname, time2,
       MAXVERSIONS, null).size());
-    assertEquals(1, handler.getVerTs(tableAname, rowAname, columnBname, time1,
+    assertEquals(1, handler.getVerTs(getA(base), rowAname, columnBname, time1,
       MAXVERSIONS, null).size());
 
-    TRowResult rowResult1 = handler.getRowTs(tableAname, rowAname, time1, null).get(0);
-    TRowResult rowResult2 = handler.getRowTs(tableAname, rowAname, time2, null).get(0);
+    TRowResult rowResult1 = handler.getRowTs(getA(base), rowAname, time1, null).get(0);
+    TRowResult rowResult2 = handler.getRowTs(getA(base), rowAname, time2, null).get(0);
     // columnA was completely deleted
     //assertTrue(Bytes.equals(rowResult1.columns.get(columnAname).value, valueAname));
     assertEquals(rowResult1.columns.get(columnBname).value, valueBname);
@@ -410,35 +424,35 @@ public class TestThriftServer {
     List<ByteBuffer> columns = new ArrayList<ByteBuffer>();
     columns.add(columnBname);
 
-    rowResult1 = handler.getRowWithColumns(tableAname, rowAname, columns, null).get(0);
+    rowResult1 = handler.getRowWithColumns(getA(base), rowAname, columns, null).get(0);
     assertEquals(rowResult1.columns.get(columnBname).value, valueCname);
     assertFalse(rowResult1.columns.containsKey(columnAname));
 
-    rowResult1 = handler.getRowWithColumnsTs(tableAname, rowAname, columns, time1, null).get(0);
+    rowResult1 = handler.getRowWithColumnsTs(getA(base), rowAname, columns, time1, null).get(0);
     assertEquals(rowResult1.columns.get(columnBname).value, valueBname);
     assertFalse(rowResult1.columns.containsKey(columnAname));
 
     // Apply some timestamped deletes
     // this actually deletes _everything_.
     // nukes everything in columnB: forever.
-    handler.deleteAllTs(tableAname, rowAname, columnBname, time1, null);
-    handler.deleteAllRowTs(tableAname, rowBname, time2, null);
+    handler.deleteAllTs(getA(base), rowAname, columnBname, time1, null);
+    handler.deleteAllRowTs(getA(base), rowBname, time2, null);
 
     // Assert that the timestamp-related methods retrieve the correct data
-    int size = handler.getVerTs(tableAname, rowAname, columnBname, time1, MAXVERSIONS, null).size();
+    int size = handler.getVerTs(getA(base), rowAname, columnBname, time1, MAXVERSIONS, null).size();
     assertEquals(0, size);
 
-    size = handler.getVerTs(tableAname, rowAname, columnBname, time2, MAXVERSIONS, null).size();
+    size = handler.getVerTs(getA(base), rowAname, columnBname, time2, MAXVERSIONS, null).size();
     assertEquals(1, size);
 
     // should be available....
-    assertEquals(handler.get(tableAname, rowAname, columnBname, null).get(0).value, valueCname);
+    assertEquals(handler.get(getA(base), rowAname, columnBname, null).get(0).value, valueCname);
 
-    assertEquals(0, handler.getRow(tableAname, rowBname, null).size());
+    assertEquals(0, handler.getRow(getA(base), rowBname, null).size());
 
     // Teardown
-    handler.disableTable(tableAname);
-    handler.deleteTable(tableAname);
+    handler.disableTable(getA(base));
+    handler.deleteTable(getA(base));
   }
 
   /**
@@ -447,15 +461,15 @@ public class TestThriftServer {
    *
    * @throws Exception
    */
-  public void doTestTableScanners() throws Exception {
+  public void doTestTableScanners(String base) throws Exception {
     // Setup
     ThriftServerRunner.HBaseHandler handler =
       new ThriftServerRunner.HBaseHandler(UTIL.getConfiguration());
-    handler.createTable(tableAname, getColumnDescriptors());
+    handler.createTable(getA(base), getColumnDescriptors());
 
     // Apply timestamped Mutations to rowA
     long time1 = System.currentTimeMillis();
-    handler.mutateRowTs(tableAname, rowAname, getMutations(), time1, null);
+    handler.mutateRowTs(getA(base), rowAname, getMutations(), time1, null);
 
     // Sleep to assure that 'time1' and 'time2' will be different even with a
     // coarse grained system timer.
@@ -463,12 +477,12 @@ public class TestThriftServer {
 
     // Apply timestamped BatchMutations for rowA and rowB
     long time2 = System.currentTimeMillis();
-    handler.mutateRowsTs(tableAname, getBatchMutations(), time2, null);
+    handler.mutateRowsTs(getA(base), getBatchMutations(), time2, null);
 
     time1 += 1;
 
     // Test a scanner on all rows and all columns, no timestamp
-    int scanner1 = handler.scannerOpen(tableAname, rowAname, getColumnList(true, true), null);
+    int scanner1 = handler.scannerOpen(getA(base), rowAname, getColumnList(true, true), null);
     TRowResult rowResult1a = handler.scannerGet(scanner1).get(0);
     assertEquals(rowResult1a.row, rowAname);
     // This used to be '1'.  I don't know why when we are asking for two columns
@@ -485,7 +499,7 @@ public class TestThriftServer {
     closeScanner(scanner1, handler);
 
     // Test a scanner on all rows and all columns, with timestamp
-    int scanner2 = handler.scannerOpenTs(tableAname, rowAname, getColumnList(true, true), time1, null);
+    int scanner2 = handler.scannerOpenTs(getA(base), rowAname, getColumnList(true, true), time1, null);
     TRowResult rowResult2a = handler.scannerGet(scanner2).get(0);
     assertEquals(rowResult2a.columns.size(), 1);
     // column A deleted, does not exist.
@@ -494,20 +508,20 @@ public class TestThriftServer {
     closeScanner(scanner2, handler);
 
     // Test a scanner on the first row and first column only, no timestamp
-    int scanner3 = handler.scannerOpenWithStop(tableAname, rowAname, rowBname,
+    int scanner3 = handler.scannerOpenWithStop(getA(base), rowAname, rowBname,
         getColumnList(true, false), null);
     closeScanner(scanner3, handler);
 
     // Test a scanner on the first row and second column only, with timestamp
-    int scanner4 = handler.scannerOpenWithStopTs(tableAname, rowAname, rowBname,
+    int scanner4 = handler.scannerOpenWithStopTs(getA(base), rowAname, rowBname,
         getColumnList(false, true), time1, null);
     TRowResult rowResult4a = handler.scannerGet(scanner4).get(0);
     assertEquals(rowResult4a.columns.size(), 1);
     assertEquals(rowResult4a.columns.get(columnBname).value, valueBname);
 
     // Teardown
-    handler.disableTable(tableAname);
-    handler.deleteTable(tableAname);
+    handler.disableTable(getA(base));
+    handler.deleteTable(getA(base));
   }
 
   /**
@@ -516,25 +530,25 @@ public class TestThriftServer {
    *
    * @throws Exception
    */
-  public void doTestGetTableRegions() throws Exception {
+  public void doTestGetTableRegions(String base ) throws Exception {
     ThriftServerRunner.HBaseHandler handler =
       new ThriftServerRunner.HBaseHandler(UTIL.getConfiguration());
-    doTestGetTableRegions(handler);
+    doTestGetTableRegions(base, handler);
   }
 
-  public static void doTestGetTableRegions(Hbase.Iface handler)
+  public static void doTestGetTableRegions(String base, Hbase.Iface handler)
       throws Exception {
     assertEquals(handler.getTableNames().size(), 0);
-    handler.createTable(tableAname, getColumnDescriptors());
+    handler.createTable(getA(base), getColumnDescriptors());
     assertEquals(handler.getTableNames().size(), 1);
-    List<TRegionInfo> regions = handler.getTableRegions(tableAname);
+    List<TRegionInfo> regions = handler.getTableRegions(getA(base));
     int regionCount = regions.size();
     assertEquals("empty table should have only 1 region, " +
             "but found " + regionCount, regionCount, 1);
     LOG.info("Region found:" + regions.get(0));
-    handler.disableTable(tableAname);
-    handler.deleteTable(tableAname);
-    regionCount = handler.getTableRegions(tableAname).size();
+    handler.disableTable(getA(base));
+    handler.deleteTable(getA(base));
+    regionCount = handler.getTableRegions(getA(base)).size();
     assertEquals("non-existing table should have 0 region, " +
             "but found " + regionCount, regionCount, 0);
   }
@@ -551,25 +565,25 @@ public class TestThriftServer {
     assertEquals("filterclass", registeredFilters.get("MyFilter"));
   }
 
-  public void doTestGetRegionInfo() throws Exception {
+  public void doTestGetRegionInfo(String base) throws Exception {
     ThriftServerRunner.HBaseHandler handler =
       new ThriftServerRunner.HBaseHandler(UTIL.getConfiguration());
-    doTestGetRegionInfo(handler);
+    doTestGetRegionInfo(base, handler);
   }
 
-  public static void doTestGetRegionInfo(Hbase.Iface handler) throws Exception {
+  public static void doTestGetRegionInfo(String base, Hbase.Iface handler) throws Exception {
     // Create tableA and add two columns to rowA
-    handler.createTable(tableAname, getColumnDescriptors());
+    handler.createTable(getA(base), getColumnDescriptors());
     try {
-      handler.mutateRow(tableAname, rowAname, getMutations(), null);
+      handler.mutateRow(getA(base), rowAname, getMutations(), null);
       byte[] searchRow = HRegionInfo.createRegionName(
-          tableAname.array(), rowAname.array(), HConstants.NINES, false);
+          getA(base).array(), rowAname.array(), HConstants.NINES, false);
       TRegionInfo regionInfo = handler.getRegionInfo(ByteBuffer.wrap(searchRow));
       assertTrue(Bytes.toStringBinary(regionInfo.getName()).startsWith(
-            Bytes.toStringBinary(tableAname)));
+            Bytes.toStringBinary(getA(base))));
     } finally {
-      handler.disableTable(tableAname);
-      handler.deleteTable(tableAname);
+      handler.disableTable(getA(base));
+      handler.deleteTable(getA(base));
     }
   }
 
