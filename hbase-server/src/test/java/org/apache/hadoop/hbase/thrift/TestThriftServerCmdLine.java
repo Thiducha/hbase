@@ -205,13 +205,7 @@ public class TestThriftServerCmdLine {
     sock.open();
     ExecutorService exs = null;
     try {
-      TProtocol prot;
-      if (specifyCompact) {
-        prot = new TCompactProtocol(transport);
-      } else {
-        prot = new TBinaryProtocol(transport);
-      }
-      final Hbase.Client client = new Hbase.Client(prot);
+      final TProtocol prot = specifyCompact ?  new TCompactProtocol(transport) :  new TBinaryProtocol(transport);
 
       exs = Executors.newFixedThreadPool(4);
       ArrayList<Future<?>> res = new ArrayList<Future<?>>();
@@ -220,7 +214,7 @@ public class TestThriftServerCmdLine {
         @Override
         public void run() {
           try {
-            TestThriftServer.doTestTableCreateDrop(client);
+            TestThriftServer.doTestTableCreateDrop(new Hbase.Client(prot));
           } catch (Exception e) {
             throw new RuntimeException(e);
           }
@@ -230,7 +224,7 @@ public class TestThriftServerCmdLine {
         @Override
         public void run() {
           try {
-            TestThriftServer.doTestGetRegionInfo(client);
+            TestThriftServer.doTestGetRegionInfo(new Hbase.Client(prot));
           } catch (Exception e) {
             throw new RuntimeException(e);
           }
@@ -240,7 +234,7 @@ public class TestThriftServerCmdLine {
         @Override
         public void run() {
           try {
-            TestThriftServer.doTestGetTableRegions(client);
+            TestThriftServer.doTestGetTableRegions(new Hbase.Client(prot));
           } catch (Exception e) {
             throw new RuntimeException(e);
           }
@@ -250,7 +244,7 @@ public class TestThriftServerCmdLine {
         @Override
         public void run() {
           try {
-            TestThriftServer.doTestTableMutations(client);
+            TestThriftServer.doTestTableMutations(new Hbase.Client(prot));
           } catch (Exception e) {
             throw new RuntimeException(e);
           }
