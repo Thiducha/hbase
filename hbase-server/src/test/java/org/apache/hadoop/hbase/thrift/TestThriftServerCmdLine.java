@@ -195,12 +195,6 @@ public class TestThriftServerCmdLine {
   }
 
   private void talkToThriftServer() throws Exception {
-    TSocket sock = new TSocket(InetAddress.getLocalHost().getHostName(),
-        port);
-    TTransport transport = sock;
-    final TTransport t =  (specifyFramed || implType.isAlwaysFramed) ?  new TFramedTransport(transport) : transport;
-
-    sock.open();
     ExecutorService exs = null;
     try {
 
@@ -211,6 +205,12 @@ public class TestThriftServerCmdLine {
         @Override
         public void run() {
           try {
+            TSocket sock = new TSocket(InetAddress.getLocalHost().getHostName(),
+                port);
+            TTransport transport = sock;
+            final TTransport t =  (specifyFramed || implType.isAlwaysFramed) ?  new TFramedTransport(transport) : transport;
+
+            sock.open();
             final TProtocol prot = specifyCompact ?  new TCompactProtocol(t) :  new TBinaryProtocol(t);
             TestThriftServer.doTestTableCreateDrop(new Hbase.Client(prot));
           } catch (Exception e) {
@@ -222,6 +222,13 @@ public class TestThriftServerCmdLine {
         @Override
         public void run() {
           try {
+            TSocket sock = new TSocket(InetAddress.getLocalHost().getHostName(),
+                port);
+            TTransport transport = sock;
+            final TTransport t =  (specifyFramed || implType.isAlwaysFramed) ?  new TFramedTransport(transport) : transport;
+
+            sock.open();
+
             final TProtocol prot = specifyCompact ?  new TCompactProtocol(t) :  new TBinaryProtocol(t);
             TestThriftServer.doTestGetRegionInfo(new Hbase.Client(prot));
           } catch (Exception e) {
@@ -233,6 +240,13 @@ public class TestThriftServerCmdLine {
         @Override
         public void run() {
           try {
+            TSocket sock = new TSocket(InetAddress.getLocalHost().getHostName(),
+                port);
+            TTransport transport = sock;
+            final TTransport t =  (specifyFramed || implType.isAlwaysFramed) ?  new TFramedTransport(transport) : transport;
+
+            sock.open();
+
             final TProtocol prot = specifyCompact ?  new TCompactProtocol(t) :  new TBinaryProtocol(t);
             TestThriftServer.doTestGetTableRegions(new Hbase.Client(prot));
           } catch (Exception e) {
@@ -244,6 +258,13 @@ public class TestThriftServerCmdLine {
         @Override
         public void run() {
           try {
+            TSocket sock = new TSocket(InetAddress.getLocalHost().getHostName(),
+                port);
+            TTransport transport = sock;
+            final TTransport t =  (specifyFramed || implType.isAlwaysFramed) ?  new TFramedTransport(transport) : transport;
+
+            sock.open();
+
             final TProtocol prot = specifyCompact ?  new TCompactProtocol(t) :  new TBinaryProtocol(t);
             TestThriftServer.doTestTableMutations(new Hbase.Client(prot));
           } catch (Exception e) {
@@ -257,7 +278,6 @@ public class TestThriftServerCmdLine {
       }
       exs.shutdown();
     } finally {
-      sock.close();
     }
   }
 
