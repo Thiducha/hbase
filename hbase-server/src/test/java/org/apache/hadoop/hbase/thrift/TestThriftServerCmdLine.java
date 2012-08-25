@@ -25,6 +25,9 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -198,6 +201,7 @@ public class TestThriftServerCmdLine {
     }
 
     sock.open();
+    ExecutorService exs = null;
     try {
       TProtocol prot;
       if (specifyCompact) {
@@ -205,11 +209,51 @@ public class TestThriftServerCmdLine {
       } else {
         prot = new TBinaryProtocol(transport);
       }
-      Hbase.Client client = new Hbase.Client(prot);
-      TestThriftServer.doTestTableCreateDrop(client);
-      TestThriftServer.doTestGetRegionInfo(client);
-      TestThriftServer.doTestGetTableRegions(client);
-      TestThriftServer.doTestTableMutations(client);
+      final Hbase.Client client = new Hbase.Client(prot);
+
+      exs = Executors.newFixedThreadPool(4);
+
+      exs.execute(new Runnable() {
+        @Override
+        public void run() {
+          try {
+            TestThriftServer.doTestTableCreateDrop(client);
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }
+      });
+      exs.execute(new Runnable() {
+        @Override
+        public void run() {
+          try {
+            TestThriftServer.doTestGetRegionInfo(client);
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }
+      });
+      exs.execute(new Runnable() {
+        @Override
+        public void run() {
+          try {
+            TestThriftServer.doTestGetTableRegions(client);
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }
+      });
+      exs.execute(new Runnable() {
+        @Override
+        public void run() {
+          try {
+            TestThriftServer.doTestTableMutations(client);
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }
+      });
+      exs.shutdown();
     } finally {
       sock.close();
     }
