@@ -1483,9 +1483,9 @@
       </activation>
       <properties>
         <surefire.firstPartForkMode>once</surefire.firstPartForkMode>
-        <surefire.firstPartParallel>none</surefire.firstPartParallel>
-        <surefire.firstPartThreadCount>1</surefire.firstPartThreadCount>
-        <surefire.secondPartThreadCount>4</surefire.secondPartThreadCount>
+        <surefire.firstPartParallel>classes</surefire.firstPartParallel>
+        <surefire.firstPartThreadCount>5</surefire.firstPartThreadCount>
+        <surefire.secondPartThreadCount>5</surefire.secondPartThreadCount>
         <surefire.skipFirstPart>false</surefire.skipFirstPart>
         <surefire.skipSecondPart>false</surefire.skipSecondPart>
         <surefire.firstPartGroups>org.apache.hadoop.hbase.SmallTests</surefire.firstPartGroups>
@@ -1500,7 +1500,7 @@
       </activation>
       <properties>
         <surefire.provider>surefire-junit4</surefire.provider>
-        <surefire.version>2.10</surefire.version>
+        <surefire.version>2.12.2</surefire.version>
         <surefire.firstPartForkMode>always</surefire.firstPartForkMode>
         <surefire.skipFirstPart>false</surefire.skipFirstPart>
         <surefire.skipSecondPart>true</surefire.skipSecondPart>
