@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -212,8 +214,9 @@ public class TestThriftServerCmdLine {
       final Hbase.Client client = new Hbase.Client(prot);
 
       exs = Executors.newFixedThreadPool(4);
+      ArrayList<Future<?>> res = new ArrayList<Future<?>>();
 
-      exs.execute(new Runnable() {
+      res.add(exs.submit(new Runnable() {
         @Override
         public void run() {
           try {
@@ -222,8 +225,8 @@ public class TestThriftServerCmdLine {
             throw new RuntimeException(e);
           }
         }
-      });
-      exs.execute(new Runnable() {
+      }));
+      res.add(exs.submit(new Runnable() {
         @Override
         public void run() {
           try {
@@ -232,8 +235,8 @@ public class TestThriftServerCmdLine {
             throw new RuntimeException(e);
           }
         }
-      });
-      exs.execute(new Runnable() {
+      }));
+      res.add(exs.submit(new Runnable() {
         @Override
         public void run() {
           try {
@@ -242,8 +245,8 @@ public class TestThriftServerCmdLine {
             throw new RuntimeException(e);
           }
         }
-      });
-      exs.execute(new Runnable() {
+      }));
+      res.add(exs.submit(new Runnable() {
         @Override
         public void run() {
           try {
@@ -252,7 +255,11 @@ public class TestThriftServerCmdLine {
             throw new RuntimeException(e);
           }
         }
-      });
+      }));
+
+      for (Future<?> future:res){
+        future.get();
+      }
       exs.shutdown();
     } finally {
       sock.close();
