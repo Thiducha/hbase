@@ -220,8 +220,7 @@ public class TestThriftServerCmdLine {
     thriftServer.stop();
     cmdLineThread.join();
     if (cmdLineException != null) {
-      LOG.error("Command-line invocation of HBase Thrift server threw an " +
-          "exception", cmdLineException);
+      LOG.error("Command-line invocation of HBase Thrift server threw an exception", cmdLineException);
       throw new Exception(cmdLineException);
     }
   }
