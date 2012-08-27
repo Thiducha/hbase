@@ -141,6 +141,7 @@ public class TestCoprocessorInterface extends HBaseTestCase {
     private boolean postFlushCalled;
     private boolean preSplitCalled;
     private boolean postSplitCalled;
+    private boolean preSplitWithSplitRowCalled;
     private ConcurrentMap<String, Object> sharedData;
 
     @Override
@@ -196,6 +197,12 @@ public class TestCoprocessorInterface extends HBaseTestCase {
     public void preSplit(ObserverContext<RegionCoprocessorEnvironment> e) {
       preSplitCalled = true;
     }
+    
+    @Override
+    public void preSplit(ObserverContext<RegionCoprocessorEnvironment> c,
+        byte[] splitRow) throws IOException {
+      preSplitWithSplitRowCalled = true;
+    }
     @Override
     public void postSplit(ObserverContext<RegionCoprocessorEnvironment> e, HRegion l, HRegion r) {
       postSplitCalled = true;
@@ -226,7 +233,7 @@ public class TestCoprocessorInterface extends HBaseTestCase {
       return (preCompactCalled && postCompactCalled);
     }
     boolean wasSplit() {
-      return (preSplitCalled && postSplitCalled);
+      return (preSplitCalled && postSplitCalled && preSplitWithSplitRowCalled);
     }
     Map<String, Object> getSharedData() {
       return sharedData;

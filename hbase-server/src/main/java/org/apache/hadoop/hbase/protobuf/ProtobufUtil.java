@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -64,6 +65,7 @@ import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.coprocessor.Exec;
 import org.apache.hadoop.hbase.client.coprocessor.ExecResult;
 import org.apache.hadoop.hbase.filter.Filter;
+import org.apache.hadoop.hbase.filter.WritableByteArrayComparable;
 import org.apache.hadoop.hbase.io.HbaseObjectWritable;
 import org.apache.hadoop.hbase.io.TimeRange;
 import org.apache.hadoop.hbase.ipc.CoprocessorProtocol;
@@ -100,6 +102,8 @@ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate.ColumnValu
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate.ColumnValue.QualifierValue;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate.DeleteType;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate.MutateType;
+import org.apache.hadoop.hbase.protobuf.generated.ComparatorProtos;
+import org.apache.hadoop.hbase.protobuf.generated.FilterProtos;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.NameBytesPair;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.NameStringPair;
@@ -107,11 +111,18 @@ import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionInfo;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionLoad;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.CreateTableRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDescriptorsResponse;
+import org.apache.hadoop.hbase.protobuf.generated.AccessControlProtos;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.regionserver.wal.HLogKey;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
+import org.apache.hadoop.hbase.security.access.Permission;
+import org.apache.hadoop.hbase.security.access.TablePermission;
+import org.apache.hadoop.hbase.security.access.UserPermission;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Pair;
+
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.ListMultimap;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
@@ -363,8 +374,8 @@ public final class ProtobufUtil {
       get.setTimeRange(minStamp, maxStamp);
     }
     if (proto.hasFilter()) {
-      NameBytesPair filter = proto.getFilter();
-      get.setFilter((Filter)toObject(filter));
+      HBaseProtos.Filter filter = proto.getFilter();
+      get.setFilter(ProtobufUtil.toFilter(filter));
     }
     for (NameBytesPair attribute: proto.getAttributeList()) {
       get.setAttribute(attribute.getName(), attribute.getValue().toByteArray());
@@ -600,7 +611,7 @@ public final class ProtobufUtil {
       scanBuilder.setStopRow(ByteString.copyFrom(stopRow));
     }
     if (scan.hasFilter()) {
-      scanBuilder.setFilter(ProtobufUtil.toParameter(scan.getFilter()));
+      scanBuilder.setFilter(ProtobufUtil.toFilter(scan.getFilter()));
     }
     Column.Builder columnBuilder = Column.newBuilder();
     for (Map.Entry<byte[],NavigableSet<byte []>>
@@ -669,8 +680,8 @@ public final class ProtobufUtil {
       scan.setTimeRange(minStamp, maxStamp);
     }
     if (proto.hasFilter()) {
-      NameBytesPair filter = proto.getFilter();
-      scan.setFilter((Filter)toObject(filter));
+      HBaseProtos.Filter filter = proto.getFilter();
+      scan.setFilter(ProtobufUtil.toFilter(filter));
     }
     if (proto.hasBatchSize()) {
       scan.setBatch(proto.getBatchSize());
@@ -751,7 +762,7 @@ public final class ProtobufUtil {
       builder.setLockId(get.getLockId());
     }
     if (get.getFilter() != null) {
-      builder.setFilter(ProtobufUtil.toParameter(get.getFilter()));
+      builder.setFilter(ProtobufUtil.toFilter(get.getFilter()));
     }
     TimeRange timeRange = get.getTimeRange();
     if (!timeRange.isAllTime()) {
@@ -920,6 +931,79 @@ public final class ProtobufUtil {
       keyValues.add(new KeyValue(value.toByteArray()));
     }
     return new Result(keyValues);
+  }
+
+  /**
+   * Convert a WritableByteArrayComparable to a protocol buffer Comparator
+   *
+   * @param comparator the WritableByteArrayComparable to convert
+   * @return the converted protocol buffer Comparator
+   */
+  public static ComparatorProtos.Comparator toComparator(WritableByteArrayComparable comparator) {
+    ComparatorProtos.Comparator.Builder builder = ComparatorProtos.Comparator.newBuilder();
+    builder.setName(comparator.getClass().getName());
+    builder.setSerializedComparator(ByteString.copyFrom(comparator.toByteArray()));
+    return builder.build();
+  }
+
+  /**
+   * Convert a protocol buffer Comparator to a WritableByteArrayComparable
+   *
+   * @param proto the protocol buffer Comparator to convert
+   * @return the converted WritableByteArrayComparable
+   */
+  public static WritableByteArrayComparable toComparator(ComparatorProtos.Comparator proto)
+  throws IOException {
+    String type = proto.getName();
+    String funcName = "parseFrom";
+    byte [] value = proto.getSerializedComparator().toByteArray();
+    try {
+      Class<? extends WritableByteArrayComparable> c =
+        (Class<? extends WritableByteArrayComparable>)(Class.forName(type));
+      Method parseFrom = c.getMethod(funcName, byte[].class);
+      if (parseFrom == null) {
+        throw new IOException("Unable to locate function: " + funcName + " in type: " + type);
+      }
+      return (WritableByteArrayComparable)parseFrom.invoke(null, value);
+    } catch (Exception e) {
+      throw new IOException(e);
+    }
+  }
+
+  /**
+   * Convert a protocol buffer Filter to a client Filter
+   *
+   * @param proto the protocol buffer Filter to convert
+   * @return the converted Filter
+   */
+  public static Filter toFilter(HBaseProtos.Filter proto) throws IOException {
+    String type = proto.getName();
+    final byte [] value = proto.getSerializedFilter().toByteArray();
+    String funcName = "parseFrom";
+    try {
+      Class<? extends Filter> c =
+        (Class<? extends Filter>)Class.forName(type);
+      Method parseFrom = c.getMethod(funcName, byte[].class);
+      if (parseFrom == null) {
+        throw new IOException("Unable to locate function: " + funcName + " in type: " + type);
+      }
+      return (Filter)parseFrom.invoke(c, value);
+    } catch (Exception e) {
+      throw new IOException(e);
+    }
+  }
+
+  /**
+   * Convert a client Filter to a protocol buffer Filter
+   *
+   * @param filter the Filter to convert
+   * @return the converted protocol buffer Filter
+   */
+  public static HBaseProtos.Filter toFilter(Filter filter) {
+    HBaseProtos.Filter.Builder builder = HBaseProtos.Filter.newBuilder();
+    builder.setName(filter.getClass().getName());
+    builder.setSerializedFilter(ByteString.copyFrom(filter.toByteArray()));
+    return builder.build();
   }
 
   /**
@@ -1481,5 +1565,225 @@ public final class ProtobufUtil {
     m.writeDelimitedTo(baos);
     baos.close();
     return ProtobufUtil.prependPBMagic(baos.toByteArray());
+  }
+
+  /**
+   * Converts a Permission proto to a client Permission object.
+   *
+   * @param proto the protobuf Permission
+   * @return the converted Permission
+   */
+  public static Permission toPermission(AccessControlProtos.Permission proto) {
+    if (proto.hasTable()) {
+      return toTablePermission(proto);
+    } else {
+      List<Permission.Action> actions = toPermissionActions(proto.getActionList());
+      return new Permission(actions.toArray(new Permission.Action[actions.size()]));
+    }
+  }
+
+  /**
+   * Converts a Permission proto to a client TablePermission object.
+   *
+   * @param proto the protobuf Permission
+   * @return the converted TablePermission
+   */
+  public static TablePermission toTablePermission(AccessControlProtos.Permission proto) {
+    List<Permission.Action> actions = toPermissionActions(proto.getActionList());
+
+    byte[] qualifier = null;
+    byte[] family = null;
+    byte[] table = null;
+
+    if (proto.hasTable()) table = proto.getTable().toByteArray();
+    if (proto.hasFamily()) family = proto.getFamily().toByteArray();
+    if (proto.hasQualifier()) qualifier = proto.getQualifier().toByteArray();
+
+    return new TablePermission(table, family, qualifier,
+        actions.toArray(new Permission.Action[actions.size()]));
+  }
+
+  /**
+   * Convert a client Permission to a Permission proto
+   *
+   * @param action the client Permission
+   * @return the protobuf Permission
+   */
+  public static AccessControlProtos.Permission toPermission(Permission perm) {
+    AccessControlProtos.Permission.Builder builder = AccessControlProtos.Permission.newBuilder();
+    if (perm instanceof TablePermission) {
+      TablePermission tablePerm = (TablePermission)perm;
+      if (tablePerm.hasTable()) {
+        builder.setTable(ByteString.copyFrom(tablePerm.getTable()));
+      }
+      if (tablePerm.hasFamily()) {
+        builder.setFamily(ByteString.copyFrom(tablePerm.getFamily()));
+      }
+      if (tablePerm.hasQualifier()) {
+        builder.setQualifier(ByteString.copyFrom(tablePerm.getQualifier()));
+      }
+    }
+    for (Permission.Action a : perm.getActions()) {
+      builder.addAction(toPermissionAction(a));
+    }
+    return builder.build();
+  }
+
+  /**
+   * Converts a list of Permission.Action proto to a list of client Permission.Action objects.
+   *
+   * @param protoActions the list of protobuf Actions
+   * @return the converted list of Actions
+   */
+  public static List<Permission.Action> toPermissionActions(
+      List<AccessControlProtos.Permission.Action> protoActions) {
+    List<Permission.Action> actions = new ArrayList<Permission.Action>(protoActions.size());
+    for (AccessControlProtos.Permission.Action a : protoActions) {
+      actions.add(toPermissionAction(a));
+    }
+    return actions;
+  }
+
+  /**
+   * Converts a Permission.Action proto to a client Permission.Action object.
+   *
+   * @param proto the protobuf Action
+   * @return the converted Action
+   */
+  public static Permission.Action toPermissionAction(
+      AccessControlProtos.Permission.Action action) {
+    switch (action) {
+      case READ:
+        return Permission.Action.READ;
+      case WRITE:
+        return Permission.Action.WRITE;
+      case EXEC:
+        return Permission.Action.EXEC;
+      case CREATE:
+        return Permission.Action.CREATE;
+      case ADMIN:
+        return Permission.Action.ADMIN;
+    }
+    throw new IllegalArgumentException("Unknown action value "+action.name());
+  }
+
+  /**
+   * Convert a client Permission.Action to a Permission.Action proto
+   *
+   * @param action the client Action
+   * @return the protobuf Action
+   */
+  public static AccessControlProtos.Permission.Action toPermissionAction(
+      Permission.Action action) {
+    switch (action) {
+      case READ:
+        return AccessControlProtos.Permission.Action.READ;
+      case WRITE:
+        return AccessControlProtos.Permission.Action.WRITE;
+      case EXEC:
+        return AccessControlProtos.Permission.Action.EXEC;
+      case CREATE:
+        return AccessControlProtos.Permission.Action.CREATE;
+      case ADMIN:
+        return AccessControlProtos.Permission.Action.ADMIN;
+    }
+    throw new IllegalArgumentException("Unknown action value "+action.name());
+  }
+
+  /**
+   * Convert a client user permission to a user permission proto
+   *
+   * @param perm the client UserPermission
+   * @return the protobuf UserPermission
+   */
+  public static AccessControlProtos.UserPermission toUserPermission(UserPermission perm) {
+    AccessControlProtos.Permission.Builder permissionBuilder =
+        AccessControlProtos.Permission.newBuilder();
+    for (Permission.Action a : perm.getActions()) {
+      permissionBuilder.addAction(toPermissionAction(a));
+    }
+    if (perm.hasTable()) {
+      permissionBuilder.setTable(ByteString.copyFrom(perm.getTable()));
+    }
+    if (perm.hasFamily()) {
+      permissionBuilder.setFamily(ByteString.copyFrom(perm.getFamily()));
+    }
+    if (perm.hasQualifier()) {
+      permissionBuilder.setQualifier(ByteString.copyFrom(perm.getQualifier()));
+    }
+
+    return AccessControlProtos.UserPermission.newBuilder()
+        .setUser(ByteString.copyFrom(perm.getUser()))
+        .setPermission(permissionBuilder)
+        .build();
+  }
+
+  /**
+   * Converts a user permission proto to a client user permission object.
+   *
+   * @param proto the protobuf UserPermission
+   * @return the converted UserPermission
+   */
+  public static UserPermission toUserPermission(AccessControlProtos.UserPermission proto) {
+    AccessControlProtos.Permission permission = proto.getPermission();
+    List<Permission.Action> actions = toPermissionActions(permission.getActionList());
+
+    byte[] qualifier = null;
+    byte[] family = null;
+    byte[] table = null;
+
+    if (permission.hasTable()) table = permission.getTable().toByteArray();
+    if (permission.hasFamily()) family = permission.getFamily().toByteArray();
+    if (permission.hasQualifier()) qualifier = permission.getQualifier().toByteArray();
+
+    return new UserPermission(proto.getUser().toByteArray(),
+        table, family, qualifier,
+        actions.toArray(new Permission.Action[actions.size()]));
+  }
+
+  /**
+   * Convert a ListMultimap<String, TablePermission> where key is username
+   * to a protobuf UserPermission
+   *
+   * @param perm the list of user and table permissions
+   * @return the protobuf UserTablePermissions
+   */
+  public static AccessControlProtos.UserTablePermissions toUserTablePermissions(
+      ListMultimap<String, TablePermission> perm) {
+    AccessControlProtos.UserTablePermissions.Builder builder =
+                  AccessControlProtos.UserTablePermissions.newBuilder();
+    for (Map.Entry<String, Collection<TablePermission>> entry : perm.asMap().entrySet()) {
+      AccessControlProtos.UserTablePermissions.UserPermissions.Builder userPermBuilder =
+                  AccessControlProtos.UserTablePermissions.UserPermissions.newBuilder();
+      userPermBuilder.setUser(ByteString.copyFromUtf8(entry.getKey()));
+      for (TablePermission tablePerm: entry.getValue()) {
+        userPermBuilder.addPermissions(toPermission(tablePerm));
+      }
+      builder.addPermissions(userPermBuilder.build());
+    }
+    return builder.build();
+  }
+
+  /**
+   * Convert a protobuf UserTablePermissions to a
+   * ListMultimap<String, TablePermission> where key is username.
+   *
+   * @param proto the protobuf UserPermission
+   * @return the converted UserPermission
+   */
+  public static ListMultimap<String, TablePermission> toUserTablePermissions(
+      AccessControlProtos.UserTablePermissions proto) {
+    ListMultimap<String, TablePermission> perms = ArrayListMultimap.create();
+    AccessControlProtos.UserTablePermissions.UserPermissions userPerm;
+
+    for (int i = 0; i < proto.getPermissionsCount(); i++) {
+      userPerm = proto.getPermissions(i);
+      for (int j = 0; j < userPerm.getPermissionsCount(); j++) {
+        TablePermission tablePerm = toTablePermission(userPerm.getPermissions(j));
+        perms.put(userPerm.getUser().toStringUtf8(), tablePerm);
+      }
+    }
+
+    return perms;
   }
 }
