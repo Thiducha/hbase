@@ -326,8 +326,30 @@
         <enabled>true</enabled>
       </releases>
     </repository>
+    <repository>
+      <id>nkeywal.testing</id>
+      <name>NK test repo</name>
+      <url>http://people.apache.org/~nkeywal/mvn/</url>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+    </repository>
   </repositories>
   <pluginRepositories>
+    <pluginRepository>
+      <id>nkeywal.testing</id>
+      <name>NK test repo</name>
+      <url>http://people.apache.org/~nkeywal/mvn/</url>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+    </pluginRepository>
     <pluginRepository>
       <id>ghelmling.testing</id>
       <name>Gary Helmling test repo</name>
@@ -418,7 +440,7 @@
           <!-- Generic testing configuration for all packages -->
           <configuration>
             <groups>org.apache.hadoop.hbase.SmallTests</groups>
-            <forkMode>once</forkMode>
+            <forkMode>none</forkMode>
             <parallel>none</parallel>
 
             <!-- settings used for the executions as well -->
