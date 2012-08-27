@@ -419,7 +419,7 @@
           <configuration>
             <groups>org.apache.hadoop.hbase.SmallTests</groups>
             <forkMode>once</forkMode>
-            <parallel>classes</parallel>
+            <parallel>none</parallel>
 
             <!-- settings used for the executions as well -->
             <testFailureIgnore>false</testFailureIgnore>
