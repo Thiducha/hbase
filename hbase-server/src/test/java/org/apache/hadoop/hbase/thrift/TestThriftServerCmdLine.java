@@ -168,6 +168,10 @@ public class TestThriftServerCmdLine {
     thriftServer = new ThriftServer(TEST_UTIL.getConfiguration());
     startCmdLineThread(args.toArray(new String[0]));
 
+    while ( thriftServer.serverRunner.tserver == null ){
+      Thread.sleep(1);
+    }
+
     Class<? extends TServer> expectedClass = implType != null ?
         implType.serverClass : TBoundedThreadPoolServer.class;
     assertEquals(expectedClass,
