@@ -189,6 +189,8 @@ public class TestThriftServerCmdLine {
     }
   }
 
+  private boolean tableCreated = false;
+
   private void talkToThriftServer() throws Exception {
     TSocket sock = new TSocket(InetAddress.getLocalHost().getHostName(),
         port);
@@ -206,10 +208,12 @@ public class TestThriftServerCmdLine {
         prot = new TBinaryProtocol(transport);
       }
       Hbase.Client client = new Hbase.Client(prot);
-      TestThriftServer.doTestTableCreateDrop(client);
-//      TestThriftServer.doTestGetRegionInfo(client);
-//      TestThriftServer.doTestGetTableRegions(client);
-//      TestThriftServer.doTestTableMutations(client);
+      if (!tableCreated){
+        TestThriftServer.createTestTables(client);
+        tableCreated = true;
+      }
+      TestThriftServer.checkTableList(client);
+
     } finally {
       sock.close();
     }
