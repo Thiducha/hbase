@@ -189,7 +189,7 @@ public class TestThriftServerCmdLine {
     }
   }
 
-  private boolean tableCreated = false;
+  private static boolean tableCreated = false;
 
   private void talkToThriftServer() throws Exception {
     TSocket sock = new TSocket(InetAddress.getLocalHost().getHostName(),
