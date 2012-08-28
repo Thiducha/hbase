@@ -206,10 +206,10 @@ public class TestThriftServer {
   }
 
   public static void checkTableList(Hbase.Iface handler) throws Exception {
-    assertTrue( handler.getTableNames().contains(tableAname) );
+    assertTrue(handler.getTableNames().contains(tableAname));
   }
 
-    public static void dropTestTables(Hbase.Iface handler) throws Exception {
+  public static void dropTestTables(Hbase.Iface handler) throws Exception {
     handler.disableTable(tableBname);
     assertFalse(handler.isTableEnabled(tableBname));
     handler.deleteTable(tableBname);
