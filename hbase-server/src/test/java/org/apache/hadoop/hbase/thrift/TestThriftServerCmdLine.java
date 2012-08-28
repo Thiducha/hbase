@@ -167,7 +167,6 @@ public class TestThriftServerCmdLine {
 
     thriftServer = new ThriftServer(TEST_UTIL.getConfiguration());
     startCmdLineThread(args.toArray(new String[0]));
-    Threads.sleepWithoutInterrupt(2000);
 
     Class<? extends TServer> expectedClass = implType != null ?
         implType.serverClass : TBoundedThreadPoolServer.class;
@@ -189,7 +188,7 @@ public class TestThriftServerCmdLine {
     }
   }
 
-  private static boolean tableCreated = false;
+  private static volatile boolean tableCreated = false;
 
   private void talkToThriftServer() throws Exception {
     TSocket sock = new TSocket(InetAddress.getLocalHost().getHostName(),
