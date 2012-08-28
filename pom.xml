@@ -423,9 +423,6 @@
             <parallel>${surefire.firstPartParallel}</parallel>
             <perCoreThreadCount>false</perCoreThreadCount>
             <threadCount>${surefire.firstPartThreadCount}</threadCount>
-            <parallel>classes</parallel>
-            <!-- surefire hack, if not we're
-              using method parallelization class ! -->
             <testFailureIgnore>false</testFailureIgnore>
             <forkedProcessTimeoutInSeconds>900</forkedProcessTimeoutInSeconds>
             <argLine>-enableassertions -Xmx1900m
@@ -850,7 +847,7 @@
     <surefire.skipSecondPart>false</surefire.skipSecondPart>
     <surefire.firstPartForkMode>once</surefire.firstPartForkMode>
     <surefire.firstPartParallel>classes</surefire.firstPartParallel>
-    <surefire.firstPartThreadCount>1</surefire.firstPartThreadCount>
+    <surefire.firstPartThreadCount>5</surefire.firstPartThreadCount>
     <surefire.secondPartThreadCount>2</surefire.secondPartThreadCount>
     <surefire.firstPartGroups>org.apache.hadoop.hbase.SmallTests</surefire.firstPartGroups>
     <surefire.secondPartGroups>org.apache.hadoop.hbase.MediumTests</surefire.secondPartGroups>
@@ -1375,108 +1372,10 @@
         </dependency>
       </dependencies>
     </profile>
+
     <!-- profiles for the tests
          See as well the properties of the project for the values
          when no profile is active.     -->
-    <profile>
-      <!-- Use it to launch the tests without parallelisation -->
-      <id>nonParallelTests</id>
-      <activation>
-        <activeByDefault>false</activeByDefault>
-      </activation>
-      <properties>
-        <surefire.firstPartForkMode>always</surefire.firstPartForkMode>
-        <surefire.firstPartParallel>none</surefire.firstPartParallel>
-        <surefire.firstPartThreadCount>1</surefire.firstPartThreadCount>
-      </properties>
-    </profile>
-    <profile>
-      <!-- Use it to launch the tests in parallel in the same JVM  -->
-      <id>parallelTests</id>
-      <activation>
-        <activeByDefault>false</activeByDefault>
-      </activation>
-      <properties>
-        <surefire.firstPartForkMode>once</surefire.firstPartForkMode>
-        <surefire.firstPartParallel>classes</surefire.firstPartParallel>
-        <surefire.firstPartThreadCount>1</surefire.firstPartThreadCount>
-      </properties>
-    </profile>
-    <profile>
-      <!-- Use it to launch the tests in the same JVM  -->
-      <id>singleJVMTests</id>
-      <activation>
-        <activeByDefault>false</activeByDefault>
-      </activation>
-      <properties>
-        <surefire.firstPartForkMode>once</surefire.firstPartForkMode>
-        <surefire.firstPartParallel>none</surefire.firstPartParallel>
-        <surefire.firstPartThreadCount>1</surefire.firstPartThreadCount>
-        <surefire.skipFirstPart>false</surefire.skipFirstPart>
-        <surefire.skipSecondPart>true</surefire.skipSecondPart>
-        <surefire.firstPartGroups/>
-      </properties>
-    </profile>
-    <profile>
-      <!-- Use it to launch small tests only -->
-      <id>runSmallTests</id>
-      <activation>
-        <activeByDefault>false</activeByDefault>
-      </activation>
-      <properties>
-        <surefire.firstPartForkMode>once</surefire.firstPartForkMode>
-        <surefire.firstPartParallel>none</surefire.firstPartParallel>
-        <surefire.firstPartThreadCount>1</surefire.firstPartThreadCount>
-        <surefire.skipFirstPart>false</surefire.skipFirstPart>
-        <surefire.skipSecondPart>true</surefire.skipSecondPart>
-        <surefire.firstPartGroups>org.apache.hadoop.hbase.SmallTests</surefire.firstPartGroups>
-        <surefire.secondPartGroups/>
-      </properties>
-    </profile>
-    <profile>
-      <!-- Use it to launch medium tests only -->
-      <id>runMediumTests</id>
-      <activation>
-        <activeByDefault>false</activeByDefault>
-      </activation>
-      <properties>
-        <surefire.firstPartForkMode>always</surefire.firstPartForkMode>
-        <surefire.skipFirstPart>false</surefire.skipFirstPart>
-        <surefire.skipSecondPart>true</surefire.skipSecondPart>
-        <surefire.firstPartGroups>org.apache.hadoop.hbase.MediumTests</surefire.firstPartGroups>
-        <surefire.secondPartGroups/>
-      </properties>
-    </profile>
-    <profile>
-      <!-- Use it to launch large tests only -->
-      <id>runLargeTests</id>
-      <activation>
-        <activeByDefault>false</activeByDefault>
-      </activation>
-      <properties>
-        <surefire.firstPartForkMode>always</surefire.firstPartForkMode>
-        <surefire.skipFirstPart>false</surefire.skipFirstPart>
-        <surefire.skipSecondPart>true</surefire.skipSecondPart>
-        <surefire.firstPartGroups>org.apache.hadoop.hbase.LargeTests</surefire.firstPartGroups>
-        <surefire.secondPartGroups/>
-      </properties>
-    </profile>
-    <profile>
-      <!-- Use it to launch small & medium tests -->
-      <id>runDevTests</id>
-      <activation>
-        <activeByDefault>false</activeByDefault>
-      </activation>
-      <properties>
-        <surefire.firstPartForkMode>once</surefire.firstPartForkMode>
-        <surefire.firstPartParallel>none</surefire.firstPartParallel>
-        <surefire.firstPartThreadCount>1</surefire.firstPartThreadCount>
-        <surefire.skipFirstPart>false</surefire.skipFirstPart>
-        <surefire.skipSecondPart>false</surefire.skipSecondPart>
-        <surefire.firstPartGroups>org.apache.hadoop.hbase.SmallTests</surefire.firstPartGroups>
-        <surefire.secondPartGroups>org.apache.hadoop.hbase.MediumTests</surefire.secondPartGroups>
-      </properties>
-    </profile>
     <profile>
       <!-- Use it to launch all tests -->
       <id>runAllTests</id>
