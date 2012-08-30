@@ -33,7 +33,7 @@ public class PutSimple {
     for (int m = 0; m < 100; m++) {
       ArrayList<Put> puts = new ArrayList<Put>(size);
       for (int i = 0; i < size; i++) {
-        long in = (long) (r.nextDouble() * 10000000000L) - 1L;
+        long in = (long) (r.nextDouble() * 10000000000L);
         assert in > 0L;
         assert in < 10000000000L;
         String inS = "00000000000000000000" + in;
