@@ -25,7 +25,9 @@ import static org.junit.Assert.*;
 import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HRegionInfo;
+import org.apache.hadoop.hbase.MediumTests;
 import org.apache.hadoop.hbase.SmallTests;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetOnlineRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Get;
@@ -44,14 +46,14 @@ import com.google.protobuf.ByteString;
 /**
  * Tests that verify certain RPCs get a higher QoS.
  */
-@Category(SmallTests.class)
+@Category(MediumTests.class)
 public class TestPriorityRpc {
   static HRegionServer regionServer = null;
   static QosFunction qosFunction = null;
   @BeforeClass
   public static void onetimeSetup() {
     regionServer =
-        HRegionServer.constructRegionServer(HRegionServer.class, new Configuration());
+        HRegionServer.constructRegionServer(HRegionServer.class, HBaseConfiguration.create());
     qosFunction = regionServer.getQosFunction();
   }
   @Test
