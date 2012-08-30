@@ -46,7 +46,7 @@ import com.google.protobuf.ByteString;
 /**
  * Tests that verify certain RPCs get a higher QoS.
  */
-@Category(MediumTests.class)
+@Category(MediumTests.class)    // medium as it opens a socket
 public class TestPriorityRpc {
   static HRegionServer regionServer = null;
   static QosFunction qosFunction = null;
