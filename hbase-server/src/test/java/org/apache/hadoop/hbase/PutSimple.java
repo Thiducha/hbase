@@ -23,7 +23,7 @@ public class PutSimple {
   @Test
   public void testPuts() throws Exception {
     HTable table = getExternalClusterTable();
-    final int size = 30000;
+    final int size = 100000;
     Date debut = new Date();
     Random r = new Random(0);
 
@@ -62,4 +62,3 @@ public class PutSimple {
     System.out.println(" insertion duration " + (insertDuration / 1000) + " seconds");
   }
 }
-
