@@ -791,7 +791,7 @@
     <hbase.version>${project.version}</hbase.version>
     <!-- Dependencies -->
     <hadoop-two.version>2.0.0-alpha</hadoop-two.version>
-    <hadoop-one.version>1.0.3</hadoop-one.version>
+    <hadoop-one.version>1.0.4-SNAPSHOT</hadoop-one.version>
     <commons-cli.version>1.2</commons-cli.version>
     <commons-codec.version>1.4</commons-codec.version>
     <commons-httpclient.version>3.1</commons-httpclient.version>
