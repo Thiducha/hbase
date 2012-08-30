@@ -103,7 +103,7 @@ COMMAND=$1
 shift
 
 JAVA=$JAVA_HOME/bin/java
-JAVA_HEAP_MAX=-Xmx1000m 
+JAVA_HEAP_MAX=-Xmx5000m 
 
 MVN="mvn"
 if [ "$MAVEN_HOME" != "" ]; then
