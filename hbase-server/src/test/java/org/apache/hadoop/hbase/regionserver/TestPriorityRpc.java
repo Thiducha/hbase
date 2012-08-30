@@ -26,6 +26,7 @@ import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.MediumTests;
 import org.apache.hadoop.hbase.SmallTests;
@@ -53,7 +54,7 @@ public class TestPriorityRpc {
   @BeforeClass
   public static void onetimeSetup() {
     regionServer =
-        HRegionServer.constructRegionServer(HRegionServer.class, HBaseConfiguration.create());
+        HRegionServer.constructRegionServer(HRegionServer.class, new HBaseTestingUtility().getConfiguration());
     qosFunction = regionServer.getQosFunction();
   }
   @Test
