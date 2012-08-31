@@ -55,6 +55,7 @@ public class TestPriorityRpc {
   @BeforeClass
   public static void onetimeSetup() {
     Configuration c = HBaseConfiguration.create();
+
     regionServer =
         HRegionServer.constructRegionServer(HRegionServer.class, c);
     qosFunction = regionServer.getQosFunction();
