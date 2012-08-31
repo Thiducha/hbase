@@ -25,6 +25,7 @@ import static org.junit.Assert.*;
 import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.MediumTests;
@@ -52,8 +53,9 @@ public class TestPriorityRpc {
   static QosFunction qosFunction = null;
   @BeforeClass
   public static void onetimeSetup() {
+    Configuration conf = HBaseConfiguration.create();
     regionServer =
-        HRegionServer.constructRegionServer(HRegionServer.class, new Configuration());
+        HRegionServer.constructRegionServer(HRegionServer.class, conf);
     qosFunction = regionServer.getQosFunction();
   }
   @Test
