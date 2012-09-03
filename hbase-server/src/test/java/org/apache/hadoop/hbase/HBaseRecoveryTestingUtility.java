@@ -636,15 +636,10 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
 
   private void updateConf(int nDN) {
     Configuration conf = super.getConfiguration();
-    conf.getLong("hbase.splitlog.max.resubmit", 4);
     conf.setInt("dfs.replication", nDN >= 3 ? 3 : nDN);
-    conf.setInt("zookeeper.recovery.retry", 0);
     conf.setInt("hbase.client.retries.number", 20);
-    conf.setInt("hbase.regionserver.optionallogflushinterval", 0);
-    conf.setInt("hbase.hstore.compactionThreshold", 100000);
     conf.setInt(HConstants.REGIONSERVER_INFO_PORT, -1);
     conf.setFloat(HConstants.LOAD_BALANCER_SLOP_KEY, (float) 100.0); // no load balancing
-    conf.setBoolean(HConstants.DISTRIBUTED_LOG_SPLITTING_KEY, true);
 
     conf.setBoolean("dfs.support.append", true);
 

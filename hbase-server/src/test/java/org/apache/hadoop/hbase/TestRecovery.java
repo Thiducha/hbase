@@ -275,7 +275,7 @@ public class TestRecovery {
       HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(1000);
       puts.checkPuts();
 
-      // Start & Kill the DNs
+      // Start & Kill 2 DNs out of the 3. There will be a replica available.
       TEST_UTIL.startNewDatanode();
       TEST_UTIL.startNewDatanode();
       TEST_UTIL.stopCleanDataNode(0);
