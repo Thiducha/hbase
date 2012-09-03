@@ -391,6 +391,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     public void checkPuts() throws Exception {
       for (byte[] pastPut : pastPuts) {
         Get g = new Get(pastPut);
+        Assert.assertNotNull(g);
         Assert.assertArrayEquals(testTable.get(g).getRow(), pastPut);
       }
     }
