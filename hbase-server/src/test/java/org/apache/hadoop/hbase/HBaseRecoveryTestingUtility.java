@@ -67,7 +67,8 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     Logger.getLogger("org.apache.hadoop.ipc.HBaseClient").setLevel(Level.DEBUG);
   }
 
-  public int[] getRSNoRootAndNoMeta(int nbRS) {
+  public int[] getRSNoRootAndNoMeta() {
+    final int nbRS = getHBaseCluster().getRegionServerThreads().size();
     final byte[] nameRootRegion = HRegionInfo.ROOT_REGIONINFO.getRegionName();
     final int numRootServ = getHBaseCluster().getServerWith(nameRootRegion);
     final int numMetaServ = getHBaseCluster().getServerWithMeta();
@@ -293,7 +294,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     LOG.info("DONE breakCache " + fakeRS);
   }
 
-  public void createTable(int nRegions, int rs) throws IOException {
+  public void createTableWithRegionsOnRS(int nRegions, int rs) throws IOException {
     createTable(nRegions, rs, rs);
   }
 
@@ -307,7 +308,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
 
 
   public void createTableOnRS(int rs) throws IOException {
-    createTable(1, rs);
+    createTableWithRegionsOnRS(1, rs);
   }
 
 
