@@ -1,4 +1,4 @@
-package org.apache.hadoop.hbase.master;
+package org.apache.hadoop.hbase;
 
 
 import org.apache.commons.logging.Log;
