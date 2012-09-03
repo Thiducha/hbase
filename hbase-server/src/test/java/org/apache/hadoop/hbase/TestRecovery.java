@@ -19,7 +19,7 @@ public class TestRecovery {
   HBaseRecoveryTestingUtility TEST_UTIL = new HBaseRecoveryTestingUtility();
 
   private static final Log LOG = LogFactory.getLog(TestRecovery.class);
-  private final int nbTests = 6;
+  private final int nbTests = 1;
   private final int nbMoves = 5;
   private final int nbVal = 50;
 
@@ -281,12 +281,13 @@ public class TestRecovery {
       TEST_UTIL.stopCleanDataNode(0);
       TEST_UTIL.stopCleanDataNode(1);
 
-      // Kill all RS except the one with root or
+      // Kill all RS except the one with root or meta
       LOG.info("Killing servers # "+ Arrays.toString(RS));
       for (int j = 0; j < RS.length; j++) {
         TEST_UTIL.stopDirtyRegionServer(RS[j]);
       }
 
+      // We should find out puts!
       puts.checkPuts();
 
       TEST_UTIL.stopCleanCluster();
