@@ -391,7 +391,6 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     public void checkPuts() throws Exception {
       for (byte[] pastPut : pastPuts) {
         Get g = new Get(pastPut);
-        Assert.assertNotNull(g);
         Assert.assertArrayEquals(testTable.get(g).getRow(), pastPut);
       }
     }
@@ -646,21 +645,10 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     conf.setInt(HConstants.REGIONSERVER_INFO_PORT, -1);
     conf.setFloat(HConstants.LOAD_BALANCER_SLOP_KEY, (float) 100.0); // no load balancing
     conf.setBoolean(HConstants.DISTRIBUTED_LOG_SPLITTING_KEY, true);
-    // Make block sizes small.
-    //conf.setInt("dfs.blocksize", 1024 * 1024);
-    // needed for testAppendClose()
+
     conf.setBoolean("dfs.support.append", true);
 
     // We want hdfs to retries multiple times, if not the new block allocation could fail
     conf.setInt("dfs.client.block.write.retries", 10);
-    // quicker heartbeat interval for faster DN death notification
-    //conf.setInt("heartbeat.recheck.interval", 5000);
-    //conf.setInt("dfs.heartbeat.interval", 1);
-    //conf.setInt("dfs.socket.timeout", 5000);
-    // faster failover with cluster.shutdown();fs.close() idiom
-    //conf.setInt("ipc.client.connect.max.retries", 1);
-    //conf.setInt("dfs.client.block.recovery.retries", 1);
-    //conf.setInt("ipc.client.connection.maxidletime", 500);
-    conf.set(CoprocessorHost.WAL_COPROCESSOR_CONF_KEY, SampleRegionWALObserver.class.getName());
   }
 }
