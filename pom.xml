@@ -790,7 +790,6 @@
     <compileSource>1.6</compileSource>
     <hbase.version>${project.version}</hbase.version>
     <!-- Dependencies -->
-    <hadoop-three.version>3.0.0-SNAPSHOT</hadoop-three.version>
     <hadoop-two.version>2.0.0-alpha</hadoop-two.version>
     <hadoop-one.version>1.0.3</hadoop-one.version>
     <commons-cli.version>1.2</commons-cli.version>
@@ -1306,7 +1305,6 @@
     <profile>
       <id>hadoop-2.0</id>
       <activation>
-        <activeByDefault>true</activeByDefault>
         <property>
           <name>hadoop.profile</name>
           <value>2.0</value>
@@ -1354,25 +1352,25 @@
       </activation>
       <properties>
         <slf4j.version>1.6.1</slf4j.version>
-        <hadoop.version>${hadoop-three.version}</hadoop.version>
+        <hadoop.version>3.0.0-SNAPSHOT</hadoop.version>
       </properties>
       <dependencies>
         <dependency>
           <groupId>org.apache.hadoop</groupId>
           <artifactId>hadoop-common</artifactId>
-          <version>${hadoop-three.version}</version>
+          <version>${hadoop.version}</version>
         </dependency>
         <dependency>
           <groupId>org.apache.hadoop</groupId>
           <artifactId>hadoop-annotations</artifactId>
-          <version>${hadoop-three.version}</version>
+          <version>${hadoop.version}</version>
         </dependency>
         <!-- test deps for hadoop-0.24 profile -->
         <!-- Says test, but scoped for compile. Which is correct? -->
         <dependency>
           <groupId>org.apache.hadoop</groupId>
           <artifactId>hadoop-minicluster</artifactId>
-          <version>${hadoop-three.version}</version>
+          <version>${hadoop.version}</version>
           <scope>compile</scope>
         </dependency>
       </dependencies>
