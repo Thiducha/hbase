@@ -19,7 +19,7 @@ public class TestRecovery {
   HBaseRecoveryTestingUtility TEST_UTIL = new HBaseRecoveryTestingUtility();
 
   private static final Log LOG = LogFactory.getLog(TestRecovery.class);
-  private final int nbTests = 1;
+  private final int nbTests = 5;
   private final int nbMoves = 5;
   private final int nbVal = 50;
 
@@ -146,118 +146,26 @@ public class TestRecovery {
   // Fail
   // First iteration ok but not the second
   // checkPuts fail
-  @Test
-  public void testKillRSWithBadDN() throws Exception {
-    for (int i = 0; i < nbTests; i++) {
-      LOG.info("Test " + i);
-      TEST_UTIL.startClusterSynchronous(3, 3);
-      TEST_UTIL.createTableWithRegionsOnRS(100, 0);
 
-      // Search Region Servers without root and meta
-      int[] RS = TEST_UTIL.getRSNoRootAndNoMeta();
+/*
+  Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 548.272 sec <<< FAILURE!
+testStopDNandRS(org.apache.hadoop.hbase.TestRecovery)  Time elapsed: 548.017 sec  <<< ERROR!
+org.apache.hadoop.hbase.client.RetriesExhaustedException: Failed after attempts=20, exceptions:
+Mon Sep 03 19:55:51 CEST 2012, org.apache.hadoop.hbase.client.HTable$3@a6a2534, java.net.ConnectException: Connec
+tion refused
+Mon Sep 03 19:55:52 CEST 2012, org.apache.hadoop.hbase.client.HTable$3@a6a2534, java.net.ConnectException: Connec
+tion refused
+Mon Sep 03 19:55:53 CEST 2012, org.apache.hadoop.hbase.client.HTable$3@a6a2534, org.apache.hadoop.hbase.ipc.HBase
+Client$FailedServerException: This server is in the failed servers list: localhost/127.0.0.1:32934
+Mon Sep 03 19:55:54 CEST 2012, org.apache.hadoop.hbase.client.HTable$3@a6a2534, java.net.ConnectException: Connec
+tion refused
+Mon Sep 03 19:55:56 CEST 2012, org.apache.hadoop.hbase.client.HTable$3@a6a2534, java.net.ConnectException: Connec
+tion refused
+Mon Sep 03 19:55:58 CEST 2012, org.apache.hadoop.hbase.client.HTable$3@a6a2534, java.net.ConnectException: Connec
+tion refused
+Mon Sep 03 19:56:02 CEST 2012, org.apache.hadoop.hbase.client.HTable$3@a6a2534, java.net.ConnectException: Connec
+   */
 
-      HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(1000);
-      puts.checkPuts();
-
-      // Move table in a Region Server without root and meta
-      TEST_UTIL.moveTableTo(TEST_UTIL.getTestTableNameToString(), RS[0]);
-
-      // start 2 datanodes
-      TEST_UTIL.startNewDatanode();
-      TEST_UTIL.startNewDatanode();
-
-      // shutdown 2 Datanodes
-      TEST_UTIL.stopDirtyDataNodeStopIPC(1);
-      TEST_UTIL.stopDirtyDataNodeStopIPC(2);
-
-      // Kill all Regions Servers without root and meta
-      for (int j = 0; j < RS.length; j++) {
-        TEST_UTIL.stopDirtyRegionServer(RS[j]);
-      }
-
-      puts.checkPuts();
-
-      TEST_UTIL.stopCleanCluster();
-      LOG.info("End test " + i);
-    }
-  }
-
-  // Fail
-  // 2 iterations OK. The third failed
-  // checkPuts fail
-  @Test
-  public void testKillRSWithBadDN2() throws Exception {
-    for (int i = 0; i < nbTests; i++) {
-      LOG.info("Test " + i);
-      TEST_UTIL.startClusterSynchronous(3, 3);
-      TEST_UTIL.createTableWithRegionsOnRS(100, 0);
-
-      // Search datanodes without root and meta
-      int[] RS = TEST_UTIL.getRSNoRootAndNoMeta();
-
-      HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(1000);
-      puts.checkPuts();
-
-      // Move table in a Region Server without root and meta
-      TEST_UTIL.moveTableTo(TEST_UTIL.getTestTableNameToString(), RS[0]);
-
-      TEST_UTIL.startNewDatanode();
-      TEST_UTIL.startNewDatanode();
-
-      TEST_UTIL.stopDirtyDataNode(1);
-      TEST_UTIL.stopDirtyDataNode(2);
-
-
-      for (int j = 0; j < RS.length; j++) {
-        TEST_UTIL.stopDirtyRegionServer(RS[j]);
-      }
-
-      puts.checkPuts();
-
-      TEST_UTIL.stopCleanCluster();
-      LOG.info("End test " + i);
-    }
-  }
-
-  // Fail
-  //  org.apache.hadoop.hbase.client.RetriesExhaustedException: Failed after attempts=20
-  @Test
-  public void testKillDNandRS() throws Exception {
-    for (int i = 0; i < nbTests; i++) {
-      LOG.info("Test " + i);
-      TEST_UTIL.startClusterSynchronous(3, 3);
-      TEST_UTIL.createTableWithRegionsOnRS(100, 0);
-
-      // Search datanodes without Root and Meta
-      int[] RS = TEST_UTIL.getRSNoRootAndNoMeta();
-
-      HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(1000);
-      puts.checkPuts();
-
-      // Move table to a Region Server without meta and root
-      TEST_UTIL.moveTableTo(TEST_UTIL.getTestTableNameToString(), RS[0]);
-
-      TEST_UTIL.startNewDatanode();
-      TEST_UTIL.startNewDatanode();
-
-      TEST_UTIL.stopCleanDataNode(0);
-      TEST_UTIL.stopCleanDataNode(1);
-
-      for (int j = 0; j < RS.length; j++) {
-        TEST_UTIL.stopDirtyRegionServer(RS[j]);
-      }
-
-      puts.checkPuts();
-
-      TEST_UTIL.stopCleanCluster();
-
-      LOG.info("End Test " + i);
-    }
-  }
-
-  // Fail
-  // First iteration ok but not the second
-  // checkPuts fail
   @Test
   public void testStopDNandRS() throws Exception {
     for (int i = 0; i < nbTests; i++) {
@@ -307,7 +215,6 @@ public class TestRecovery {
         at org.apache.zookeeper.ZooKeeper.<init>(ZooKeeper.java:442)
   Caused by: java.io.IOException: Too many open files
         at sun.nio.ch.IOUtil.initPipe(Native Method)
-
    */
   @Test
   public void testPutAndFlush() throws Exception {

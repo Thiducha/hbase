@@ -397,7 +397,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
   }
 
   public void flushSynchronous(int RS) throws Exception {
-    LOG.info("flush");
+    LOG.info("START flushSynchronous " + Bytes.toString(rb));
     getHBaseAdmin().flush(testTable.getTableName());
 
     Field cacheFlusher = HRegionServer.class.getDeclaredField("cacheFlusher");
@@ -411,6 +411,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     while ((Integer) meth.invoke(oCF) > 0) {
       Thread.sleep(1);
     }
+    LOG.info("DONE flushSynchronous " + Bytes.toString(rb));
   }
 
   public void roll(int rs) throws IOException {
@@ -593,7 +594,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
   }
 
   public void checkHLog(int nbCol, Path filename, HRegionInfo hri) throws Exception {
-    LOG.info("Start checkHLog");
+    LOG.info("START checkHLog");
 
     // Now open a reader on the log
     HLog.Reader reader = HLog.getReader(getDFSCluster().getFileSystem(), filename, getConfiguration());
@@ -606,7 +607,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     checkHLogMetaValues(entry, hri);
     reader.close();
 
-    LOG.info("checkHLog Finished");
+    LOG.info("DONE checkHLog");
   }
 
   public void cleanTableLocationCache() throws Exception {
