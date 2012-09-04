@@ -122,7 +122,7 @@ public class TestRecovery {
     TEST_UTIL.stopDirtyRegionServer(1);
 
     final long start = System.currentTimeMillis();
-    int nbLiveRegion = 0;
+    int nbLiveRegion;
     do {
       Thread.sleep(1);
       nbLiveRegion = TEST_UTIL.getHBaseCluster().getRegionServer(0).getNumberOfOnlineRegions();
