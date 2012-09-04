@@ -111,9 +111,9 @@ public class TestRecovery {
     TEST_UTIL.startNewRegionServer();
     TEST_UTIL.createTableWithRegionsOnRS(100, 1);
 
-    // Insert puts, there will be on the memstore
+    // Insert puts, they will be on the memstore
     LOG.info("start puts");
-    HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(10000);
+    HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(100000);
 
     LOG.info("start new & kill on DN and the RS with the table on.");
     TEST_UTIL.startNewDatanode();
