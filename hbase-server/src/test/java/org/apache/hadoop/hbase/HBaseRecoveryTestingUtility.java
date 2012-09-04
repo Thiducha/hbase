@@ -435,9 +435,9 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
 
     DatanodeInfo[] datanodeInfos = null;
 
-    getPipeline = ho.getWrappedStream().getClass().getDeclaredMethod("getPipeline", null);
+    getPipeline = ho.getWrappedStream().getClass().getDeclaredMethod("getPipeline");
     getPipeline.setAccessible(true);
-    datanodeInfos = (DatanodeInfo[]) getPipeline.invoke(ho.getWrappedStream(), null);
+    datanodeInfos = (DatanodeInfo[]) getPipeline.invoke(ho.getWrappedStream());
 
     return datanodeInfos;
   }
@@ -489,7 +489,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
   }
 
   private Path getLogPath(HLog log) throws Exception {
-    Method computeFilename = log.getClass().getDeclaredMethod("computeFilename", null);
+    Method computeFilename = log.getClass().getDeclaredMethod("computeFilename");
     computeFilename.setAccessible(true);
     return (Path) computeFilename.invoke(log);
   }
