@@ -41,12 +41,14 @@ import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.protocol.DatanodeInfo;
+import org.apache.hadoop.hdfs.server.datanode.DataNode;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.junit.Assert;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.ServerSocket;
 import java.util.ArrayList;
@@ -212,7 +214,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     }
 
     LOG.info("START stopDirtyDataNodeTakePorts " + dn + " " +
-        getDFSCluster().getDataNodes().get(dn).getHostName() + ":" +
+        getHostName( getDFSCluster().getDataNodes().get(dn)) + ":" +
         getDFSCluster().getDataNodes().get(dn).getRpcPort());
 
     stopDirtyDataNode(dn);
@@ -221,6 +223,29 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     takePort(infoPort);
 
     LOG.info("DONE stopDirtyDataNodeTakePorts " + dn);
+  }
+
+  /**
+   * Allow to get the hostname, using getHostName (hadoop 1) or getDisplayName (hadoop 2)
+   */
+  private String getHostName(DataNode dn) throws InvocationTargetException, IllegalAccessException {
+    Method m;
+    try {
+      m = DataNode.class.getMethod("getDisplayName");
+    } catch (NoSuchMethodException e) {
+      try {
+        m = DataNode.class.getMethod("getHostName");
+      } catch (NoSuchMethodException e1) {
+        throw new RuntimeException(e1);
+      }
+    }
+
+    String res = (String) m.invoke(dn);
+    if (res.contains(":")) {
+      return res.split(":")[0];
+    } else {
+      return res;
+    }
   }
 
   public void abortRegionServer(int rs) {
@@ -469,9 +494,6 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     DatanodeInfo[] datanodeInfos = getPipeline(log);
 
     int i;
-    for (i = 0; !datanodeInfos[DN - 1].getName().equals(getDFSCluster().getDataNodes().get(i).getSelfAddr().getAddress().getHostAddress() + ":" +
-        getDFSCluster().getDataNodes().get(i).getSelfAddr().getPort()); i++)
-      ;
 
     stopDirtyDataNodeTakePorts(i);
   }
