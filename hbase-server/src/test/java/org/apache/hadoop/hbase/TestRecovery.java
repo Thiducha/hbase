@@ -110,7 +110,7 @@ public class TestRecovery {
     TEST_UTIL.createTableWithRegionsOnRS(100, 1);
 
     // Insert puts, there will be on the memstore
-    HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(100000);
+    HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(10000);
     puts.checkPuts();
 
     // start new & kill on DN and the RS with the table on.
