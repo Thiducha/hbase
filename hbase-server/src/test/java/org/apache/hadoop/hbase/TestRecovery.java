@@ -97,6 +97,8 @@ public class TestRecovery {
   }
 
 
+  // 2012-09-04 10:51:04,767 DEBUG [main] ipc.HBaseClient$Connection(934): IPC Client (47) connection to localhost/127.0.0.1:51045 from liochon sending #186
+
   /**
    * Similulate a test that can be done on a real 3 nodes cluster as well.
    */
@@ -125,7 +127,7 @@ public class TestRecovery {
       Thread.sleep(1);
       nbLiveRegion = TEST_UTIL.getHBaseCluster().getRegionServer(0).getNumberOfOnlineRegions();
       nbLiveRegion += TEST_UTIL.getHBaseCluster().getRegionServer(2).getNumberOfOnlineRegions();
-    } while (nbLiveRegion != 103);
+    } while (nbLiveRegion != 102);
     final long time = (System.currentTimeMillis() - start);
 
     System.out.println("time = " + time);
