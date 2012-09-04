@@ -118,7 +118,7 @@ public class TestRecovery {
     LOG.info("start new & kill on DN and the RS with the table on.");
     TEST_UTIL.startNewDatanode();
     TEST_UTIL.startNewRegionServer();
-    TEST_UTIL.stopDirtyDataNode(1);
+    TEST_UTIL.stopDirtyDataNodeTakePorts(1);
     TEST_UTIL.stopDirtyRegionServer(1);
 
     final long start = System.currentTimeMillis();
