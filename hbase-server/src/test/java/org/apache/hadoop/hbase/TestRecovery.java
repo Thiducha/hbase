@@ -96,6 +96,45 @@ public class TestRecovery {
     }
   }
 
+
+  /**
+   * Similulate a test that can be done on a real 3 nodes cluster as well.
+   */
+  @Test
+  public void testKillOneDNandOneRS() throws Exception {
+    // dfs.replication will be equals to 2
+    TEST_UTIL.startClusterSynchronous(2, 1);
+
+    // Put a 100 regions table on the second node
+    TEST_UTIL.startNewRegionServer();
+    TEST_UTIL.createTableWithRegionsOnRS(100, 1);
+
+    // Insert puts, there will be on the memstore
+    HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(100000);
+    puts.checkPuts();
+
+    // start new & kill on DN and the RS with the table on.
+    TEST_UTIL.startNewDatanode();
+    TEST_UTIL.startNewRegionServer();
+    TEST_UTIL.stopDirtyDataNode(1);
+    TEST_UTIL.stopDirtyRegionServer(1);
+
+    final long start = System.currentTimeMillis();
+    int nbLiveRegion = 0;
+    do {
+      Thread.sleep(1);
+      nbLiveRegion = TEST_UTIL.getHBaseCluster().getRegionServer(0).getNumberOfOnlineRegions();
+      nbLiveRegion += TEST_UTIL.getHBaseCluster().getRegionServer(2).getNumberOfOnlineRegions();
+    } while (nbLiveRegion != 103);
+    final long time = (System.currentTimeMillis() - start);
+
+    System.out.println("time = " + time);
+    puts.checkPuts();
+
+    TEST_UTIL.stopCleanCluster();
+  }
+
+
   // OK 6 Tests 10min32s
   @Test
   public void testStopDN() throws Exception {
@@ -190,7 +229,7 @@ Mon Sep 03 19:56:02 CEST 2012, org.apache.hadoop.hbase.client.HTable$3@a6a2534, 
       TEST_UTIL.stopCleanDataNode(1);
 
       // Kill all RS except the one with root or meta
-      LOG.info("Killing servers # "+ Arrays.toString(RS));
+      LOG.info("Killing servers # " + Arrays.toString(RS));
       for (int j = 0; j < RS.length; j++) {
         TEST_UTIL.stopDirtyRegionServer(RS[j]);
       }
