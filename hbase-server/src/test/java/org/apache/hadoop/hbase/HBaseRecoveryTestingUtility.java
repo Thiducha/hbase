@@ -247,7 +247,8 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
 
   private int getInfoPort(DataNode dn) throws InvocationTargetException, IllegalAccessException {
     try {
-      Method m = DataNode.class.getMethod("getXferPort");       // hdfs 2
+      Method m = DataNode.class.getDeclaredMethod("getXferPort") ;       // hdfs 2
+      m.setAccessible(true);
       return (Integer)(m.invoke(dn));
     } catch (NoSuchMethodException e) {
       try {
@@ -258,7 +259,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
         }
         return sa.getPort();
       } catch (NoSuchMethodException e1) {
-        throw new RuntimeException("Got: "+e.getMessage() + " and "+e.getMessage());
+        throw new RuntimeException("Not found: "+e.getMessage() + " nor "+e.getMessage());
       }
     }
   }
