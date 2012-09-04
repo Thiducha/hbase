@@ -148,7 +148,9 @@ public class TestRecovery {
 
   @Test
   public void testKillOneDNandOneRS_3DN() throws Exception {
-    TEST_UTIL.getConfiguration().setBoolean("hbase.filesystem.reorder.blocks", false);
+    TEST_UTIL.getConfiguration().setBoolean("dfs.datanode.stale.enable", true);
+
+
 
     // dfs.replication will be equals to 3
     TEST_UTIL.startClusterSynchronous(4, 1);

@@ -161,6 +161,29 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     LOG.info("DONE takePort " + port);
   }
 
+  private void takePortOnce(final int port) {
+    if (port <= 0) return;
+    LOG.info("START takePortOnce " + port);
+
+    Thread t = new Thread() {
+      public void run() {
+        ServerSocket ss = null;
+        do {
+          try {
+            ss = new ServerSocket(port);
+          } catch (IOException ignored) {
+          }
+        } while (ss == null);
+        portsTaken.add(ss);
+      }
+    };
+
+    t.start();
+
+
+    LOG.info("DONE takePortOnce " + port);
+  }
+
   public void stopDirtyRegionServerTakePorts(int rs) throws Exception {
     LOG.info("START stopDirtyRegionServerTakePorts " + rs + " " +
         getHBaseCluster().getRegionServer(rs).getServerName());
