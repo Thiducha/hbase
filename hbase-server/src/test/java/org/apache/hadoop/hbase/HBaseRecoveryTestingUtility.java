@@ -258,7 +258,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
         }
         return sa.getPort();
       } catch (NoSuchMethodException e1) {
-        throw new RuntimeException(e1);
+        throw new RuntimeException("Got: "+e.getMessage() + " and "+e.getMessage());
       }
     }
   }
