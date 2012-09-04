@@ -158,7 +158,7 @@ public class TestRecovery {
 
     // Insert puts, they will be on the memstore
     LOG.info("start puts");
-    HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(100000);
+    HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(100);
 
     LOG.info("Number of online region is " + (
         TEST_UTIL.getHBaseCluster().getRegionServer(0).getNumberOfOnlineRegions() +
