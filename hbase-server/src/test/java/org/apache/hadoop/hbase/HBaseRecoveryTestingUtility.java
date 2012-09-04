@@ -492,10 +492,15 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
 
   public void stopDirtyDataNodeXOfPipelineAndTakePorts(int DN, HLog log) throws Exception {
     DatanodeInfo[] datanodeInfos = getPipeline(log);
-
+                                        /*
     int i;
+    for (i = 0;
+         !datanodeInfos[DN - 1].getName().
+             equals(getDFSCluster().getDataNodes().get(i).getSelfAddr().getAddress().getHostAddress() + ":" +
+        getDFSCluster().getDataNodes().get(i).getSelfAddr().getPort()); i++)
+      ;
 
-    stopDirtyDataNodeTakePorts(i);
+    stopDirtyDataNodeTakePorts(i);            */
   }
 
   private void writeToWAL(int nbCol, WALEdit cols) {
