@@ -1306,6 +1306,7 @@
     <profile>
       <id>hadoop-2.0</id>
       <activation>
+        <activeByDefault>true</activeByDefault>
         <property>
           <name>hadoop.profile</name>
           <value>2.0</value>

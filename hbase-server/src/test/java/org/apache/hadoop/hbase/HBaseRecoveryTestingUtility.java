@@ -207,8 +207,8 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     int rpcPort = getDFSCluster().getDataNodes().get(dn).ipcServer.getListenerAddress().getPort();
     int infoPort = -1;
 
-    if (getDFSCluster().getDataNodes().get(dn).getSelfAddr() != null) {
-      infoPort = getDFSCluster().getDataNodes().get(dn).getSelfAddr().getPort();
+    if (getDFSCluster().getDataNodes().get(dn).getConf().get("dfs.datanode.info.port", null) != null) {
+      infoPort = Integer.parseInt(getDFSCluster().getDataNodes().get(dn).getConf().get("dfs.datanode.info.port"));
     }
 
     LOG.info("START stopDirtyDataNodeTakePorts " + dn + " " +
