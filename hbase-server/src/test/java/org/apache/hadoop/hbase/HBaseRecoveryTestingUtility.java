@@ -50,6 +50,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.util.ArrayList;
 import java.util.Random;
@@ -207,11 +208,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
 
   public void stopDirtyDataNodeTakePorts(int dn) throws Exception {
     int rpcPort = getDFSCluster().getDataNodes().get(dn).ipcServer.getListenerAddress().getPort();
-    int infoPort = -1;
-
-    if (getDFSCluster().getDataNodes().get(dn).getConf().get("dfs.datanode.info.port", null) != null) {
-      infoPort = Integer.parseInt(getDFSCluster().getDataNodes().get(dn).getConf().get("dfs.datanode.info.port"));
-    }
+    int infoPort = getInfoPort(getDFSCluster().getDataNodes().get(dn));
 
     LOG.info("START stopDirtyDataNodeTakePorts " + dn + " " +
         getHostName( getDFSCluster().getDataNodes().get(dn)) + ":" +
@@ -245,6 +242,24 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
       return res.split(":")[0];
     } else {
       return res;
+    }
+  }
+
+  private int getInfoPort(DataNode dn) throws InvocationTargetException, IllegalAccessException {
+    try {
+      Method m = DataNode.class.getMethod("getInfoPort");
+      return (Integer)(m.invoke(dn));
+    } catch (NoSuchMethodException e) {
+      try {
+        Method m = DataNode.class.getMethod("getSelfAddr");
+        InetSocketAddress sa = (InetSocketAddress)m.invoke(dn);
+        if (sa == null){
+          return -1;
+        }
+        return sa.getPort();
+      } catch (NoSuchMethodException e1) {
+        throw new RuntimeException(e1);
+      }
     }
   }
 
