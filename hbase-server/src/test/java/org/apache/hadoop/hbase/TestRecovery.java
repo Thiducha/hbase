@@ -104,6 +104,8 @@ public class TestRecovery {
    */
   @Test
   public void testKillOneDNandOneRS() throws Exception {
+    TEST_UTIL.getConfiguration().setBoolean("hbase.filesystem.reorder.blocks", false);
+
     // dfs.replication will be equals to 2
     TEST_UTIL.startClusterSynchronous(2, 1);
 
@@ -122,8 +124,8 @@ public class TestRecovery {
     LOG.info("start new & kill on DN and the RS with the table on.");
     TEST_UTIL.startNewDatanode();
     TEST_UTIL.startNewRegionServer();
-    //TEST_UTIL.stopDirtyDataNodeTakePorts(1);
-    TEST_UTIL.stopDirtyDataNode(1);
+    TEST_UTIL.stopDirtyDataNodeTakePorts(1);
+    //TEST_UTIL.stopDirtyDataNode(1);
     TEST_UTIL.stopDirtyRegionServer(1);
 
     final long start = System.currentTimeMillis();
