@@ -115,6 +115,10 @@ public class TestRecovery {
     LOG.info("start puts");
     HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(100000);
 
+    LOG.info("Number of online region is " + (
+        TEST_UTIL.getHBaseCluster().getRegionServer(0).getNumberOfOnlineRegions() +
+            TEST_UTIL.getHBaseCluster().getRegionServer(1).getNumberOfOnlineRegions()
+    ));
     LOG.info("start new & kill on DN and the RS with the table on.");
     TEST_UTIL.startNewDatanode();
     TEST_UTIL.startNewRegionServer();
