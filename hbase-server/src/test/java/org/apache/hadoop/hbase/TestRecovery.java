@@ -148,7 +148,7 @@ public class TestRecovery {
 
   @Test
   public void testKillOneDNandOneRS_3DN() throws Exception {
-    //TEST_UTIL.getConfiguration().setBoolean("dfs.datanode.stale.enable", true);
+    TEST_UTIL.getConfiguration().setBoolean("dfs.datanode.stale.enable", true);
 
 
 
