@@ -247,11 +247,11 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
 
   private int getInfoPort(DataNode dn) throws InvocationTargetException, IllegalAccessException {
     try {
-      Method m = DataNode.class.getMethod("getInfoPort");
+      Method m = DataNode.class.getMethod("getXferPort");       // hdfs 2
       return (Integer)(m.invoke(dn));
     } catch (NoSuchMethodException e) {
       try {
-        Method m = DataNode.class.getMethod("getSelfAddr");
+        Method m = DataNode.class.getMethod("getSelfAddr");     // hdfs 1
         InetSocketAddress sa = (InetSocketAddress)m.invoke(dn);
         if (sa == null){
           return -1;
