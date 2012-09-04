@@ -110,10 +110,10 @@ public class TestRecovery {
     TEST_UTIL.createTableWithRegionsOnRS(100, 1);
 
     // Insert puts, there will be on the memstore
+    LOG.info("start puts");
     HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(10000);
-    puts.checkPuts();
 
-    // start new & kill on DN and the RS with the table on.
+    LOG.info("start new & kill on DN and the RS with the table on.");
     TEST_UTIL.startNewDatanode();
     TEST_UTIL.startNewRegionServer();
     TEST_UTIL.stopDirtyDataNode(1);
@@ -129,6 +129,7 @@ public class TestRecovery {
     final long time = (System.currentTimeMillis() - start);
 
     System.out.println("time = " + time);
+    LOG.info("start check puts");
     puts.checkPuts();
 
     TEST_UTIL.stopCleanCluster();
