@@ -8,6 +8,7 @@ import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -149,8 +150,8 @@ public class TestRecovery {
   public void testKillOneDNandOneRS_3DN() throws Exception {
     TEST_UTIL.getConfiguration().setBoolean("hbase.filesystem.reorder.blocks", false);
 
-    // dfs.replication will be equals to 2
-    TEST_UTIL.startClusterSynchronous(3, 1);
+    // dfs.replication will be equals to 3
+    TEST_UTIL.startClusterSynchronous(4, 1);
 
     // Put a 100 regions table on the second node
     TEST_UTIL.startNewRegionServer();
@@ -160,13 +161,15 @@ public class TestRecovery {
     LOG.info("start puts");
     HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(100);
 
-    LOG.info("Number of online region is " + (
-        TEST_UTIL.getHBaseCluster().getRegionServer(0).getNumberOfOnlineRegions() +
-            TEST_UTIL.getHBaseCluster().getRegionServer(1).getNumberOfOnlineRegions()
-    ));
+    final int nbRegs = TEST_UTIL.getHBaseCluster().getRegionServer(0).getNumberOfOnlineRegions() +
+        TEST_UTIL.getHBaseCluster().getRegionServer(1).getNumberOfOnlineRegions();
+    Assert.assertEquals(nbRegs, 102);
+
     LOG.info("start new & kill on DN and the RS with the table on.");
     TEST_UTIL.startNewDatanode();
     TEST_UTIL.startNewRegionServer();
+
+    LOG.info("Start kill");
     TEST_UTIL.stopDirtyDataNodeTakePorts(1);
     //TEST_UTIL.stopDirtyDataNode(1);
     TEST_UTIL.stopDirtyRegionServer(1);
@@ -177,7 +180,7 @@ public class TestRecovery {
       Thread.sleep(1);
       nbLiveRegion = TEST_UTIL.getHBaseCluster().getRegionServer(0).getNumberOfOnlineRegions();
       nbLiveRegion += TEST_UTIL.getHBaseCluster().getRegionServer(2).getNumberOfOnlineRegions();
-    } while (nbLiveRegion != 102);
+    } while (nbLiveRegion != nbRegs);
     final long time = (System.currentTimeMillis() - start);
 
     System.out.println("time = " + time);
