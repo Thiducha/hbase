@@ -401,18 +401,12 @@ public class TestBlockReorder {
 
       // And check we're doing the right reorder.
       lrb.reorderBlocks(conf, l, pseudoLogFile);
-      checkOurFixedOrder(l);
+      Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
 
       // Check again, it should remain the same.
       lrb.reorderBlocks(conf, l, pseudoLogFile);
-      checkOurFixedOrder(l);
+      Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
     }
-  }
-
-  private void checkOurFixedOrder(LocatedBlocks l) {
-    Assert.assertEquals(host2, l.get(0).getLocations()[0].getHostName());
-    Assert.assertEquals(host3, l.get(0).getLocations()[1].getHostName());
-    Assert.assertEquals(host1, l.get(0).getLocations()[2].getHostName());
   }
 
   @org.junit.Rule
