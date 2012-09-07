@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -3662,7 +3661,7 @@ public class TestHRegion extends HBaseTestCase {
     this.region = initHRegion(tableName, method, conf, family);
     final HRegion region = this.region;
     final AtomicBoolean incrementDone = new AtomicBoolean(false);
-    Runnable reader = new Runnable() {
+    Runnable flusher = new Runnable() {
       @Override
       public void run() {
         while (!incrementDone.get()) {
@@ -3680,7 +3679,7 @@ public class TestHRegion extends HBaseTestCase {
     int incCounter = 100;
     long expected = threadNum * incCounter;
     Thread[] incrementers = new Thread[threadNum];
-    Thread flushThread = new Thread(reader);
+    Thread flushThread = new Thread(flusher);
     for (int i = 0; i < threadNum; i++) {
       incrementers[i] = new Thread(new Incrementer(this.region, incCounter));
       incrementers[i].start();

@@ -1,5 +1,4 @@
 /**
- * Copyright 2011 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -666,13 +665,12 @@ public class TestHLogSplit {
     fs.initialize(fs.getUri(), conf);
     // Set up a splitter that will throw an IOE on the output side
     HLogSplitter logSplitter = new HLogSplitter(
-        conf, hbaseDir, hlogDir, oldLogDir, fs) {
+        conf, hbaseDir, hlogDir, oldLogDir, fs, null) {
       protected HLog.Writer createWriter(FileSystem fs, Path logfile, Configuration conf)
       throws IOException {
         HLog.Writer mockWriter = Mockito.mock(HLog.Writer.class);
         Mockito.doThrow(new IOException("Injected")).when(mockWriter).append(Mockito.<HLog.Entry>any());
         return mockWriter;
-
       }
     };
     try {
@@ -699,7 +697,7 @@ public class TestHLogSplit {
         when(spiedFs).append(Mockito.<Path>any());
 
     HLogSplitter logSplitter = new HLogSplitter(
-        conf, hbaseDir, hlogDir, oldLogDir, spiedFs);
+        conf, hbaseDir, hlogDir, oldLogDir, spiedFs, null);
 
     try {
       logSplitter.splitLog();
@@ -757,7 +755,7 @@ public class TestHLogSplit {
 
     // Create a splitter that reads and writes the data without touching disk
     HLogSplitter logSplitter = new HLogSplitter(
-        localConf, hbaseDir, hlogDir, oldLogDir, fs) {
+        localConf, hbaseDir, hlogDir, oldLogDir, fs, null) {
 
       /* Produce a mock writer that doesn't write anywhere */
       protected HLog.Writer createWriter(FileSystem fs, Path logfile, Configuration conf)
@@ -1016,7 +1014,7 @@ public class TestHLogSplit {
     generateHLogs(1, 10, -1);
     FileStatus logfile = fs.listStatus(hlogDir)[0];
     fs.initialize(fs.getUri(), conf);
-    HLogSplitter.splitLogFile(hbaseDir, logfile, fs, conf, reporter);
+    HLogSplitter.splitLogFile(hbaseDir, logfile, fs, conf, reporter, null);
     HLogSplitter.finishSplitLogFile(hbaseDir, oldLogDir, logfile.getPath()
         .toString(), conf);
 
@@ -1123,7 +1121,7 @@ public class TestHLogSplit {
     generateHLogs(-1);
 
     HLogSplitter logSplitter = new HLogSplitter(
-        conf, hbaseDir, hlogDir, oldLogDir, fs) {
+        conf, hbaseDir, hlogDir, oldLogDir, fs, null) {
       protected HLog.Writer createWriter(FileSystem fs, Path logfile, Configuration conf)
       throws IOException {
         HLog.Writer writer = HLog.createWriter(fs, logfile, conf);

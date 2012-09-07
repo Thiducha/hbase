@@ -1310,8 +1310,17 @@ ${HBASE_HOME}/bin/hbase-daemons.sh {start,stop} zookeeper
             used by tests).
       </para>
       <para>
-          Minimally, a client of HBase needs the hbase, hadoop, log4j, commons-logging, commons-lang,
-          and ZooKeeper jars in its <varname>CLASSPATH</varname> connecting to a cluster.
+          Minimally, a client of HBase needs several libraries in its <varname>CLASSPATH</varname> when connecting to a cluster, including:
+          <programlisting>
+commons-configuration (commons-configuration-1.6.jar)
+commons-lang (commons-lang-2.5.jar) 
+commons-logging (commons-logging-1.1.1.jar) 
+hadoop-core (hadoop-core-1.0.0.jar) 
+hbase (hbase-0.92.0.jar)
+log4j (log4j-1.2.16.jar) 
+slf4j-api (slf4j-api-1.5.8.jar)
+slf4j-log4j (slf4j-log4j12-1.5.8.jar)
+zookeeper (zookeeper-3.4.2.jar)</programlisting>
       </para>
         <para>
           An example basic <filename>hbase-site.xml</filename> for client only
@@ -1658,7 +1667,7 @@ of all regions.
 
       <section xml:id="other_configuration"><title>Other Configurations</title>
          <section xml:id="balancer_config"><title>Balancer</title>
-           <para>The balancer is periodic operation run on the master to redistribute regions on the cluster.  It is configured via
+           <para>The balancer is a periodic operation which is run on the master to redistribute regions on the cluster.  It is configured via
            <varname>hbase.balancer.period</varname> and defaults to 300000 (5 minutes). </para>
            <para>See <xref linkend="master.processes.loadbalancer" /> for more information on the LoadBalancer.
            </para>
@@ -1671,6 +1680,13 @@ of all regions.
            on the size you need by surveying regionserver UIs; you'll see index block size accounted near the
            top of the webpage).</para>
          </section>
+    <section xml:id="nagles">
+      <title><link xlink:href="http://en.wikipedia.org/wiki/Nagle's_algorithm">Nagle's</link> or the small package problem</title>
+      <para>If a big 40ms or so occasional delay is seen in operations against HBase,
+      try the Nagles' setting.  For example, see the user mailing list thread,
+      <link xlink:href="http://search-hadoop.com/m/pduLg2fydtE/Inconsistent+scan+performance+with+caching+set+&amp;subj=Re+Inconsistent+scan+performance+with+caching+set+to+1">Inconsistent scan performance with caching set to 1</link>
+      and the issue cited therein where setting notcpdelay improved scan speeds.</para>
+    </section>
          
       </section>
       

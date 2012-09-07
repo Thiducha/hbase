@@ -140,6 +140,7 @@
 
     <para>See <xref linkend="recommended_configurations" />.</para>
 
+
     <section xml:id="perf.number.of.regions">
       <title>Number of Regions</title>
 

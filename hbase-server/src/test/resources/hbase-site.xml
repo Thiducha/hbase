@@ -2,7 +2,6 @@
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
 <!--
 /**
- * Copyright 2007 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -77,6 +76,21 @@
     Set to -1 if you do not want the info server to run.
     </description>
   </property>
+  <property>
+    <name>hbase.master.port</name>
+    <value>0</value>
+    <description>Always have masters and regionservers come up on port '0' so we don't clash over
+      default ports.
+    </description>
+  </property>
+  <property>
+    <name>hbase.regionserver.port</name>
+    <value>0</value>
+    <description>Always have masters and regionservers come up on port '0' so we don't clash over
+      default ports.
+    </description>
+  </property>
+
   <property>
     <name>hbase.regionserver.info.port</name>
     <value>-1</value>

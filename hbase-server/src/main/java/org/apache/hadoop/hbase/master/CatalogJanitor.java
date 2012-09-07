@@ -1,5 +1,4 @@
 /**
- * Copyright 2008 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -245,6 +244,7 @@ class CatalogJanitor extends Chore {
         this.services.getAssignmentManager().regionOffline(parent);
       }
       FileSystem fs = this.services.getMasterFileSystem().getFileSystem();
+      LOG.debug("Archiving parent region:" + parent);
       HFileArchiver.archiveRegion(fs, parent);
       MetaEditor.deleteRegion(this.server.getCatalogTracker(), parent);
       result = true;

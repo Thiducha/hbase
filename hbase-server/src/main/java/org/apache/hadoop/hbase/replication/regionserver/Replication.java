@@ -1,5 +1,4 @@
 /*
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -128,6 +127,7 @@ public class Replication implements WALActionsListener,
   public void join() {
     if (this.replication) {
       this.replicationManager.join();
+      this.replicationSink.stopReplicationSinkServices();
     }
   }
 

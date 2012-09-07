@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -388,5 +387,22 @@ public interface HConnection extends Abortable, Closeable {
    * @param sn A server name as hostname:port
    */
   public void clearCaches(final String sn);
+
+  /**
+   * This function allows HBaseAdminProtocol and potentially others to get a shared MasterMonitor
+   * connection.
+   * @return The shared instance. Never returns null.
+   * @throws MasterNotRunningException
+   */
+  public MasterMonitorKeepAliveConnection getKeepAliveMasterMonitor()
+      throws MasterNotRunningException;
+
+  /**
+   * This function allows HBaseAdmin and potentially others to get a shared MasterAdminProtocol
+   * connection.
+   * @return The shared instance. Never returns null.
+   * @throws MasterNotRunningException
+   */
+  public MasterAdminKeepAliveConnection getKeepAliveMasterAdmin() throws MasterNotRunningException;
 }
 

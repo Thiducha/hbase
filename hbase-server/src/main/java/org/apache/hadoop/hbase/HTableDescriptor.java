@@ -1,5 +1,4 @@
 /**
- * Copyright 2009 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -413,6 +412,15 @@ public class HTableDescriptor implements WritableComparable<HTableDescriptor> {
       throw new IllegalArgumentException("Illegal first character <" + tableName[0] +
           "> at 0. User-space table names can only start with 'word " +
           "characters': i.e. [a-zA-Z_0-9]: " + Bytes.toString(tableName));
+    }
+    if (HConstants.CLUSTER_ID_FILE_NAME.equalsIgnoreCase(Bytes
+        .toString(tableName))
+        || HConstants.SPLIT_LOGDIR_NAME.equalsIgnoreCase(Bytes
+            .toString(tableName))
+        || HConstants.VERSION_FILE_NAME.equalsIgnoreCase(Bytes
+            .toString(tableName))) {
+      throw new IllegalArgumentException(Bytes.toString(tableName)
+          + " conflicted with system reserved words");
     }
     for (int i = 0; i < tableName.length; i++) {
       if (Character.isLetterOrDigit(tableName[i]) || tableName[i] == '_' || 

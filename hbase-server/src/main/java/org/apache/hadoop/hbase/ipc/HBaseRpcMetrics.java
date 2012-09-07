@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -109,6 +108,8 @@ public class HBaseRpcMetrics implements Updater {
          new MetricsTimeVaryingInt("rpcAuthorizationSuccesses", registry);
   public MetricsTimeVaryingRate rpcSlowResponseTime =
       new MetricsTimeVaryingRate("RpcSlowResponse", registry);
+  public final MetricsIntValue replicationCallQueueLen =
+    new MetricsIntValue("replicationCallQueueLen", registry);
 
   private void initMethods(Class<? extends VersionedProtocol> protocol) {
     for (Method m : protocol.getDeclaredMethods()) {
