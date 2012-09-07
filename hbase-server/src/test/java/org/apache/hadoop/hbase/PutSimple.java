@@ -23,15 +23,14 @@ public class PutSimple {
   @Test
   public void testPuts() throws Exception {
     HTable table = getExternalClusterTable();
-    final int size = 100000;
+    table.setAutoFlush(false);
+    final int size = 10000000;
     Date debut = new Date();
     Random r = new Random(0);
 
-    String x = "9900000000";
-    int xl = x.length();
+   final String x = "9900000000";
+   final int xl = x.length();
 
-    for (int m = 0; m < 100; m++) {
-      ArrayList<Put> puts = new ArrayList<Put>(size);
       for (int i = 0; i < size; i++) {
         long in = (long) (r.nextDouble() * 10000000000L);
         assert in > 0L;
@@ -40,9 +39,7 @@ public class PutSimple {
         String inS2 = "'" + inS.substring((inS.length() - xl), inS.length()) + "',";
         Put put = new Put(Bytes.toBytes(inS2));
         put.add(FAM_NAM, ROW, ROW);
-        puts.add(put);
-      }
-      table.put(puts);
+        table.put(put);
     }
     table.close();
     insertDuration = new Date().getTime() - debut.getTime();

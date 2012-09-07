@@ -407,30 +407,18 @@ public class TestBlockReorder {
     checkOurFixedOrder(l);
 
     // And change again and check again
-    l.get(0).getLocations()[0].setHostName(host2);
-    l.get(0).getLocations()[1].setHostName(host1);
-    l.get(0).getLocations()[2].setHostName(host3);
     lrb.reorderBlocks(conf, l, pseudoLogFile);
     checkOurFixedOrder(l);
 
     // And change again and check again
-    l.get(0).getLocations()[0].setHostName(host2);
-    l.get(0).getLocations()[1].setHostName(host1);
-    l.get(0).getLocations()[2].setHostName(host3);
     lrb.reorderBlocks(conf, l, pseudoLogFile);
     checkOurFixedOrder(l);
 
     // nothing to do here, but let's check
-    l.get(0).getLocations()[0].setHostName(host2);
-    l.get(0).getLocations()[1].setHostName(host3);
-    l.get(0).getLocations()[2].setHostName(host1);
     lrb.reorderBlocks(conf, l, pseudoLogFile);
     checkOurFixedOrder(l);
 
     // nothing to do here, check again
-    l.get(0).getLocations()[0].setHostName(host2);
-    l.get(0).getLocations()[1].setHostName(host3);
-    l.get(0).getLocations()[2].setHostName("nothing");
     lrb.reorderBlocks(conf, l, pseudoLogFile);
     Assert.assertEquals(host2, l.get(0).getLocations()[0].getHostName());
     Assert.assertEquals(host3, l.get(0).getLocations()[1].getHostName());
@@ -438,15 +426,9 @@ public class TestBlockReorder {
   }
 
   private void setOurOrder(LocatedBlocks l) {
-    l.get(0).getLocations()[0].setHostName(host1);
-    l.get(0).getLocations()[1].setHostName(host2);
-    l.get(0).getLocations()[2].setHostName(host3);
   }
 
   private void checkOurOrder(LocatedBlocks l) {
-    Assert.assertEquals(host1, l.get(0).getLocations()[0].getHostName());
-    Assert.assertEquals(host2, l.get(0).getLocations()[1].getHostName());
-    Assert.assertEquals(host3, l.get(0).getLocations()[2].getHostName());
   }
 
   private void checkOurFixedOrder(LocatedBlocks l) {

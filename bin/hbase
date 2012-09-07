@@ -153,7 +153,7 @@ add_maven_deps_to_classpath() {
   f="${HBASE_HOME}/target/cached_classpath.txt"
   if [ ! -f "${f}" ]
   then
-    ${MVN} -f "${HBASE_HOME}/pom.xml" dependency:build-classpath -Dmdep.outputFile="${f}" &> /dev/null
+    ${MVN} -Dhadoop.profile=2.0 -f "${HBASE_HOME}/hbase-server/pom.xml" dependency:build-classpath  -Dmdep.regenerateFile -Dmdep.outputFile="${f}" &> /dev/null
   fi
   CLASSPATH=${CLASSPATH}:`cat "${f}"`
 }
