@@ -1769,6 +1769,8 @@ public class HLog implements Syncable {
   /**
    * @param path - the path to analyze. Expected format, if it's in hlog directory:
    *  / [base directory for hbase] / hbase / .logs / ServerName / logfile
+   *             or
+   *  / [base directory for hbase] / hbase / .logs / ServerName-splitting / logfile
    * @return null if it's not a log file. Returns the ServerName of the region server that created
    *  this log file otherwise.
    */
@@ -1812,7 +1814,11 @@ public class HLog implements Syncable {
       return null;
     }
 
-    final String serverName = serverNameAndFile.substring(0, serverNameAndFile.indexOf('/') - 1);
+      final String splitting = "-splitting";
+    String serverName = serverNameAndFile.substring(0, serverNameAndFile.indexOf('/') - 1);
+      if (serverName.endsWith(splitting)){
+          serverName = serverName.substring(0, serverName.lastIndexOf('-'));
+      }
 
     if (!ServerName.isFullServerName(serverName)) {
       return null;
