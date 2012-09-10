@@ -89,6 +89,7 @@ public class FSHDFSUtils extends FSUtils{
         }
         recovered = true;
       } catch (IOException e) {
+        LOG.info("Got exception while recovering lease "+e.getMessage(), e);
         e = RemoteExceptionHandler.checkIOException(e);
         if (e instanceof AlreadyBeingCreatedException) {
           // We expect that we'll get this message while the lease is still
