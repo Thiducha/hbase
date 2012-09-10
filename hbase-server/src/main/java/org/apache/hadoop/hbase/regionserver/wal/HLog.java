@@ -1814,11 +1814,11 @@ public class HLog implements Syncable {
       return null;
     }
 
-      final String splitting = "-splitting";
-    String serverName = serverNameAndFile.substring(0, serverNameAndFile.indexOf('/') - 1);
-      if (serverName.endsWith(splitting)){
-          serverName = serverName.substring(0, serverName.lastIndexOf('-'));
-      }
+    String serverName = serverNameAndFile.substring(0, serverNameAndFile.indexOf('/'));
+    final String splitting = "-splitting";
+    if (serverName.endsWith(splitting) && serverName.lastIndexOf('-') > "a,0,0".length()) {
+      serverName = serverName.substring(0, serverName.lastIndexOf('-'));
+    }
 
     if (!ServerName.isFullServerName(serverName)) {
       return null;
