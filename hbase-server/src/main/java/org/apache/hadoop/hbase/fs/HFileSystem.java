@@ -261,7 +261,8 @@ public class HFileSystem extends FilterFileSystem {
             new InvocationHandler() {
               public Object invoke(Object proxy, Method method,
                                    Object[] args) throws Throwable {
-                try { 
+                try {
+                  LOG.info("AAAA invoke "+method.getName()+", "+args);
                   Object res = method.invoke(cp, args);
                   if (res != null && args != null && args.length == 3
                       && "getBlockLocations".equals(method.getName())
@@ -318,6 +319,7 @@ public class HFileSystem extends FilterFileSystem {
       ServerName sn = HLog.getServerNameFromHLogDirectoryName(conf, src);
       if (sn == null) {
         // It's not an HLOG
+        LOG.info(src + " is NOT an HLog file, so NOT reordering blocks");
         return;
       }
 
