@@ -29,6 +29,7 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.net.URI;
+import java.util.Arrays;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -322,14 +323,16 @@ public class HFileSystem extends FilterFileSystem {
 
       // Ok, so it's an HLog
       String hostName = sn.getHostname();
-      LOG.debug(src + " is an HLog file, so reordering blocks, last hostname will be:" + hostName);
+      LOG.info(src + " is an HLog file, so reordering blocks, last hostname will be:" + hostName);
 
       // Just check for all blocks
       for (LocatedBlock lb : lbs.getLocatedBlocks()) {
         DatanodeInfo[] dnis = lb.getLocations();
+        LOG.info("AAAA Locations are: "+Arrays.toString(dnis));
         if (dnis != null && dnis.length > 1) {
           boolean found = false;
           for (int i = 0; i < dnis.length - 1 && !found; i++) {
+            LOG.info("AAAAA hostName is: "+dnis[i].getHostName());
             if (hostName.equals(dnis[i].getHostName())) {
               // advance the other locations by one and put this one at the last place.
               DatanodeInfo toLast = dnis[i];

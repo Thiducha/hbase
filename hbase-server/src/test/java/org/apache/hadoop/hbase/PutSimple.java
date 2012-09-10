@@ -24,7 +24,7 @@ public class PutSimple {
   public void testPuts() throws Exception {
     HTable table = getExternalClusterTable();
     table.setAutoFlush(false);
-    final int size = 1000000;
+    final int size = 10000;
     Date debut = new Date();
     Random r = new Random(0);
 
