@@ -262,7 +262,6 @@ public class HFileSystem extends FilterFileSystem {
               public Object invoke(Object proxy, Method method,
                                    Object[] args) throws Throwable {
                 try {
-                  LOG.info("AAAA invoke "+method.getName()+", "+args);
                   Object res = method.invoke(cp, args);
                   if (res != null && args != null && args.length == 3
                       && "getBlockLocations".equals(method.getName())
@@ -319,7 +318,7 @@ public class HFileSystem extends FilterFileSystem {
       ServerName sn = HLog.getServerNameFromHLogDirectoryName(conf, src);
       if (sn == null) {
         // It's not an HLOG
-        LOG.info(src + " is NOT an HLog file, so NOT reordering blocks");
+        LOG.debug(src + " is NOT an HLog file, so NOT reordering blocks");
         return;
       }
 
@@ -330,11 +329,9 @@ public class HFileSystem extends FilterFileSystem {
       // Just check for all blocks
       for (LocatedBlock lb : lbs.getLocatedBlocks()) {
         DatanodeInfo[] dnis = lb.getLocations();
-        LOG.info("AAAA Locations are: "+Arrays.toString(dnis));
         if (dnis != null && dnis.length > 1) {
           boolean found = false;
           for (int i = 0; i < dnis.length - 1 && !found; i++) {
-            LOG.info("AAAAA hostName is: "+dnis[i].getHostName());
             if (hostName.equals(dnis[i].getHostName())) {
               // advance the other locations by one and put this one at the last place.
               DatanodeInfo toLast = dnis[i];
@@ -344,24 +341,6 @@ public class HFileSystem extends FilterFileSystem {
             }
           }
         }
-      }
-      if (!lbs.isLastBlockComplete() && lbs.getLastLocatedBlock() != null){
-          DatanodeInfo[] dnis = lbs.getLastLocatedBlock().getLocations();
-          LOG.info("AAAA Locations are: "+Arrays.toString(dnis));
-          if (dnis != null && dnis.length > 1) {
-              boolean found = false;
-              for (int i = 0; i < dnis.length - 1 && !found; i++) {
-                  LOG.info("AAAAA hostName is: "+dnis[i].getHostName());
-                  if (hostName.equals(dnis[i].getHostName())) {
-                      // advance the other locations by one and put this one at the last place.
-                      DatanodeInfo toLast = dnis[i];
-                      System.arraycopy(dnis, i + 1, dnis, i, dnis.length - i - 1);
-                      dnis[dnis.length - 1] = toLast;
-                      found = true;
-                  }
-              }
-          }
-
       }
     }
   }

@@ -740,13 +740,11 @@ public class TestHLog  {
         HConstants.HBASE_DIR) +
         "/.logs/localhost,32984,1343316388997/localhost%2C32984%2C1343316388997.1343316390417"
         ));
-    Assert.assertNotNull( HLog.getServerNameFromHLogDirectoryName(conf, hl+"/qdf") );
-      Assert.assertNotNull( HLog.getServerNameFromHLogDirectoryName(conf, conf.get(
-              HConstants.HBASE_DIR) +
-              "/.logs/localhost,32984,1343316388997-splitting/localhost%2C32984%2C1343316388997.1343316390417"
-      ));
-
-      ///hbase/.logs/mazid.scaledrisk.com,60020,1347295628392-splitting/mazid.scaledrisk.com%2C60020%2C1347295628392.1347295628769
+    Assert.assertNotNull(HLog.getServerNameFromHLogDirectoryName(conf, hl + "/qdf"));
+    Assert.assertNotNull(HLog.getServerNameFromHLogDirectoryName(conf,
+        conf.get(HConstants.HBASE_DIR) +
+    "/.logs/localhost,32984,1343316388997-splitting/localhost%2C32984%2C1343316388997.1343316390417"
+    ));
   }
 
   /**

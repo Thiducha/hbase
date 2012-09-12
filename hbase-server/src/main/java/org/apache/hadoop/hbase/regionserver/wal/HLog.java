@@ -1809,14 +1809,15 @@ public class HLog implements Syncable {
 
     final String serverNameAndFile = fullPath.substring(startPath.length());
 
-    if (serverNameAndFile.indexOf('/') < "a,0,0".length()) {
+    final int minLength = "a,0,0".length();
+    if (serverNameAndFile.indexOf('/') < minLength) {
       // Either it's a file (not a directory) or it's not a ServerName format
       return null;
     }
 
     String serverName = serverNameAndFile.substring(0, serverNameAndFile.indexOf('/'));
     final String splitting = "-splitting";
-    if (serverName.endsWith(splitting) && serverName.lastIndexOf('-') > "a,0,0".length()) {
+    if (serverName.endsWith(splitting) && serverName.lastIndexOf('-') > minLength) {
       serverName = serverName.substring(0, serverName.lastIndexOf('-'));
     }
 
