@@ -192,6 +192,27 @@ public class TestRecovery {
     TEST_UTIL.stopCleanCluster();
   }
 
+  @Test
+  public void testLostMeta() throws Exception{
+    // dfs.replication will be equals to 2
+    TEST_UTIL.startClusterSynchronous(2, 1);
+
+    TEST_UTIL.startNewRegionServer();
+    TEST_UTIL.createTableWithRegionsOnRS(100, 1);
+
+    HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(1000);
+    puts.checkPuts();
+
+    // kill the RS with meta & ROOT
+    TEST_UTIL.stopDirtyRegionServer(0);
+
+    long start = System.currentTimeMillis();
+    puts.checkPuts();
+    long end =   System.currentTimeMillis();
+
+    LOG.info("time = "+(end-start));
+  }
+
   // OK 6 Tests 10min32s
   @Test
   public void testStopDN() throws Exception {
