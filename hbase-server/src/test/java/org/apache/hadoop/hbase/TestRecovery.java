@@ -211,7 +211,7 @@ public class TestRecovery {
     TEST_UTIL.cleanTableLocationCache();
     long start = System.currentTimeMillis();
     puts.checkPuts();
-    TEST_UTIL.getHBaseCluster().getMaster().balance();
+    TEST_UTIL.moveTableTo(TEST_UTIL.getTestTableNameToString(), 2);
     long end =   System.currentTimeMillis();
 
     LOG.info(" time = "+(end-start));
