@@ -198,6 +198,7 @@ public class TestRecovery {
     TEST_UTIL.startClusterSynchronous(2, 1);
 
     TEST_UTIL.startNewRegionServer();
+    TEST_UTIL.startNewRegionServer();
     TEST_UTIL.createTableWithRegionsOnRS(100, 1);
 
     HBaseRecoveryTestingUtility.TestPuts puts = TEST_UTIL.new TestPuts(1000);
@@ -210,6 +211,7 @@ public class TestRecovery {
     TEST_UTIL.cleanTableLocationCache();
     long start = System.currentTimeMillis();
     puts.checkPuts();
+    TEST_UTIL.getHBaseCluster().getMaster().balance();
     long end =   System.currentTimeMillis();
 
     LOG.info(" time = "+(end-start));
