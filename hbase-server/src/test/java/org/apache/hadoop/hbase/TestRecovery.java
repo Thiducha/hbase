@@ -206,11 +206,14 @@ public class TestRecovery {
     // kill the RS with meta & ROOT
     TEST_UTIL.stopDirtyRegionServer(0);
 
+
+    TEST_UTIL.cleanTableLocationCache();
     long start = System.currentTimeMillis();
     puts.checkPuts();
     long end =   System.currentTimeMillis();
 
     LOG.info(" time = "+(end-start));
+    TEST_UTIL.stopCleanCluster();
   }
 
   // OK 6 Tests 10min32s
