@@ -1,5 +1,4 @@
 /*
- * Copyright 2011 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -80,6 +79,7 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HConstants.OperationStatusCode;
 import org.apache.hadoop.hbase.HDFSBlocksDistribution;
 import org.apache.hadoop.hbase.HRegionInfo;
+import org.apache.hadoop.hbase.HServerInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.NotServingRegionException;
@@ -190,6 +190,8 @@ public class HRegion implements HeapSize { // , Writable{
    * Once set, it is never cleared.
    */
   final AtomicBoolean closing = new AtomicBoolean(false);
+
+  protected long completeSequenceId = -1L;
 
   //////////////////////////////////////////////////////////////////////////////
   // Members
@@ -562,11 +564,14 @@ public class HRegion implements HeapSize { // , Writable{
           HStore store = future.get();
 
           this.stores.put(store.getColumnFamilyName().getBytes(), store);
-          long storeSeqId = store.getMaxSequenceId();
+          // Do not include bulk loaded files when determining seqIdForReplay
+          long storeSeqIdForReplay = store.getMaxSequenceId(false);
           maxSeqIdInStores.put(store.getColumnFamilyName().getBytes(),
-              storeSeqId);
-          if (maxSeqId == -1 || storeSeqId > maxSeqId) {
-            maxSeqId = storeSeqId;
+              storeSeqIdForReplay);
+          // Include bulk loaded files when determining seqIdForAssignment
+          long storeSeqIdForAssignment = store.getMaxSequenceId(true);
+          if (maxSeqId == -1 || storeSeqIdForAssignment > maxSeqId) {
+            maxSeqId = storeSeqIdForAssignment;
           }
           long maxStoreMemstoreTS = store.getMaxMemstoreTS();
           if (maxStoreMemstoreTS > maxMemstoreTS) {
@@ -1479,7 +1484,6 @@ public class HRegion implements HeapSize { // , Writable{
     // again so its value will represent the size of the updates received
     // during the flush
     long sequenceId = -1L;
-    long completeSequenceId = -1L;
     MultiVersionConsistencyControl.WriteEntry w = null;
 
     // We have to take a write lock during snapshot, or else a write could
@@ -1490,6 +1494,7 @@ public class HRegion implements HeapSize { // , Writable{
     long flushsize = this.memstoreSize.get();
     status.setStatus("Preparing to flush by snapshotting stores");
     List<StoreFlusher> storeFlushers = new ArrayList<StoreFlusher>(stores.size());
+    long completeSeqId = -1L;
     try {
       // Record the mvcc for all transactions in progress.
       w = mvcc.beginMemstoreInsert();
@@ -1497,10 +1502,9 @@ public class HRegion implements HeapSize { // , Writable{
 
       sequenceId = (wal == null)? myseqid:
         wal.startCacheFlush(this.regionInfo.getEncodedNameAsBytes());
-      completeSequenceId = this.getCompleteCacheFlushSequenceId(sequenceId);
-
+      completeSeqId = this.getCompleteCacheFlushSequenceId(sequenceId);
       for (Store s : stores.values()) {
-        storeFlushers.add(s.getStoreFlusher(completeSequenceId));
+        storeFlushers.add(s.getStoreFlusher(completeSeqId));
       }
 
       // prepare flush (take a snapshot)
@@ -1578,8 +1582,13 @@ public class HRegion implements HeapSize { // , Writable{
     //     log-sequence-ids can be safely ignored.
     if (wal != null) {
       wal.completeCacheFlush(this.regionInfo.getEncodedNameAsBytes(),
-        regionInfo.getTableName(), completeSequenceId,
+        regionInfo.getTableName(), completeSeqId,
         this.getRegionInfo().isMetaRegion());
+    }
+
+    // Update the last flushed sequence id for region
+    if (this.rsServices != null) {
+      completeSequenceId = completeSeqId;
     }
 
     // C. Finally notify anyone waiting on memstore to clear:
@@ -3308,11 +3317,12 @@ public class HRegion implements HeapSize { // , Writable{
    * rows with multiple column families atomically.
    *
    * @param familyPaths List of Pair<byte[] column family, String hfilePath>
+   * @param assignSeqId
    * @return true if successful, false if failed recoverably
    * @throws IOException if failed unrecoverably.
    */
-  public boolean bulkLoadHFiles(List<Pair<byte[], String>> familyPaths)
-  throws IOException {
+  public boolean bulkLoadHFiles(List<Pair<byte[], String>> familyPaths,
+      boolean assignSeqId) throws IOException {
     Preconditions.checkNotNull(familyPaths);
     // we need writeLock for multi-family bulk load
     startBulkRegionOperation(hasMultipleColumnFamilies(familyPaths));
@@ -3372,7 +3382,7 @@ public class HRegion implements HeapSize { // , Writable{
         String path = p.getSecond();
         Store store = getStore(familyName);
         try {
-          store.bulkLoadHFile(path);
+          store.bulkLoadHFile(path, assignSeqId ? this.log.obtainSeqNum() : -1);
         } catch (IOException ioe) {
           // A failure here can cause an atomicity violation that we currently
           // cannot recover from since it is likely a failed HDFS operation.
@@ -5011,7 +5021,7 @@ public class HRegion implements HeapSize { // , Writable{
       ClassSize.OBJECT +
       ClassSize.ARRAY +
       36 * ClassSize.REFERENCE + Bytes.SIZEOF_INT +
-      (6 * Bytes.SIZEOF_LONG) +
+      (7 * Bytes.SIZEOF_LONG) +
       Bytes.SIZEOF_BOOLEAN);
 
   public static final long DEEP_OVERHEAD = FIXED_OVERHEAD +

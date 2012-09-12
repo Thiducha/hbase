@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -50,6 +49,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import javax.management.ObjectName;
@@ -115,6 +115,7 @@ import org.apache.hadoop.hbase.ipc.ProtocolSignature;
 import org.apache.hadoop.hbase.ipc.RpcServer;
 import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
+import org.apache.hadoop.hbase.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.protobuf.ResponseConverter;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CloseRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CloseRegionResponse;
@@ -199,6 +200,7 @@ import org.apache.hadoop.hbase.util.VersionInfo;
 import org.apache.hadoop.hbase.zookeeper.ClusterStatusTracker;
 import org.apache.hadoop.hbase.zookeeper.MasterAddressTracker;
 import org.apache.hadoop.hbase.zookeeper.RootRegionTracker;
+import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
 import org.apache.hadoop.hbase.zookeeper.ZKUtil;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperNodeTracker;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
@@ -215,6 +217,7 @@ import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.Coprocessor;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionLoad;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.NameStringPair;
+import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.GetLastFlushedSequenceIdRequest;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerReportRequest;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorRequest;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
@@ -233,7 +236,7 @@ import com.google.protobuf.RpcController;
 @InterfaceAudience.Private
 @SuppressWarnings("deprecation")
 public class  HRegionServer implements ClientProtocol,
-    AdminProtocol, Runnable, RegionServerServices, HBaseRPCErrorHandler {
+    AdminProtocol, Runnable, RegionServerServices, HBaseRPCErrorHandler, LastSequenceId {
 
   public static final Log LOG = LogFactory.getLog(HRegionServer.class);
 
@@ -755,6 +758,20 @@ public class  HRegionServer implements ClientProtocol,
     this.catalogTracker = new CatalogTracker(this.zooKeeper, this.conf,
       this, this.conf.getInt("hbase.regionserver.catalog.timeout", 600000));
     catalogTracker.start();
+
+    // Retrieve clusterId
+    // Since cluster status is now up
+    // ID should have already been set by HMaster
+    try {
+      String clusterId = ZKClusterId.readClusterIdZNode(this.zooKeeper);
+      if (clusterId == null) {
+        this.abort("Cluster ID has not been set");
+      }
+      this.conf.set(HConstants.CLUSTER_ID, clusterId);
+      LOG.info("ClusterId : "+clusterId);
+    } catch (KeeperException e) {
+      this.abort("Failed to retrieve Cluster ID",e);
+    }
   }
 
   /**
@@ -915,17 +932,29 @@ public class  HRegionServer implements ClientProtocol,
       // Just skip out w/o closing regions.  Used when testing.
     } else if (abortRequested) {
       if (this.fsOk) {
-        closeAllRegions(abortRequested); // Don't leave any open file handles
+        closeUserRegions(abortRequested); // Don't leave any open file handles
       }
       LOG.info("aborting server " + this.serverNameFromMasterPOV);
     } else {
-      closeAllRegions(abortRequested);
+      closeUserRegions(abortRequested);
       closeAllScanners();
       LOG.info("stopping server " + this.serverNameFromMasterPOV);
     }
     // Interrupt catalog tracker here in case any regions being opened out in
     // handlers are stuck waiting on meta or root.
     if (this.catalogTracker != null) this.catalogTracker.stop();
+
+    // Closing the compactSplit thread before closing meta regions
+    if (!this.killed && containsMetaTableRegions()) {
+      if (!abortRequested || this.fsOk) {
+        if (this.compactSplitThread != null) {
+          this.compactSplitThread.join();
+          this.compactSplitThread = null;
+        }
+        closeMetaTableRegions(abortRequested);
+      }
+    }
+
     if (!this.killed && this.fsOk) {
       waitOnAllRegionsToClose(abortRequested);
       LOG.info("stopping server " + this.serverNameFromMasterPOV +
@@ -963,11 +992,16 @@ public class  HRegionServer implements ClientProtocol,
     LOG.info(Thread.currentThread().getName() + " exiting");
   }
 
+  private boolean containsMetaTableRegions() {
+    return onlineRegions.containsKey(HRegionInfo.ROOT_REGIONINFO.getEncodedName())
+        || onlineRegions.containsKey(HRegionInfo.FIRST_META_REGIONINFO.getEncodedName());
+  }
+
   private boolean areAllUserRegionsOffline() {
     if (getNumberOfOnlineRegions() > 2) return false;
     boolean allUserRegionsOffline = true;
     for (Map.Entry<String, HRegion> e: this.onlineRegions.entrySet()) {
-      if (!e.getValue().getRegionInfo().isMetaRegion()) {
+      if (!e.getValue().getRegionInfo().isMetaTable()) {
         allUserRegionsOffline = false;
         break;
       }
@@ -1249,7 +1283,8 @@ public class  HRegionServer implements ClientProtocol,
       .setReadRequestsCount((int) r.readRequestsCount.get())
       .setWriteRequestsCount((int) r.writeRequestsCount.get())
       .setTotalCompactingKVs(totalCompactingKVs)
-      .setCurrentCompactedKVs(currentCompactedKVs);
+      .setCurrentCompactedKVs(currentCompactedKVs)
+      .setCompleteSequenceId(r.completeSequenceId);
     Set<String> coprocessors = r.getCoprocessorHost().getCoprocessors();
     for (String coprocessor : coprocessors) {
       regionLoad.addCoprocessors(
@@ -1623,7 +1658,7 @@ public class  HRegionServer implements ClientProtocol,
 
     // Create the log splitting worker and start it
     this.splitLogWorker = new SplitLogWorker(this.zooKeeper,
-        this.getConfiguration(), this.getServerName());
+        this.getConfiguration(), this.getServerName(), this);
     splitLogWorker.start();
   }
 
@@ -1970,6 +2005,22 @@ public class  HRegionServer implements ClientProtocol,
     return result;
   }
 
+  @Override
+  public long getLastSequenceId(byte[] region) {
+    Long lastFlushedSequenceId = -1l;
+    try {
+      GetLastFlushedSequenceIdRequest req =
+        RequestConverter.buildGetLastFlushedSequenceIdRequest(region);
+      lastFlushedSequenceId = hbaseMaster.getLastFlushedSequenceId(null, req)
+      .getLastFlushedSequenceId();
+    } catch (ServiceException e) {
+      lastFlushedSequenceId = -1l;
+      LOG.warn("Unable to connect to the master to check " +
+          "the last flushed sequence id", e);
+    }
+    return lastFlushedSequenceId;
+  }
+
   /**
    * Closes all regions.  Called on our way out.
    * Assumes that its not possible for new regions to be added to onlineRegions
@@ -1977,7 +2028,14 @@ public class  HRegionServer implements ClientProtocol,
    */
   protected void closeAllRegions(final boolean abort) {
     closeUserRegions(abort);
-    // Only root and meta should remain.  Are we carrying root or meta?
+    closeMetaTableRegions(abort);
+  }
+
+  /**
+   * Close root and meta regions if we carry them
+   * @param abort Whether we're running an abort.
+   */
+  void closeMetaTableRegions(final boolean abort) {
     HRegion meta = null;
     HRegion root = null;
     this.lock.writeLock().lock();
@@ -2009,7 +2067,7 @@ public class  HRegionServer implements ClientProtocol,
     try {
       for (Map.Entry<String, HRegion> e: this.onlineRegions.entrySet()) {
         HRegion r = e.getValue();
-        if (!r.getRegionInfo().isMetaRegion() && r.isAvailable()) {
+        if (!r.getRegionInfo().isMetaTable() && r.isAvailable()) {
           // Don't update zk with this close transition; pass false.
           closeRegion(r.getRegionInfo(), abort, false);
         }
@@ -3226,7 +3284,7 @@ public class  HRegionServer implements ClientProtocol,
       }
       boolean loaded = false;
       if (!bypass) {
-        loaded = region.bulkLoadHFiles(familyPaths);
+        loaded = region.bulkLoadHFiles(familyPaths, request.getAssignSeqNum());
       }
       if (region.getCoprocessorHost() != null) {
         loaded = region.getCoprocessorHost().postBulkLoadHFile(familyPaths, loaded);

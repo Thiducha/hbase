@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -1500,7 +1499,7 @@ public class HLog implements Syncable {
   /**
    * Obtain a log sequence number.
    */
-  private long obtainSeqNum() {
+  public long obtainSeqNum() {
     return this.logSeqNum.incrementAndGet();
   }
 

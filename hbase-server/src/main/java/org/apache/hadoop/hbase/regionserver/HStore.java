@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -312,8 +311,8 @@ public class HStore extends SchemaConfigured implements Store {
   /**
    * @return The maximum sequence id in all store files.
    */
-  long getMaxSequenceId() {
-    return StoreFile.getMaxSequenceIdInList(this.getStorefiles());
+  long getMaxSequenceId(boolean includeBulkFiles) {
+    return StoreFile.getMaxSequenceIdInList(this.getStorefiles(), includeBulkFiles);
   }
 
   @Override
@@ -533,7 +532,7 @@ public class HStore extends SchemaConfigured implements Store {
   }
 
   @Override
-  public void bulkLoadHFile(String srcPathStr) throws IOException {
+  public void bulkLoadHFile(String srcPathStr, long seqNum) throws IOException {
     Path srcPath = new Path(srcPathStr);
 
     // Copy the file if it's on another filesystem
@@ -548,7 +547,8 @@ public class HStore extends SchemaConfigured implements Store {
       srcPath = tmpPath;
     }
 
-    Path dstPath = StoreFile.getRandomFilename(fs, homedir);
+    Path dstPath = StoreFile.getRandomFilename(fs, homedir,
+        (seqNum == -1) ? null : "_SeqId_" + seqNum + "_");
     LOG.debug("Renaming bulk load file " + srcPath + " to " + dstPath);
     StoreFile.rename(fs, srcPath, dstPath);
 
@@ -991,7 +991,7 @@ public class HStore extends SchemaConfigured implements Store {
     }
 
     // Max-sequenceID is the last key in the files we're compacting
-    long maxId = StoreFile.getMaxSequenceIdInList(filesToCompact);
+    long maxId = StoreFile.getMaxSequenceIdInList(filesToCompact, true);
 
     // Ready to go. Have list of files to compact.
     LOG.info("Starting compaction of " + filesToCompact.size() + " file(s) in "
@@ -1058,10 +1058,10 @@ public class HStore extends SchemaConfigured implements Store {
         }
 
         filesToCompact = filesToCompact.subList(count - N, count);
-        maxId = StoreFile.getMaxSequenceIdInList(filesToCompact);
+        maxId = StoreFile.getMaxSequenceIdInList(filesToCompact, true);
         isMajor = (filesToCompact.size() == storefiles.size());
         filesCompacting.addAll(filesToCompact);
-        Collections.sort(filesCompacting, StoreFile.Comparators.FLUSH_TIME);
+        Collections.sort(filesCompacting, StoreFile.Comparators.SEQ_ID);
       }
     } finally {
       this.lock.readLock().unlock();
@@ -1276,7 +1276,7 @@ public class HStore extends SchemaConfigured implements Store {
               filesToCompact, filesCompacting);
         }
         filesCompacting.addAll(filesToCompact.getFilesToCompact());
-        Collections.sort(filesCompacting, StoreFile.Comparators.FLUSH_TIME);
+        Collections.sort(filesCompacting, StoreFile.Comparators.SEQ_ID);
 
         // major compaction iff all StoreFiles are included
         boolean isMajor = (filesToCompact.getFilesToCompact().size() == this.storefiles.size());
@@ -1617,7 +1617,7 @@ public class HStore extends SchemaConfigured implements Store {
   }
 
   public ImmutableList<StoreFile> sortAndClone(List<StoreFile> storeFiles) {
-    Collections.sort(storeFiles, StoreFile.Comparators.FLUSH_TIME);
+    Collections.sort(storeFiles, StoreFile.Comparators.SEQ_ID);
     ImmutableList<StoreFile> newList = ImmutableList.copyOf(storeFiles);
     return newList;
   }
@@ -1698,6 +1698,7 @@ public class HStore extends SchemaConfigured implements Store {
     }
     // TODO: Cache these keys rather than make each time?
     byte [] fk = r.getFirstKey();
+    if (fk == null) return;
     KeyValue firstKV = KeyValue.createKeyValueFromKey(fk, 0, fk.length);
     byte [] lk = r.getLastKey();
     KeyValue lastKV = KeyValue.createKeyValueFromKey(lk, 0, lk.length);
@@ -1711,7 +1712,7 @@ public class HStore extends SchemaConfigured implements Store {
       firstOnRow = new KeyValue(lastKV.getRow(), HConstants.LATEST_TIMESTAMP);
     }
     // Get a scanner that caches blocks and that uses pread.
-    HFileScanner scanner = r.getHFileReader().getScanner(true, true, false);
+    HFileScanner scanner = r.getScanner(true, true, false);
     // Seek scanner.  If can't seek it, return.
     if (!seekToScanner(scanner, firstOnRow, firstKV)) return;
     // If we found candidate on firstOnRow, just return. THIS WILL NEVER HAPPEN!

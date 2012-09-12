@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -410,6 +409,54 @@ public class TestHBaseFsck {
 
       // We should pass without triggering a RejectedExecutionException
     } finally {
+      deleteTable(table);
+    }
+  }
+  
+  @Test
+  public void testHbckFixOrphanTable() throws Exception {
+    String table = "tableInfo";
+    FileSystem fs = null;
+    Path tableinfo = null;
+    try {
+      setupTable(table);
+      HBaseAdmin admin = TEST_UTIL.getHBaseAdmin();
+      
+      Path hbaseTableDir = new Path(conf.get(HConstants.HBASE_DIR) + "/" + table );
+      fs = hbaseTableDir.getFileSystem(conf);
+      FileStatus status = FSTableDescriptors.getTableInfoPath(fs, hbaseTableDir);
+      tableinfo = status.getPath();
+      fs.rename(tableinfo, new Path("/.tableinfo"));
+      
+      //to report error if .tableinfo is missing.
+      HBaseFsck hbck = doFsck(conf, false); 
+      assertErrors(hbck, new ERROR_CODE[] { ERROR_CODE.NO_TABLEINFO_FILE });
+      
+      // fix OrphanTable with default .tableinfo (htd not yet cached on master)
+      hbck = doFsck(conf, true);
+      assertNoErrors(hbck);
+      status = null;
+      status = FSTableDescriptors.getTableInfoPath(fs, hbaseTableDir);
+      assertNotNull(status);
+      
+      HTableDescriptor htd = admin.getTableDescriptor(table.getBytes());
+      htd.setValue("NOT_DEFAULT", "true");
+      admin.disableTable(table);
+      admin.modifyTable(table.getBytes(), htd);
+      admin.enableTable(table);
+      fs.delete(status.getPath(), true);
+      
+      // fix OrphanTable with cache
+      htd = admin.getTableDescriptor(table.getBytes()); // warms up cached htd on master
+      hbck = doFsck(conf, true);
+      assertNoErrors(hbck);
+      status = null;
+      status = FSTableDescriptors.getTableInfoPath(fs, hbaseTableDir);
+      assertNotNull(status);
+      htd = admin.getTableDescriptor(table.getBytes());
+      assertEquals(htd.getValue("NOT_DEFAULT"), "true");
+    } finally {
+      fs.rename(new Path("/.tableinfo"), tableinfo);
       deleteTable(table);
     }
   }
