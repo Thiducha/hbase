@@ -210,7 +210,7 @@ public class TestRecovery {
     puts.checkPuts();
     long end =   System.currentTimeMillis();
 
-    LOG.info("time = "+(end-start));
+    LOG.info(" time = "+(end-start));
   }
 
   // OK 6 Tests 10min32s
