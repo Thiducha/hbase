@@ -475,6 +475,11 @@ public class HBaseTestingUtility {
     createDirAndSetProperty("mapred_local", "mapred.local.dir");
     createDirAndSetProperty("mapred_system", "mapred.system.dir");
     createDirAndSetProperty("mapred_temp", "mapred.temp.dir");
+
+    // read short circuit, for hdfs
+    conf.set("dfs.block.local-path-access.user", "toto");
+    // read short circuit, for hbase
+    conf.setBoolean("dfs.client.read.shortcircuit", true) ;
   }
 
   private String createDirAndSetProperty(final String relPath, String property) {
