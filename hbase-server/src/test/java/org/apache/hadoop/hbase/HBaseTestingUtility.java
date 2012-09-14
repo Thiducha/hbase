@@ -477,7 +477,7 @@ public class HBaseTestingUtility {
     createDirAndSetProperty("mapred_temp", "mapred.temp.dir");
 
     // read short circuit, for hdfs
-    conf.set("dfs.block.local-path-access.user", "toto");
+    conf.set("dfs.block.local-path-access.user", "liochon");
     // read short circuit, for hbase
     conf.setBoolean("dfs.client.read.shortcircuit", true) ;
   }
