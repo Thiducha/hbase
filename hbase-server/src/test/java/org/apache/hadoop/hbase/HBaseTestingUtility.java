@@ -485,17 +485,19 @@ public class HBaseTestingUtility {
    *   If not set, default is true.
    *  Set the corresponding setting for hdfs.
    */
-  private void readShortCircuit(){
-    boolean readOn;
+
+  public boolean isReadShortCircuitOn(){
     String readOnProp = System.getProperty("dfs.client.read.shortcircuit");
     if (readOnProp != null){
-      readOn =  Boolean.parseBoolean(readOnProp);
+      return  Boolean.parseBoolean(readOnProp);
     } else {
       String readOnConf = conf.get("dfs.client.read.shortcircuit");
-      readOn = (readOnConf == null ? true : Boolean.parseBoolean(readOnConf));
+      return (readOnConf == null ? true : Boolean.parseBoolean(readOnConf));
     }
+  }
 
-    if (readOn){
+  private void readShortCircuit(){
+    if (isReadShortCircuitOn()){
       String curUser = System.getProperty("user.name");
       LOG.info("read short circuit is ON for user "+curUser);
       // read short circuit, for hdfs

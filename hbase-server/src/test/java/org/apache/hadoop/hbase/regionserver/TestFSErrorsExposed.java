@@ -166,8 +166,8 @@ public class TestFSErrorsExposed {
     try {
       // We won't have an error if the datanode is not there if we use short circuit
       //  it's a known 'feature'.
-      if (util.getConfiguration().getBoolean("dfs.client.read.shortcircuit", true)){
-        LOG.info("dfs.client.read.shortcircuit is true, " +
+      if (util.isReadShortCircuitOn()){
+        LOG.info("dfs.client.read.shortcircuit is on, " +
             "testFullSystemBubblesFSErrors is not executed");
         return;
       }
