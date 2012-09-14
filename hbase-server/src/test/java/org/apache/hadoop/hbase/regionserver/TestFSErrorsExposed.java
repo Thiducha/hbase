@@ -163,15 +163,15 @@ public class TestFSErrorsExposed {
    */
   @Test(timeout=5 * 60 * 1000)
   public void testFullSystemBubblesFSErrors() throws Exception {
-    try {
-      // We won't have an error if the datanode is not there if we use short circuit
-      //  it's a known 'feature'.
-      if (util.isReadShortCircuitOn()){
-        LOG.info("dfs.client.read.shortcircuit is on, " +
-            "testFullSystemBubblesFSErrors is not executed");
-        return;
-      }
+    // We won't have an error if the datanode is not there if we use short circuit
+    //  it's a known 'feature'.
+    if (util.isReadShortCircuitOn()){
+      LOG.info("dfs.client.read.shortcircuit is on, " +
+          "testFullSystemBubblesFSErrors is not executed");
+      return;
+    }
 
+    try {
       // We set it not to run or it will trigger server shutdown while sync'ing
       // because all the datanodes are bad
       util.getConfiguration().setInt(
