@@ -164,12 +164,21 @@ public class TestFSErrorsExposed {
   @Test(timeout=5 * 60 * 1000)
   public void testFullSystemBubblesFSErrors() throws Exception {
     try {
+      // We won't have an error if the datanode is not there if we use short circuit
+      //  it's a known 'feature'.
+      if (util.getConfiguration().getBoolean("dfs.client.read.shortcircuit", true)){
+        LOG.info("dfs.client.read.shortcircuit is true, " +
+            "testFullSystemBubblesFSErrors is not executed");
+        return;
+      }
+
       // We set it not to run or it will trigger server shutdown while sync'ing
       // because all the datanodes are bad
       util.getConfiguration().setInt(
           "hbase.regionserver.optionallogflushinterval", Integer.MAX_VALUE);
 
       util.getConfiguration().setInt("hbase.client.retries.number", 3);
+
 
       util.startMiniCluster(1);
       byte[] tableName = Bytes.toBytes("table");
