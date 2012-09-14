@@ -475,11 +475,36 @@ public class HBaseTestingUtility {
     createDirAndSetProperty("mapred_local", "mapred.local.dir");
     createDirAndSetProperty("mapred_system", "mapred.system.dir");
     createDirAndSetProperty("mapred_temp", "mapred.temp.dir");
+    readShortCircuit();
 
-    // read short circuit, for hdfs
-    conf.set("dfs.block.local-path-access.user", "liochon");
-    // read short circuit, for hbase
-    conf.setBoolean("dfs.client.read.shortcircuit", true) ;
+  }
+
+
+  /**
+   *  Get the HBase setting for dfs.client.read.shortcircuit from the conf.
+   *   If not set, default is true.
+   *  Set the corresponding setting for hdfs.
+   */
+  private void readShortCircuit(){
+    boolean readOn;
+    String readOnProp = System.getProperty("dfs.client.read.shortcircuit");
+    if (readOnProp != null){
+      readOn =  Boolean.parseBoolean(readOnProp);
+    } else {
+      String readOnConf = conf.get("dfs.client.read.shortcircuit");
+      readOn = (readOnConf == null ? true : Boolean.parseBoolean(readOnConf));
+    }
+
+    if (readOn){
+      String curUser = System.getProperty("user.name");
+      LOG.info("read short circuit is ON for user "+curUser);
+      // read short circuit, for hdfs
+      conf.set("dfs.block.local-path-access.user", curUser);
+      // read short circuit, for hbase
+      conf.setBoolean("dfs.client.read.shortcircuit", true) ;
+    } else {
+      LOG.info("read short circuit is OFF");
+    }
   }
 
   private String createDirAndSetProperty(final String relPath, String property) {
