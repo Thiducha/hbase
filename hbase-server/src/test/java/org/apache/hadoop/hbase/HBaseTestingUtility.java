@@ -487,7 +487,8 @@ public class HBaseTestingUtility {
 
 
   /**
-   *  Get the HBase setting for dfs.client.read.shortcircuit from the conf.
+   *  Get the HBase setting for dfs.client.read.shortcircuit from the conf or a system property.
+   *  This allows to specify this parameter on the command line.
    *   If not set, default is true.
    */
   public boolean isReadShortCircuitOn(){
