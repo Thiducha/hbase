@@ -46,6 +46,7 @@ import org.apache.hadoop.hbase.io.hfile.HFileScanner;
 import org.apache.hadoop.hbase.io.hfile.NoOpDataBlockEncoder;
 import org.apache.hadoop.hbase.regionserver.StoreFile.BloomType;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.junit.Assume;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -165,11 +166,7 @@ public class TestFSErrorsExposed {
   public void testFullSystemBubblesFSErrors() throws Exception {
     // We won't have an error if the datanode is not there if we use short circuit
     //  it's a known 'feature'.
-    if (util.isReadShortCircuitOn()){
-      LOG.info("dfs.client.read.shortcircuit is on, " +
-          "testFullSystemBubblesFSErrors is not executed");
-      return;
-    }
+    Assume.assumeTrue(!util.isReadShortCircuitOn());
 
     try {
       // We set it not to run or it will trigger server shutdown while sync'ing

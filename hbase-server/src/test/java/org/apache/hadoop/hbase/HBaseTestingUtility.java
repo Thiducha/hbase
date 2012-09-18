@@ -475,7 +475,7 @@ public class HBaseTestingUtility {
     createDirAndSetProperty("mapred_local", "mapred.local.dir");
     createDirAndSetProperty("mapred_system", "mapred.system.dir");
     createDirAndSetProperty("mapred_temp", "mapred.temp.dir");
-    readShortCircuit();
+    enableShortCircuit();
 
   }
 
@@ -483,27 +483,30 @@ public class HBaseTestingUtility {
   /**
    *  Get the HBase setting for dfs.client.read.shortcircuit from the conf.
    *   If not set, default is true.
-   *  Set the corresponding setting for hdfs.
    */
-
   public boolean isReadShortCircuitOn(){
-    String readOnProp = System.getProperty("dfs.client.read.shortcircuit");
+    final String propName = "hbase.tests.use.shortcircuit.reads";
+    String readOnProp = System.getProperty(propName);
     if (readOnProp != null){
       return  Boolean.parseBoolean(readOnProp);
     } else {
-      String readOnConf = conf.get("dfs.client.read.shortcircuit");
-      return (readOnConf == null ? true : Boolean.parseBoolean(readOnConf));
+      return conf.getBoolean(propName, true);
     }
   }
 
-  private void readShortCircuit(){
-    if (isReadShortCircuitOn()){
+  /** Enable the short circuit read, unless configured differently.
+   * Set both HBase and HDFS settings, including skipping the hdfs checksum checks.
+   */
+  private void enableShortCircuit() {
+    if (isReadShortCircuitOn()) {
       String curUser = System.getProperty("user.name");
-      LOG.info("read short circuit is ON for user "+curUser);
+      LOG.info("read short circuit is ON for user " + curUser);
       // read short circuit, for hdfs
       conf.set("dfs.block.local-path-access.user", curUser);
       // read short circuit, for hbase
-      conf.setBoolean("dfs.client.read.shortcircuit", true) ;
+      conf.setBoolean("dfs.client.read.shortcircuit", true);
+      // Skip checking checksum, for the hdfs client and the datanode
+      conf.setBoolean("dfs.client.read.shortcircuit.skip.checksum", true);
     } else {
       LOG.info("read short circuit is OFF");
     }
