@@ -502,14 +502,14 @@ public class TestSplitLogManager {
     ZKUtil.setData(zkw, tasknode, slt.toByteArray());
     if (tot_mgr_heartbeat.get() == 0) waitForCounter(tot_mgr_heartbeat, 0, 1, 1000);
 
-    Assert.assertEquals(0, tot_mgr_resubmit.get() == 0);
+    Assert.assertEquals(0, tot_mgr_resubmit.get());
     // This server becomes dead
     Mockito.when(sm.isServerOnline(worker1)).thenReturn(false);
 
     Thread.sleep(1200); // The timeout checker is done every 1000 ms (hardcoded).
 
     // It has been resubmeted
-    Assert.assertEquals(1, tot_mgr_resubmit.get() == 0);
+    Assert.assertEquals(1, tot_mgr_resubmit.get());
   }
 
   @Test
