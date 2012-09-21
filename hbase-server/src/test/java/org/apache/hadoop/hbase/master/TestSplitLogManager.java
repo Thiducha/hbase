@@ -113,7 +113,7 @@ public class TestSplitLogManager {
   public void setUpBefore() throws Exception {
     // By default, we let the test manage the error as before, so the server
     //  does not appear as dead from the master point of view
-    Mockito.when(sm.isServerOnline(null)).thenReturn(true);
+    Mockito.when(sm.isServerOnline(Mockito.any(ServerName.class))).thenReturn(true);
     Mockito.when(sm.isServerOnline(DUMMY_MASTER)).thenReturn(false);
     Mockito.when(master.getServerManager()).thenReturn(sm);
 
