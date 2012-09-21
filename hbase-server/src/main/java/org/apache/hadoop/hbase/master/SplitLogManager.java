@@ -560,7 +560,8 @@ public class SplitLogManager extends ZooKeeperListener {
       //    for any reason.
       // However, if we now that the worker is marked as dead, we resubmit immediately.
       final long exeTime = EnvironmentEdgeManager.currentTimeMillis() - task.last_update;
-      final boolean alive = !master.getServerManager().isDeadNotExpiredServer(task.cur_worker_name);
+      final boolean alive = master.getServerManager() != null ?
+          !master.getServerManager().isDeadNotExpiredServer(task.cur_worker_name) : false;
       if (alive && exeTime < timeout) {
         LOG.info("Skipping the resubmit of " + task.toString() + "  because the server " +
             task.cur_worker_name + " is not marked as dead, and the execution time is " + exeTime +
