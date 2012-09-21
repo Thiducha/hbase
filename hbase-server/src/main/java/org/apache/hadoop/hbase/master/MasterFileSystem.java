@@ -84,7 +84,7 @@ public class MasterFileSystem {
   final SplitLogManager splitLogManager;
   private final MasterServices services;
 
-  public MasterFileSystem(HMaster master, MasterServices services,
+  public MasterFileSystem(Server master, MasterServices services,
       MasterMetrics metrics, boolean masterRecovery)
   throws IOException {
     this.conf = master.getConfiguration();
@@ -108,7 +108,7 @@ public class MasterFileSystem {
       conf.getBoolean(HConstants.DISTRIBUTED_LOG_SPLITTING_KEY, true);
     if (this.distributedLogSplitting) {
       this.splitLogManager = new SplitLogManager(master.getZooKeeper(),
-          master.getConfiguration(), master, master.getServerName());
+          master.getConfiguration(), master, services, master.getServerName());
       this.splitLogManager.finishInitialization(masterRecovery);
     } else {
       this.splitLogManager = null;

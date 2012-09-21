@@ -103,7 +103,8 @@ public class SplitLogManager extends ZooKeeperListener {
   public static final int DEFAULT_MAX_RESUBMIT = 3;
   public static final int DEFAULT_UNASSIGNED_TIMEOUT = (3 * 60 * 1000); //3 min
 
-  private final HMaster stopper;
+  private final Stoppable stopper;
+  private final MasterServices master;
   private final ServerName serverName;
   private final TaskFinisher taskFinisher;
   private FileSystem fs;
@@ -135,8 +136,8 @@ public class SplitLogManager extends ZooKeeperListener {
    * @param serverName
    */
   public SplitLogManager(ZooKeeperWatcher zkw, final Configuration conf,
-       HMaster stopper, ServerName serverName) {
-    this(zkw, conf, stopper, serverName, new TaskFinisher() {
+       Stoppable stopper, MasterServices master, ServerName serverName) {
+    this(zkw, conf, stopper,  master, serverName, new TaskFinisher() {
       @Override
       public Status finish(ServerName workerName, String logfile) {
         try {
@@ -162,11 +163,12 @@ public class SplitLogManager extends ZooKeeperListener {
    * @param tf task finisher 
    */
   public SplitLogManager(ZooKeeperWatcher zkw, Configuration conf,
-       HMaster stopper, ServerName serverName, TaskFinisher tf) {
+        Stoppable stopper, MasterServices master, ServerName serverName, TaskFinisher tf) {
     super(zkw);
     this.taskFinisher = tf;
     this.conf = conf;
     this.stopper = stopper;
+    this.master = master;
     this.zkretries = conf.getLong("hbase.splitlog.zk.retries", DEFAULT_ZK_RETRIES);
     this.resubmit_threshold = conf.getLong("hbase.splitlog.max.resubmit", DEFAULT_MAX_RESUBMIT);
     this.timeout = conf.getInt("hbase.splitlog.manager.timeout", DEFAULT_TIMEOUT);
@@ -558,7 +560,7 @@ public class SplitLogManager extends ZooKeeperListener {
       //    for any reason.
       // However, if we now that the worker is marked as dead, we resubmit immediately.
       final long exeTime = EnvironmentEdgeManager.currentTimeMillis() - task.last_update;
-      if (stopper.getServerManager().isServerOnline(task.cur_worker_name) &&
+      if (master.getServerManager().isServerOnline(task.cur_worker_name) &&
           exeTime < timeout) {
         LOG.info("Skipping the resubmit of " + task.toString() + "  because the server " +
             task.cur_worker_name + "is still up and running, and the execution time is " + exeTime +
