@@ -488,27 +488,26 @@ public class TestSplitLogManager {
 
   @Test
   public void testWorkerCrash() throws Exception {
-    LOG.info("testDeadWorker");
-
     slm = new SplitLogManager(zkw, conf, stopper, master, DUMMY_MASTER, null);
     slm.finishInitialization();
     TaskBatch batch = new TaskBatch();
 
     String tasknode = submitTaskAndWait(batch, "foo/1");
-    int version = ZKUtil.checkExists(zkw, tasknode);
     final ServerName worker1 = new ServerName("worker1,1,1");
 
     SplitLogTask slt = new SplitLogTask.Owned(worker1);
     ZKUtil.setData(zkw, tasknode, slt.toByteArray());
     if (tot_mgr_heartbeat.get() == 0) waitForCounter(tot_mgr_heartbeat, 0, 1, 1000);
 
+    // Not yet resubmitted.
     Assert.assertEquals(0, tot_mgr_resubmit.get());
+
     // This server becomes dead
     Mockito.when(sm.isServerOnline(worker1)).thenReturn(false);
 
-    Thread.sleep(1200); // The timeout checker is done every 1000 ms (hardcoded).
+    Thread.sleep(1300); // The timeout checker is done every 1000 ms (hardcoded).
 
-    // It has been resubmeted
+    // It has been resubmitted
     Assert.assertEquals(1, tot_mgr_resubmit.get());
   }
 
