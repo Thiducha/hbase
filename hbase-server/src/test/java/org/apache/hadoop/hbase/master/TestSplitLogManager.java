@@ -239,6 +239,10 @@ public class TestSplitLogManager {
     assertTrue((task.last_update <= curt) &&
         (task.last_update > (curt - 1000)));
     LOG.info("waiting for manager to resubmit the orphan task");
+
+    Mockito.when(sm.isServerOnline(null)).thenReturn(true);
+    Mockito.when(master.getServerManager()).thenReturn(sm);
+
     waitForCounter(tot_mgr_resubmit, 0, 1, to + 300);
     assertTrue(task.isUnassigned());
     waitForCounter(tot_mgr_rescan, 0, 1, to + 100);
