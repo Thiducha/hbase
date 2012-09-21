@@ -65,6 +65,7 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooDefs.Ids;
 import org.junit.After;
 import org.junit.AfterClass;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -315,6 +316,8 @@ public class TestSplitLogManager {
   public void testRescanCleanup() throws Exception {
     LOG.info("TestRescanCleanup - ensure RESCAN nodes are cleaned up");
 
+    ServerManager sm = Mockito.mock(ServerManager.class);
+
     conf.setInt("hbase.splitlog.manager.timeout", 1000);
     conf.setInt("hbase.splitlog.manager.timeoutmonitor.period", 100);
     slm = new SplitLogManager(zkw, conf, stopper, master, DUMMY_MASTER, null);
@@ -326,6 +329,10 @@ public class TestSplitLogManager {
     final ServerName worker1 = new ServerName("worker1,1,1");
     SplitLogTask slt = new SplitLogTask.Owned(worker1);
     ZKUtil.setData(zkw, tasknode, slt.toByteArray());
+
+    Mockito.when(sm.isServerOnline(worker1)).thenReturn(false);
+    Mockito.when(master.getServerManager()).thenReturn(sm);
+
     waitForCounter(tot_mgr_heartbeat, 0, 1, 1000);
     waitForCounter(new Expr() {
       @Override
@@ -333,19 +340,14 @@ public class TestSplitLogManager {
         return (tot_mgr_resubmit.get() + tot_mgr_resubmit_failed.get());
       }
     }, 0, 1, 5*60000); // wait long enough
-    if (tot_mgr_resubmit_failed.get() == 0) {
-      int version1 = ZKUtil.checkExists(zkw, tasknode);
-      assertTrue(version1 > version);
-      byte[] taskstate = ZKUtil.getData(zkw, tasknode);
-      slt = SplitLogTask.parseFrom(taskstate);
-      assertTrue(slt.isUnassigned(DUMMY_MASTER));
-      
-      waitForCounter(tot_mgr_rescan_deleted, 0, 1, 1000);
-    } else {
-      LOG.warn("Could not run test. Lost ZK connection?");
-    }
+    Assert.assertEquals("Could not run test. Lost ZK connection?", 0, tot_mgr_resubmit_failed.get());
+    int version1 = ZKUtil.checkExists(zkw, tasknode);
+    assertTrue(version1 > version);
+    byte[] taskstate = ZKUtil.getData(zkw, tasknode);
+    slt = SplitLogTask.parseFrom(taskstate);
+    assertTrue(slt.isUnassigned(DUMMY_MASTER));
 
-    return;
+    waitForCounter(tot_mgr_rescan_deleted, 0, 1, 1000);
   }
 
   @Test
