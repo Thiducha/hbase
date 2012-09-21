@@ -98,7 +98,7 @@ import org.apache.zookeeper.data.Stat;
 public class SplitLogManager extends ZooKeeperListener {
   private static final Log LOG = LogFactory.getLog(SplitLogManager.class);
 
-  public static final int DEFAULT_TIMEOUT = 120000; // 2 mins
+  public static final int DEFAULT_TIMEOUT = 120000;
   public static final int DEFAULT_ZK_RETRIES = 3;
   public static final int DEFAULT_MAX_RESUBMIT = 3;
   public static final int DEFAULT_UNASSIGNED_TIMEOUT = (3 * 60 * 1000); //3 min
@@ -560,10 +560,10 @@ public class SplitLogManager extends ZooKeeperListener {
       //    for any reason.
       // However, if we now that the worker is marked as dead, we resubmit immediately.
       final long exeTime = EnvironmentEdgeManager.currentTimeMillis() - task.last_update;
-      if (master.getServerManager().isServerOnline(task.cur_worker_name) &&
-          exeTime < timeout) {
+      final boolean alive = !master.getServerManager().isDeadNotExpiredServer(task.cur_worker_name);
+      if (alive && exeTime < timeout) {
         LOG.info("Skipping the resubmit of " + task.toString() + "  because the server " +
-            task.cur_worker_name + "is still up and running, and the execution time is " + exeTime +
+            task.cur_worker_name + " is not marked as dead, and the execution time is " + exeTime +
             "while the timeout is " + timeout);
         return false;
       }

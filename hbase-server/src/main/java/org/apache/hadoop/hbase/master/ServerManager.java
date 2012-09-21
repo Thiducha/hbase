@@ -32,6 +32,7 @@ import java.util.SortedMap;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -122,7 +123,7 @@ public class ServerManager {
    * added to set and will be expired through calling
    * {@link ServerManager#expireDeadNotExpiredServers()} by master.
    */
-  private Set<ServerName> deadNotExpiredServers = new HashSet<ServerName>();
+  private Set<ServerName> deadNotExpiredServers = new ConcurrentSkipListSet<ServerName>();
 
   /**
    * Constructor.
@@ -714,6 +715,10 @@ public class ServerManager {
    */
   Set<ServerName> getDeadNotExpiredServers() {
     return new HashSet<ServerName>(this.deadNotExpiredServers);
+  }
+
+  public boolean isDeadNotExpiredServer(ServerName sn){
+    return this.deadNotExpiredServers.contains(sn);
   }
 
   public boolean isServerOnline(ServerName serverName) {
