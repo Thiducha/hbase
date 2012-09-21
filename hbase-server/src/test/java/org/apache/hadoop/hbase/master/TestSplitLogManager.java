@@ -295,6 +295,10 @@ public class TestSplitLogManager {
     final ServerName worker3 = new ServerName("worker3,1,1");
     SplitLogTask slt = new SplitLogTask.Owned(worker1);
     ZKUtil.setData(zkw, tasknode, slt.toByteArray());
+
+    Mockito.when(sm.isServerOnline(worker1)).thenReturn(false);
+    Mockito.when(master.getServerManager()).thenReturn(sm);
+
     waitForCounter(tot_mgr_heartbeat, 0, 1, 1000);
     waitForCounter(tot_mgr_resubmit, 0, 1, to + EXTRA_TOLERANCE_MS);
     int version1 = ZKUtil.checkExists(zkw, tasknode);
