@@ -508,6 +508,7 @@ public class TestSplitLogManager {
 
     Thread.sleep(1200); // The timeout checker is done every 1000 ms (hardcoded).
 
+    // It has been resubmeted
     Assert.assertEquals(1, tot_mgr_resubmit.get() == 0);
   }
 
