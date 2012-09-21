@@ -109,12 +109,10 @@ public class TestSplitLogManager {
 
   };
 
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
-  }
-
-  @AfterClass
-  public static void tearDownAfterClass() throws Exception {
+  @Before
+  public void setUpBefore() throws Exception {
+    Mockito.when(sm.isServerOnline(null)).thenReturn(true);
+    Mockito.when(master.getServerManager()).thenReturn(sm);
   }
 
   @Before
@@ -448,8 +446,6 @@ public class TestSplitLogManager {
     conf.setInt("hbase.splitlog.manager.unassigned.timeout", 2 * to);
     conf.setInt("hbase.splitlog.manager.timeoutmonitor.period", 100);
 
-    Mockito.when(sm.isServerOnline(worker1)).thenReturn(true);
-    Mockito.when(master.getServerManager()).thenReturn(sm);
 
     slm = new SplitLogManager(zkw, conf, stopper, master, DUMMY_MASTER, null);
     slm.finishInitialization();
