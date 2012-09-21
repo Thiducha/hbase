@@ -76,6 +76,7 @@ import org.mockito.Mockito;
 public class TestSplitLogManager {
   private static final Log LOG = LogFactory.getLog(TestSplitLogManager.class);
   private final ServerName DUMMY_MASTER = new ServerName("dummy-master,1,1");
+  private final ServerManager sm = Mockito.mock(ServerManager.class);
   private final MasterServices master =  Mockito.mock(MasterServices.class);
 
   static {
@@ -316,8 +317,6 @@ public class TestSplitLogManager {
   public void testRescanCleanup() throws Exception {
     LOG.info("TestRescanCleanup - ensure RESCAN nodes are cleaned up");
 
-    ServerManager sm = Mockito.mock(ServerManager.class);
-
     conf.setInt("hbase.splitlog.manager.timeout", 1000);
     conf.setInt("hbase.splitlog.manager.timeoutmonitor.period", 100);
     slm = new SplitLogManager(zkw, conf, stopper, master, DUMMY_MASTER, null);
@@ -383,6 +382,10 @@ public class TestSplitLogManager {
     final ServerName worker1 = new ServerName("worker1,1,1");
     SplitLogTask slt = new SplitLogTask.Err(worker1);
     ZKUtil.setData(zkw, tasknode, slt.toByteArray());
+
+    Mockito.when(sm.isServerOnline(worker1)).thenReturn(false);
+    Mockito.when(master.getServerManager()).thenReturn(sm);
+
     synchronized (batch) {
       while (batch.installed != batch.error) {
         batch.wait();
