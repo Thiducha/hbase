@@ -563,7 +563,7 @@ public class SplitLogManager extends ZooKeeperListener {
       final boolean alive = master.getServerManager() != null ?
           master.getServerManager().isServerOnline(task.cur_worker_name) : true;
       if (alive && time < timeout) {
-        LOG.info("Skipping the resubmit of " + task.toString() + "  because the server " +
+        LOG.trace("Skipping the resubmit of " + task.toString() + "  because the server " +
             task.cur_worker_name + " is not marked as dead, we waited for " + time +
             " while the timeout is " + timeout);
         return false;

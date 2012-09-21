@@ -239,7 +239,6 @@ public class TestSplitLogManager {
     assertTrue((task.last_update <= curt) &&
         (task.last_update > (curt - 1000)));
     LOG.info("waiting for manager to resubmit the orphan task");
-
     waitForCounter(tot_mgr_resubmit, 0, 1, to + 300);
     assertTrue(task.isUnassigned());
     waitForCounter(tot_mgr_rescan, 0, 1, to + 100);
@@ -296,7 +295,6 @@ public class TestSplitLogManager {
     final ServerName worker3 = new ServerName("worker3,1,1");
     SplitLogTask slt = new SplitLogTask.Owned(worker1);
     ZKUtil.setData(zkw, tasknode, slt.toByteArray());
-
     waitForCounter(tot_mgr_heartbeat, 0, 1, 1000);
     waitForCounter(tot_mgr_resubmit, 0, 1, to + EXTRA_TOLERANCE_MS);
     int version1 = ZKUtil.checkExists(zkw, tasknode);
@@ -330,7 +328,6 @@ public class TestSplitLogManager {
     final ServerName worker1 = new ServerName("worker1,1,1");
     SplitLogTask slt = new SplitLogTask.Owned(worker1);
     ZKUtil.setData(zkw, tasknode, slt.toByteArray());
-
     waitForCounter(tot_mgr_heartbeat, 0, 1, 1000);
     waitForCounter(new Expr() {
       @Override
