@@ -98,12 +98,12 @@ import org.apache.zookeeper.data.Stat;
 public class SplitLogManager extends ZooKeeperListener {
   private static final Log LOG = LogFactory.getLog(SplitLogManager.class);
 
-  public static final int DEFAULT_TIMEOUT = 25000; // 25 sec
+  public static final int DEFAULT_TIMEOUT = 120000;
   public static final int DEFAULT_ZK_RETRIES = 3;
   public static final int DEFAULT_MAX_RESUBMIT = 3;
   public static final int DEFAULT_UNASSIGNED_TIMEOUT = (3 * 60 * 1000); //3 min
 
-  private final Stoppable stopper;
+  private final HMaster stopper;
   private final ServerName serverName;
   private final TaskFinisher taskFinisher;
   private FileSystem fs;
@@ -116,11 +116,11 @@ public class SplitLogManager extends ZooKeeperListener {
   private long lastNodeCreateTime = Long.MAX_VALUE;
   public boolean ignoreZKDeleteForTesting = false;
 
-  private ConcurrentMap<String, Task> tasks = new ConcurrentHashMap<String, Task>();
+  private final ConcurrentMap<String, Task> tasks = new ConcurrentHashMap<String, Task>();
   private TimeoutMonitor timeoutMonitor;
 
   private volatile Set<ServerName> deadWorkers = null;
-  private Object deadWorkersLock = new Object();
+  private final Object deadWorkersLock = new Object();
 
   /**
    * Wrapper around {@link #SplitLogManager(ZooKeeperWatcher, Configuration,
@@ -135,7 +135,7 @@ public class SplitLogManager extends ZooKeeperListener {
    * @param serverName
    */
   public SplitLogManager(ZooKeeperWatcher zkw, final Configuration conf,
-      Stoppable stopper, ServerName serverName) {
+       HMaster stopper, ServerName serverName) {
     this(zkw, conf, stopper, serverName, new TaskFinisher() {
       @Override
       public Status finish(ServerName workerName, String logfile) {
@@ -162,7 +162,7 @@ public class SplitLogManager extends ZooKeeperListener {
    * @param tf task finisher 
    */
   public SplitLogManager(ZooKeeperWatcher zkw, Configuration conf,
-      Stoppable stopper, ServerName serverName, TaskFinisher tf) {
+       HMaster stopper, ServerName serverName, TaskFinisher tf) {
     super(zkw);
     this.taskFinisher = tf;
     this.conf = conf;
@@ -172,8 +172,8 @@ public class SplitLogManager extends ZooKeeperListener {
     this.timeout = conf.getInt("hbase.splitlog.manager.timeout", DEFAULT_TIMEOUT);
     this.unassignedTimeout =
       conf.getInt("hbase.splitlog.manager.unassigned.timeout", DEFAULT_UNASSIGNED_TIMEOUT);
-    LOG.debug("timeout = " + timeout);
-    LOG.debug("unassigned timeout = " + unassignedTimeout);
+    LOG.info("timeout = " + timeout);
+    LOG.info("unassigned timeout = " + unassignedTimeout);
 
     this.serverName = serverName;
     this.timeoutMonitor =
@@ -551,8 +551,18 @@ public class SplitLogManager extends ZooKeeperListener {
     }
     int version;
     if (directive != FORCE) {
-      if ((EnvironmentEdgeManager.currentTimeMillis() - task.last_update) <
-          timeout) {
+      // We're going to resubmit
+      //  immediately if the worker server is now marked as dead
+      //  after a configurable timeout if the server is not marked as dead but has still not
+      //   finished the task. This allows to continue if the worker cannot actually handle it,
+      //    for any reason.
+      // However, if we now that the worker is marked as dead, we resubmit immediately.
+      final long exeTime = EnvironmentEdgeManager.currentTimeMillis() - task.last_update;
+      if (stopper.getServerManager().isServerOnline(task.cur_worker_name) &&
+          exeTime < timeout) {
+        LOG.info("Skipping the resubmit of " + task.toString() + "  because the server " +
+            task.cur_worker_name + "is still up and running, and the execution time is " + exeTime +
+            "while the timeout is " + timeout);
         return false;
       }
       if (task.unforcedResubmits >= resubmit_threshold) {

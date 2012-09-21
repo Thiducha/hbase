@@ -84,7 +84,7 @@ public class MasterFileSystem {
   final SplitLogManager splitLogManager;
   private final MasterServices services;
 
-  public MasterFileSystem(Server master, MasterServices services,
+  public MasterFileSystem(HMaster master, MasterServices services,
       MasterMetrics metrics, boolean masterRecovery)
   throws IOException {
     this.conf = master.getConfiguration();
