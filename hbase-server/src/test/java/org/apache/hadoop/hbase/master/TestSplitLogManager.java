@@ -468,7 +468,7 @@ public class TestSplitLogManager {
       ZKUtil.setData(zkw, tasknode1, slt.toByteArray());
     }
 
-    Mockito.when(sm.isServerOnline(null)).thenReturn(false);
+    Mockito.when(sm.isServerOnline(null)).thenReturn(true);
 
     // since we have stopped heartbeating the owned node therefore it should
     // get resubmitted
