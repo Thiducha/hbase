@@ -448,6 +448,8 @@ public class TestSplitLogManager {
     conf.setInt("hbase.splitlog.manager.unassigned.timeout", 2 * to);
     conf.setInt("hbase.splitlog.manager.timeoutmonitor.period", 100);
 
+    Mockito.when(sm.isServerOnline(worker1)).thenReturn(false);
+    Mockito.when(master.getServerManager()).thenReturn(sm);
 
     slm = new SplitLogManager(zkw, conf, stopper, master, DUMMY_MASTER, null);
     slm.finishInitialization();
