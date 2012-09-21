@@ -112,15 +112,9 @@ public class TestSplitLogManager {
   @Before
   public void setUpBefore() throws Exception {
     // By default, we let the test manage the error as before, so the server
-    //  does not appear as dead from the master point of view
+    //  does not appear as dead from the master point of view, only from the split log pov.
     Mockito.when(sm.isServerOnline(Mockito.any(ServerName.class))).thenReturn(true);
-    Mockito.when(sm.isServerOnline(DUMMY_MASTER)).thenReturn(false);
     Mockito.when(master.getServerManager()).thenReturn(sm);
-
-    Assert.assertFalse( "b", master.getServerManager().isServerOnline(DUMMY_MASTER));
-
-    Assert.assertTrue( "a", master.getServerManager().isServerOnline(new ServerName("a",1000, 12)) );
-
   }
 
   @Before
@@ -246,9 +240,6 @@ public class TestSplitLogManager {
         (task.last_update > (curt - 1000)));
     LOG.info("waiting for manager to resubmit the orphan task");
 
-    Mockito.when(sm.isServerOnline(null)).thenReturn(true);
-    Mockito.when(master.getServerManager()).thenReturn(sm);
-
     waitForCounter(tot_mgr_resubmit, 0, 1, to + 300);
     assertTrue(task.isUnassigned());
     waitForCounter(tot_mgr_rescan, 0, 1, to + 100);
@@ -306,9 +297,6 @@ public class TestSplitLogManager {
     SplitLogTask slt = new SplitLogTask.Owned(worker1);
     ZKUtil.setData(zkw, tasknode, slt.toByteArray());
 
-    Mockito.when(sm.isServerOnline(worker1)).thenReturn(false);
-    Mockito.when(master.getServerManager()).thenReturn(sm);
-
     waitForCounter(tot_mgr_heartbeat, 0, 1, 1000);
     waitForCounter(tot_mgr_resubmit, 0, 1, to + EXTRA_TOLERANCE_MS);
     int version1 = ZKUtil.checkExists(zkw, tasknode);
@@ -342,9 +330,6 @@ public class TestSplitLogManager {
     final ServerName worker1 = new ServerName("worker1,1,1");
     SplitLogTask slt = new SplitLogTask.Owned(worker1);
     ZKUtil.setData(zkw, tasknode, slt.toByteArray());
-
-    Mockito.when(sm.isServerOnline(worker1)).thenReturn(false);
-    Mockito.when(master.getServerManager()).thenReturn(sm);
 
     waitForCounter(tot_mgr_heartbeat, 0, 1, 1000);
     waitForCounter(new Expr() {
@@ -396,9 +381,6 @@ public class TestSplitLogManager {
     final ServerName worker1 = new ServerName("worker1,1,1");
     SplitLogTask slt = new SplitLogTask.Err(worker1);
     ZKUtil.setData(zkw, tasknode, slt.toByteArray());
-
-    Mockito.when(sm.isServerOnline(worker1)).thenReturn(false);
-    Mockito.when(master.getServerManager()).thenReturn(sm);
 
     synchronized (batch) {
       while (batch.installed != batch.error) {
