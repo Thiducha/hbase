@@ -98,7 +98,7 @@ import org.apache.zookeeper.data.Stat;
 public class SplitLogManager extends ZooKeeperListener {
   private static final Log LOG = LogFactory.getLog(SplitLogManager.class);
 
-  public static final int DEFAULT_TIMEOUT = 120000;
+  public static final int DEFAULT_TIMEOUT = 120000; // 2 mins
   public static final int DEFAULT_ZK_RETRIES = 3;
   public static final int DEFAULT_MAX_RESUBMIT = 3;
   public static final int DEFAULT_UNASSIGNED_TIMEOUT = (3 * 60 * 1000); //3 min
