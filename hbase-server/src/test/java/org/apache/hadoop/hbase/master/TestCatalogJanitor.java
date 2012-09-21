@@ -23,7 +23,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 
 import java.io.FileNotFoundException;
@@ -206,9 +205,7 @@ public class TestCatalogJanitor {
 
     @Override
     public ServerManager getServerManager() {
-      ServerManager sm = Mockito.mock(ServerManager.class);
-      Mockito.when(sm.isServerOnline(Mockito.any(ServerName.class))).thenReturn(true);
-      return Mockito.mock(ServerManager.class);
+      return null;
     }
 
     @Override
