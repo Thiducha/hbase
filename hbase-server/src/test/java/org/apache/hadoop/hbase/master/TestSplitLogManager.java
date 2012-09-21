@@ -117,8 +117,9 @@ public class TestSplitLogManager {
     Mockito.when(sm.isServerOnline(DUMMY_MASTER)).thenReturn(false);
     Mockito.when(master.getServerManager()).thenReturn(sm);
 
-    Assert.assertTrue( "a", master.getServerManager().isServerOnline(new ServerName("a",1000, 12)) );
     Assert.assertFalse( "b", master.getServerManager().isServerOnline(DUMMY_MASTER));
+
+    Assert.assertTrue( "a", master.getServerManager().isServerOnline(new ServerName("a",1000, 12)) );
 
   }
 
