@@ -553,12 +553,11 @@ public class SplitLogManager extends ZooKeeperListener {
     }
     int version;
     if (directive != FORCE) {
-      // We're going to resubmit
-      //  immediately if the worker server is now marked as dead
-      //  after a configurable timeout if the server is not marked as dead but has still not
-      //   finished the task. This allows to continue if the worker cannot actually handle it,
-      //    for any reason.
-      // However, if we now that the worker is marked as dead, we resubmit immediately.
+      // We're going to resubmit:
+      //  1) immediately if the worker server is now marked as dead
+      //  2) after a configurable timeout if the server is not marked as dead but has still not
+      //       finished the task. This allows to continue if the worker cannot actually handle it,
+      //       for any reason.
       final long time = EnvironmentEdgeManager.currentTimeMillis() - task.last_update;
       final boolean alive = master.getServerManager() != null ?
           master.getServerManager().isServerOnline(task.cur_worker_name) : true;
