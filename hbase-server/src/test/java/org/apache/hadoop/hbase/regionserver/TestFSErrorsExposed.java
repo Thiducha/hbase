@@ -176,7 +176,6 @@ public class TestFSErrorsExposed {
 
       util.getConfiguration().setInt("hbase.client.retries.number", 3);
 
-
       util.startMiniCluster(1);
       byte[] tableName = Bytes.toBytes("table");
       byte[] fam = Bytes.toBytes("fam");
