@@ -75,7 +75,6 @@ public class ResourceJUnitListener extends RunListener {
 
   public void testIgnored(org.junit.runner.Description description) throws java.lang.Exception {
     System.err.println(" testIgnored  " );
-
   }
 }
 
