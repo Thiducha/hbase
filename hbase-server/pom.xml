@@ -198,7 +198,7 @@
           <properties>
             <property>
               <name>listener</name>
-              <value>org.apache.hadoop.test.TimedOutTestsListener</value>
+              <value>org.apache.hbase.ResourceJUnitListener</value>
             </property>
           </properties>
         </configuration>
