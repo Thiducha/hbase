@@ -10,8 +10,6 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class ResourceCheckerJUnitListener extends RunListener {
-  private String processId = ManagementFactory.getRuntimeMXBean().getName();
-
   private Map<String, ResourceChecker> rcs = new HashMap<String, ResourceChecker>();
 
   static class ThreadResourceAnalyzer extends ResourceChecker.ResourceAnalyzer {

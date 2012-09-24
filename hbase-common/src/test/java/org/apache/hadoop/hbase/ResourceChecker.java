@@ -105,10 +105,17 @@ public class ResourceChecker {
   }
 
   private void logInit() {
-    log(initialValues);
+    int i = 0;
+    StringBuilder sb = new StringBuilder();
+    for (ResourceAnalyzer ra : ras) {
+      int cur = initialValues[i++];
+      if (sb.length() > 0) sb.append(", ");
+      sb.append(ra.getName()).append("= ").append(cur);
+    }
+    LOG.info("before: " + tagLine + " " + sb);
   }
 
-  private void logEnding() {
+  private void logEndings() {
     int i = 0;
     StringBuilder sb = new StringBuilder();
     for (ResourceAnalyzer ra : ras) {
@@ -121,17 +128,6 @@ public class ResourceChecker {
       }
     }
     LOG.info("after: " + tagLine + " " + sb);
-  }
-
-  private void log(int[] vals) {
-    int i = 0;
-    StringBuilder sb = new StringBuilder();
-    for (ResourceAnalyzer ra : ras) {
-      int cur = vals[i++];
-      if (sb.length() > 0) sb.append(", ");
-      sb.append(ra.getName()).append("= ").append(cur);
-    }
-    LOG.info("before: " + tagLine + " " + sb);
   }
 
 
@@ -156,7 +152,7 @@ public class ResourceChecker {
     }
 
     fillEndings();
-    logEnding();
+    logEndings();
     checkEndings();
   }
 
