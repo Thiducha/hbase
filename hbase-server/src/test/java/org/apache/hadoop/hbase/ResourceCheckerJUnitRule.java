@@ -28,7 +28,7 @@ package org.apache.hadoop.hbase;
  *  @see ResourceChecker
  */
 public class ResourceCheckerJUnitRule extends org.junit.rules.TestWatcher {
-  private ResourceChecker cu;
+  //private ResourceChecker cu;
   private boolean endDone;
 
   /**
@@ -36,7 +36,7 @@ public class ResourceCheckerJUnitRule extends org.junit.rules.TestWatcher {
    * @param testName
    */
   private void start(String testName) {
-    cu = new ResourceChecker("before "+testName);
+    //cu = new ResourceChecker("before "+testName);
     endDone = false;
   }
 
@@ -47,8 +47,8 @@ public class ResourceCheckerJUnitRule extends org.junit.rules.TestWatcher {
   private void end(String testName) {
     if (!endDone) {
       endDone = true;
-      cu.logInfo("after " + testName);
-      cu.check("after "+testName);
+      //cu.logInfo("after " + testName);
+      //cu.check("after "+testName);
     }
   }
 
