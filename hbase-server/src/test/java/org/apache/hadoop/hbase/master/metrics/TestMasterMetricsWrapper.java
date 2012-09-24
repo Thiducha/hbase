@@ -21,7 +21,6 @@ import junit.framework.Assert;
 
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.master.HMaster;
-import org.apache.hadoop.hbase.master.metrics.MasterMetricsWrapperImpl;
 import org.apache.hadoop.hbase.MediumTests;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;

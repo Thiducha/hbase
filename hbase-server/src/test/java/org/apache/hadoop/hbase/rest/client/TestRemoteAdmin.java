@@ -20,9 +20,7 @@
 package org.apache.hadoop.hbase.rest.client;
 
 import org.apache.hadoop.hbase.*;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.rest.HBaseRESTTestingUtility;
-import org.apache.hadoop.hbase.rest.client.Client;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import static org.junit.Assert.*;

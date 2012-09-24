@@ -32,8 +32,6 @@ import static org.apache.hadoop.hbase.HBaseTestCase.assertByteEquals;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
 
 @Category(SmallTests.class)
 public class TestResult extends TestCase {

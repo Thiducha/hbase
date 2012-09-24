@@ -21,9 +21,9 @@ package org.apache.hadoop.hbase.metrics;
 import java.util.Arrays;
 import java.util.Random;
 
+import org.apache.hadoop.hbase.SmallTests;
 import org.apache.hadoop.hbase.metrics.histogram.MetricsHistogram;
 import com.yammer.metrics.stats.Snapshot;
-import org.apache.hadoop.hbase.SmallTests;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;

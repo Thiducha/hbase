@@ -28,7 +28,6 @@ import org.apache.hadoop.hbase.io.hfile.slab.SlabCache.SlabStats;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.Ignore;
 import org.junit.experimental.categories.Category;
 
 /**

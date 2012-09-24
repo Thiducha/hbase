@@ -20,10 +20,10 @@ package org.apache.hadoop.hbase.io.hfile;
 
 import java.nio.ByteBuffer;
 
+import org.apache.hadoop.hbase.SmallTests;
 import org.apache.hadoop.hbase.regionserver.metrics.SchemaMetrics;
 
 import junit.framework.TestCase;
-import org.apache.hadoop.hbase.SmallTests;
 import org.junit.experimental.categories.Category;
 
 @Category(SmallTests.class)

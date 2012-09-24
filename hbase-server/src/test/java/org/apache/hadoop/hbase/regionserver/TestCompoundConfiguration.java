@@ -23,10 +23,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
-import org.apache.hadoop.hbase.regionserver.CompoundConfiguration;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.SmallTests;
+import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
+import org.apache.hadoop.hbase.util.Bytes;
 
 import org.junit.experimental.categories.Category;
 import org.junit.Test;

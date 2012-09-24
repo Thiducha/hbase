@@ -31,8 +31,6 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.concurrent.CountDownLatch;
 
-import junit.framework.Assert;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
