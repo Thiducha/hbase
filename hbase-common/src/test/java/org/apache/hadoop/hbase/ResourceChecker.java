@@ -134,7 +134,7 @@ public class ResourceChecker {
       int curP = initialValues[i];
       int curN = endingValues[i++];
       if (sb.length() > 0) sb.append(", ");
-      sb.append(ra.getName()).append("=").append(curN).append(" was (").append(curP).append(")");
+      sb.append(ra.getName()).append("=").append(curN).append(" (was ").append(curP).append(")");
       if (curN > curP) {
         sb.append(" - ").append(ra.getName()).append(" LEAK? -");
       }

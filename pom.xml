@@ -1535,7 +1535,6 @@
       </activation>
       <properties>
         <surefire.provider>surefire-junit4</surefire.provider>
-        <surefire.version>2.10</surefire.version>
         <surefire.firstPartForkMode>always</surefire.firstPartForkMode>
         <surefire.skipFirstPart>false</surefire.skipFirstPart>
         <surefire.skipSecondPart>true</surefire.skipSecondPart>
