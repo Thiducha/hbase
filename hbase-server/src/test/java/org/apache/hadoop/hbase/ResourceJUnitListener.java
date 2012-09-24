@@ -7,6 +7,9 @@ public class ResourceJUnitListener extends RunListener {
   private ResourceChecker cu;
   private boolean endDone;
 
+
+  public ResourceJUnitListener(){}
+
   /**
    * To be called before the test methods
    *
