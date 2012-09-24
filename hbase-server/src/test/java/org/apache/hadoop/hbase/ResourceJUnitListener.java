@@ -41,7 +41,6 @@ public class ResourceJUnitListener extends RunListener {
   }
 
   public void testRunStarted(org.junit.runner.Description description) throws java.lang.Exception {
-    System.exit(1);
     System.err.println("AAAAAAAAAAAAAAAA testRunStarted  " );
 
   }
