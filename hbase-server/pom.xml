@@ -198,7 +198,7 @@
           <properties>
             <property>
               <name>listener</name>
-              <value>org.apache.hbase.ResourceJUnitListener</value>
+              <value>org.apache.hadoop.hbase.ResourceJUnitListener</value>
             </property>
           </properties>
         </configuration>
