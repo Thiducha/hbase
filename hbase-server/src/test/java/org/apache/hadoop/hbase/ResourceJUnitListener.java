@@ -12,7 +12,6 @@ public class ResourceJUnitListener extends RunListener {
   private boolean endDone;
 
   public ResourceJUnitListener() {
-    System.err.println("AAAAAAAAAAAAAAAA ResourceJUnitListener  ");
   }
 
   /**
@@ -53,35 +52,26 @@ public class ResourceJUnitListener extends RunListener {
   }
 
   public void testRunStarted(org.junit.runner.Description description) throws java.lang.Exception {
-    System.err.println("AAAAAAAAAAAAAAAA testRunStarted  " + ManagementFactory.getRuntimeMXBean().getName());
   }
 
   public void testRunFinished(org.junit.runner.Result result) throws java.lang.Exception {
-    System.err.println("AAAAAAAAAAAAAAAAA testRunFinished  " + ManagementFactory.getRuntimeMXBean().getName());
-
   }
 
   public void testStarted(org.junit.runner.Description description) throws java.lang.Exception {
-    System.err.println("AAAAAAAAAAAAAAAA testStarted  " + ManagementFactory.getRuntimeMXBean().getName());
     start(descriptionToShortTestName(description));
   }
 
   public void testFinished(org.junit.runner.Description description) throws java.lang.Exception {
-    System.err.println("AAAAAAAAAAAAAAAA testFinished  " + ManagementFactory.getRuntimeMXBean().getName());
     end(descriptionToShortTestName(description));
   }
 
   public void testFailure(org.junit.runner.notification.Failure failure) throws java.lang.Exception {
-    System.err.println("AAAAAAAAAAAAAAAA testFailure  " + ManagementFactory.getRuntimeMXBean().getName());
   }
 
   public void testAssumptionFailure(org.junit.runner.notification.Failure failure) {
-    System.err.println("AAAAAAAAAAAAAAAA testAssumptionFailure  " + ManagementFactory.getRuntimeMXBean().getName());
-
   }
 
   public void testIgnored(org.junit.runner.Description description) throws java.lang.Exception {
-    System.err.println("AAAAAAAAAAAAAAAA testIgnored  ");
   }
 }
 
