@@ -116,6 +116,9 @@ public class ResourceChecker {
   }
 
   private void logEndings() {
+    assert initialValues.length == ras.size();
+    assert endingValues.length == ras.size();
+
     int i = 0;
     StringBuilder sb = new StringBuilder();
     for (ResourceAnalyzer ra : ras) {
