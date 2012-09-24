@@ -1,10 +1,15 @@
 package org.apache.hadoop.hbase;
 
 
+import com.sun.management.UnixOperatingSystemMXBean;
 import org.junit.runner.notification.RunListener;
 
+import java.lang.management.ManagementFactory;
+
 public class ResourceJUnitListener extends RunListener {
-  public ResourceJUnitListener(){}
+  public ResourceJUnitListener(){
+    System.err.println("AAAAAAAAAAAAAAAA ResourceJUnitListener  "+ManagementFactory.getRuntimeMXBean().getName() );
+  }
 
   /**
    * To be called before the test methods
