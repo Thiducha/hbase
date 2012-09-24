@@ -25,6 +25,12 @@ import org.apache.commons.logging.LogFactory;
 import java.util.*;
 
 
+/**
+ * Utility class to check the resources:
+ *  - log them before and after each test method
+ *  - check them against a minimum or maximum
+ *  - check that they don't leak during the test
+ */
 public class ResourceChecker {
   private static final Log LOG = LogFactory.getLog(ResourceChecker.class);
   private String tagLine;
@@ -34,6 +40,9 @@ public class ResourceChecker {
   }
 
 
+  /**
+   * Class to implement for each type of resource.
+   */
   abstract static class ResourceAnalyzer {
     /**
      * Maximum we set for the resource. Will get a warning in logs
@@ -96,10 +105,10 @@ public class ResourceChecker {
     for (ResourceAnalyzer ra : ras) {
       int cur = vals[i++];
       if (cur < ra.getMin()) {
-        LOG.warn(ra.getName() + ": " + cur + " is inferior to " + ra.getMin());
+        LOG.warn(ra.getName() + "=" + cur + " is inferior to " + ra.getMin());
       }
       if (cur > ra.getMax()) {
-        LOG.warn(ra.getName() + ": " + cur + " is superior to " + ra.getMax());
+        LOG.warn(ra.getName() + "=" + cur + " is superior to " + ra.getMax());
       }
     }
   }
@@ -110,7 +119,7 @@ public class ResourceChecker {
     for (ResourceAnalyzer ra : ras) {
       int cur = initialValues[i++];
       if (sb.length() > 0) sb.append(", ");
-      sb.append(ra.getName()).append("= ").append(cur);
+      sb.append(ra.getName()).append("=").append(cur);
     }
     LOG.info("before: " + tagLine + " " + sb);
   }
@@ -125,7 +134,7 @@ public class ResourceChecker {
       int curP = initialValues[i];
       int curN = endingValues[i++];
       if (sb.length() > 0) sb.append(", ");
-      sb.append(ra.getName()).append("= ").append(curN).append(" was (").append(curP).append(")");
+      sb.append(ra.getName()).append("=").append(curN).append(" was (").append(curP).append(")");
       if (curN > curP) {
         sb.append(" - ").append(ra.getName()).append(" LEAK? -");
       }
