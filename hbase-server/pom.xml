@@ -194,6 +194,14 @@
       <!-- Testing plugins -->
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <properties>
+            <property>
+              <name>listener</name>
+              <value>org.apache.hadoop.test.TimedOutTestsListener</value>
+            </property>
+          </properties>
+        </configuration>
       </plugin>
     </plugins>
     <!-- General Resources -->
