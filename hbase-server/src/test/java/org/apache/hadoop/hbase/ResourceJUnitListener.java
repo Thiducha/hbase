@@ -4,7 +4,7 @@ package org.apache.hadoop.hbase;
 import org.junit.runner.notification.RunListener;
 
 public class ResourceJUnitListener extends RunListener {
-  public ResourceJUnitListener(){System.exit(1);}
+  public ResourceJUnitListener(){}
 
   /**
    * To be called before the test methods
@@ -36,6 +36,7 @@ public class ResourceJUnitListener extends RunListener {
   }
 
   public void testRunStarted(org.junit.runner.Description description) throws java.lang.Exception {
+    System.exit(1);
     System.err.println("AAAAAAAAAAAAAAAA testRunStarted  " );
 
   }
