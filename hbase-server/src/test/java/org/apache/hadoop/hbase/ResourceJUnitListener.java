@@ -4,7 +4,7 @@ package org.apache.hadoop.hbase;
 import org.junit.runner.notification.RunListener;
 
 public class ResourceJUnitListener extends RunListener {
-  public ResourceJUnitListener(){}
+  public ResourceJUnitListener(){System.exit(1);}
 
   /**
    * To be called before the test methods
@@ -31,7 +31,7 @@ public class ResourceJUnitListener extends RunListener {
   private String descriptionToShortTestName(
       org.junit.runner.Description description) {
     final int toRemove = "org.apache.hadoop.hbase.".length();
-    System.err.println(""+description);
+    System.err.println("" + description);
     return null;// description.getTestClass().getName().substring(toRemove) + "#" + description.getMethodName();
   }
 
@@ -46,7 +46,7 @@ public class ResourceJUnitListener extends RunListener {
   }
 
   public void testStarted(org.junit.runner.Description description) throws java.lang.Exception {
-    System.err.println("AAAAAAAAAAAAAAAA testStarted  " );
+    System.err.println("AAAAAAAAAAAAAAAA testStarted  ");
   }
 
   public void testFinished(org.junit.runner.Description description) throws java.lang.Exception {
@@ -54,7 +54,7 @@ public class ResourceJUnitListener extends RunListener {
   }
 
   public void testFailure(org.junit.runner.notification.Failure failure) throws java.lang.Exception {
-    System.err.println("AAAAAAAAAAAAAAAA testFailure  " );
+    System.err.println("AAAAAAAAAAAAAAAA testFailure  ");
   }
 
   public void testAssumptionFailure(org.junit.runner.notification.Failure failure) {
