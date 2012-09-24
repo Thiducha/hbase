@@ -66,12 +66,12 @@ public class ResourceChecker {
   private int[] endingValues;
 
 
-  public void fillInit() {
+  private void fillInit() {
     initialValues = new int[ras.size()];
     fill(initialValues);
   }
 
-  public void fillEndings() {
+  private void fillEndings() {
     endingValues = new int[ras.size()];
     fill(endingValues);
   }
@@ -87,11 +87,11 @@ public class ResourceChecker {
     check(initialValues);
   }
 
-  public void checkEndings() {
+  private void checkEndings() {
     check(endingValues);
   }
 
-  public void check(int[] vals) {
+  private void check(int[] vals) {
     int i = 0;
     for (ResourceAnalyzer ra : ras) {
       int cur = vals[i++];
@@ -104,11 +104,11 @@ public class ResourceChecker {
     }
   }
 
-  public void logInit() {
+  private void logInit() {
     log(initialValues);
   }
 
-  public void logEnding() {
+  private void logEnding() {
     int i = 0;
     StringBuilder sb = new StringBuilder();
     for (ResourceAnalyzer ra : ras) {
@@ -123,7 +123,7 @@ public class ResourceChecker {
     LOG.info("after: " + tagLine + " " + sb);
   }
 
-  public void log(int[] vals) {
+  private void log(int[] vals) {
     int i = 0;
     StringBuilder sb = new StringBuilder();
     for (ResourceAnalyzer ra : ras) {
