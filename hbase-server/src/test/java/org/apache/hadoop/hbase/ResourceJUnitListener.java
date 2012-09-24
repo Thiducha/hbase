@@ -44,25 +44,38 @@ public class ResourceJUnitListener extends RunListener {
   }
 
   public void testRunStarted(org.junit.runner.Description description) throws java.lang.Exception {
+    System.err.println(" testRunStarted  " );
+
   }
 
   public void testRunFinished(org.junit.runner.Result result) throws java.lang.Exception {
+    System.err.println(" testRunFinished  " );
+
   }
 
   public void testStarted(org.junit.runner.Description description) throws java.lang.Exception {
+    System.err.println(" testStarted  " );
     start(descriptionToShortTestName(description));
   }
 
   public void testFinished(org.junit.runner.Description description) throws java.lang.Exception {
+    System.err.println(" testFinished  " );
+
     end(descriptionToShortTestName(description));
   }
 
   public void testFailure(org.junit.runner.notification.Failure failure) throws java.lang.Exception {
+    System.err.println(" testFailure  " );
   }
 
   public void testAssumptionFailure(org.junit.runner.notification.Failure failure) {
+    System.err.println(" testAssumptionFailure  " );
+
   }
 
   public void testIgnored(org.junit.runner.Description description) throws java.lang.Exception {
+    System.err.println(" testIgnored  " );
+
   }
 }
+
