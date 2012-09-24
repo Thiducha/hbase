@@ -4,10 +4,6 @@ package org.apache.hadoop.hbase;
 import org.junit.runner.notification.RunListener;
 
 public class ResourceJUnitListener extends RunListener {
-  private ResourceChecker cu;
-  private boolean endDone;
-
-
   public ResourceJUnitListener(){}
 
   /**
@@ -16,8 +12,6 @@ public class ResourceJUnitListener extends RunListener {
    * @param testName
    */
   private void start(String testName) {
-    cu = new ResourceChecker("before " + testName);
-    endDone = false;
   }
 
   /**
@@ -26,11 +20,6 @@ public class ResourceJUnitListener extends RunListener {
    * @param testName
    */
   private void end(String testName) {
-    if (!endDone) {
-      endDone = true;
-      cu.logInfo("after " + testName);
-      cu.check("after " + testName);
-    }
   }
 
   /**
@@ -42,8 +31,8 @@ public class ResourceJUnitListener extends RunListener {
   private String descriptionToShortTestName(
       org.junit.runner.Description description) {
     final int toRemove = "org.apache.hadoop.hbase.".length();
-    return description.getTestClass().getName().substring(toRemove) +
-        "#" + description.getMethodName();
+    System.err.println(""+description);
+    return null;// description.getTestClass().getName().substring(toRemove) + "#" + description.getMethodName();
   }
 
   public void testRunStarted(org.junit.runner.Description description) throws java.lang.Exception {
