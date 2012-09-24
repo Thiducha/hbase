@@ -51,7 +51,7 @@ public class ResourceChecker {
       String className = this.getClass().getSimpleName();
       final String extName = ResourceAnalyzer.class.getSimpleName();
       if (className.endsWith(extName)) {
-        return className.substring(className.length() - extName.length());
+        return className.substring(0, className.length() - extName.length());
       } else {
         return className;
       }
