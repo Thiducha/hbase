@@ -36,37 +36,34 @@ public class ResourceJUnitListener extends RunListener {
   }
 
   public void testRunStarted(org.junit.runner.Description description) throws java.lang.Exception {
-    System.err.println(" testRunStarted  " );
+    System.err.println("AAAAAAAAAAAAAAAA testRunStarted  " );
 
   }
 
   public void testRunFinished(org.junit.runner.Result result) throws java.lang.Exception {
-    System.err.println(" testRunFinished  " );
+    System.err.println("AAAAAAAAAAAAAAAAA testRunFinished  " );
 
   }
 
   public void testStarted(org.junit.runner.Description description) throws java.lang.Exception {
-    System.err.println(" testStarted  " );
-    start(descriptionToShortTestName(description));
+    System.err.println("AAAAAAAAAAAAAAAA testStarted  " );
   }
 
   public void testFinished(org.junit.runner.Description description) throws java.lang.Exception {
-    System.err.println(" testFinished  " );
-
-    end(descriptionToShortTestName(description));
+    System.err.println("AAAAAAAAAAAAAAAA testFinished  " );
   }
 
   public void testFailure(org.junit.runner.notification.Failure failure) throws java.lang.Exception {
-    System.err.println(" testFailure  " );
+    System.err.println("AAAAAAAAAAAAAAAA testFailure  " );
   }
 
   public void testAssumptionFailure(org.junit.runner.notification.Failure failure) {
-    System.err.println(" testAssumptionFailure  " );
+    System.err.println("AAAAAAAAAAAAAAAA testAssumptionFailure  " );
 
   }
 
   public void testIgnored(org.junit.runner.Description description) throws java.lang.Exception {
-    System.err.println(" testIgnored  " );
+    System.err.println("AAAAAAAAAAAAAAAA testIgnored  " );
   }
 }
 
