@@ -1,3 +1,22 @@
+/*
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.hadoop.hbase;
 
 
@@ -9,14 +28,24 @@ import java.lang.management.OperatingSystemMXBean;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Listen to the test progress and check the usage of:
+ * - threads
+ * - open file descriptor
+ * - max open file descriptor
+ * <p/>
+ * When surefire forkMode=once/always/perthread, this code is executed on the forked process.
+ */
 public class ResourceCheckerJUnitListener extends RunListener {
   private Map<String, ResourceChecker> rcs = new HashMap<String, ResourceChecker>();
 
   static class ThreadResourceAnalyzer extends ResourceChecker.ResourceAnalyzer {
+    @Override
     public int getVal() {
       return Thread.getAllStackTraces().size();
     }
 
+    @Override
     public int getMax() {
       return 500;
     }
@@ -30,8 +59,7 @@ public class ResourceCheckerJUnitListener extends RunListener {
     protected static final UnixOperatingSystemMXBean unixOsStats;
 
     static {
-      osStats =
-          ManagementFactory.getOperatingSystemMXBean();
+      osStats = ManagementFactory.getOperatingSystemMXBean();
       if (osStats instanceof UnixOperatingSystemMXBean) {
         unixOsStats = (UnixOperatingSystemMXBean) osStats;
       } else {
@@ -50,6 +78,7 @@ public class ResourceCheckerJUnitListener extends RunListener {
       }
     }
 
+    @Override
     public int getMax() {
       return 1024;
     }
@@ -70,14 +99,13 @@ public class ResourceCheckerJUnitListener extends RunListener {
   public ResourceCheckerJUnitListener() {
   }
 
+  /**
+   * To be implemented by sub classes if they want to add specific ResourceAnalyzer.
+   */
   protected void addResourceAnalyzer(ResourceChecker rc) {
   }
 
-  /**
-   * To be called before the test methods
-   *
-   * @param testName
-   */
+
   private void start(String testName) {
     ResourceChecker rc = new ResourceChecker(testName);
     rc.addResourceAnalyzer(new ThreadResourceAnalyzer());
@@ -91,11 +119,6 @@ public class ResourceCheckerJUnitListener extends RunListener {
     rc.start();
   }
 
-  /**
-   * To be called after the test methods
-   *
-   * @param testName
-   */
   private void end(String testName) {
     ResourceChecker rc = rcs.remove(testName);
     assert rc != null;
@@ -114,10 +137,12 @@ public class ResourceCheckerJUnitListener extends RunListener {
         "#" + description.getMethodName();
   }
 
+  @Override
   public void testStarted(org.junit.runner.Description description) throws java.lang.Exception {
     start(descriptionToShortTestName(description));
   }
 
+  @Override
   public void testFinished(org.junit.runner.Description description) throws java.lang.Exception {
     end(descriptionToShortTestName(description));
   }
