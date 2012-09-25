@@ -25,8 +25,8 @@ import org.junit.runner.notification.RunListener;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Listen to the test progress and check the usage of:
@@ -37,7 +37,7 @@ import java.util.Map;
  * When surefire forkMode=once/always/perthread, this code is executed on the forked process.
  */
 public class ResourceCheckerJUnitListener extends RunListener {
-  private Map<String, ResourceChecker> rcs = new HashMap<String, ResourceChecker>();
+  private Map<String, ResourceChecker> rcs = new ConcurrentHashMap<String, ResourceChecker>();
 
   static class ThreadResourceAnalyzer extends ResourceChecker.ResourceAnalyzer {
     @Override
