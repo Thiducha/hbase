@@ -355,9 +355,6 @@ public class TestHRegionInfo {
     // ...
   }
 ...
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }</programlisting>
 The above example shows how to mark a test as belonging to the small category.  The <code>@org.junit.Rule</code>
 lines on the end are also necessary. Add them to each new unit test file.  They are needed by the categorization process.
