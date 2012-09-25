@@ -47,8 +47,6 @@ public class ResourceCheckerJUnitRule extends org.junit.rules.TestWatcher {
   private void end(String testName) {
     if (!endDone) {
       endDone = true;
-      cu.logInfo("after " + testName);
-      cu.check("after "+testName);
     }
   }
 
