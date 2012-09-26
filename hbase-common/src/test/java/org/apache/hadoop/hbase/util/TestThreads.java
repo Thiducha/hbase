@@ -74,7 +74,4 @@ public class TestThreads {
     LOG.debug("Target sleep time: " + SLEEP_TIME_MS + ", time elapsed: " +
         timeElapsed);
   }
-
-
 }
-
