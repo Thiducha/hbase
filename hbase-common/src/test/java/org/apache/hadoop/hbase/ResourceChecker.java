@@ -35,7 +35,11 @@ public class ResourceChecker {
   private static final Log LOG = LogFactory.getLog(ResourceChecker.class);
   private String tagLine;
 
-  public ResourceChecker(String tagLine) {
+  /**
+   * Constructor
+   * @param tagLine - the tagLine is added to the logs. Must be be null.
+   */
+  public ResourceChecker(final String tagLine) {
     this.tagLine = tagLine;
   }
 
@@ -46,16 +50,24 @@ public class ResourceChecker {
   abstract static class ResourceAnalyzer {
     /**
      * Maximum we set for the resource. Will get a warning in logs
-     * if we go other this limit.
+     * if we go over this limit.
      */
     public int getMax() {
       return Integer.MAX_VALUE;
     }
 
+    /**
+     * Minimum we set for the resource. Will get a warning in logs
+     * if we go under this limit.
+     */
     public int getMin() {
       return Integer.MIN_VALUE;
     }
 
+    /**
+     * Name of the resource analyzed. By default extracted from the class name, but
+     *  can be overridden by the subclasses.
+     */
     public String getName() {
       String className = this.getClass().getSimpleName();
       final String extName = ResourceAnalyzer.class.getSimpleName();
@@ -66,6 +78,9 @@ public class ResourceChecker {
       }
     }
 
+    /**
+     * The value for the resource.
+     */
     abstract public int getVal();
   }
 
@@ -143,6 +158,12 @@ public class ResourceChecker {
   }
 
 
+  /**
+   * To be called as the beginning of a test method:
+   * - measure the resources
+   * - check vs. the limits.
+   * - logs them.
+   */
   public void start() {
     if (ras.size() == 0) {
       LOG.info("No resource analyzer");
@@ -153,6 +174,13 @@ public class ResourceChecker {
     checkInit();
   }
 
+  /**
+   * To be called as the end of a test method:
+   * - measure the resources
+   * - check vs. the limits.
+   * - check vs. the initial state
+   * - logs them.
+   */
   public void end() {
     if (ras.size() == 0) {
       LOG.info("No resource analyzer");
@@ -168,6 +196,9 @@ public class ResourceChecker {
     checkEndings();
   }
 
+  /**
+   * Adds a resource analyzer to the resources checked.
+   */
   public void addResourceAnalyzer(ResourceAnalyzer ra) {
     ras.add(ra);
   }

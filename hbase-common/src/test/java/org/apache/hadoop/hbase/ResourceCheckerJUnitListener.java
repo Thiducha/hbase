@@ -52,7 +52,8 @@ public class ResourceCheckerJUnitListener extends RunListener {
   }
 
   /**
-   * On unix, we know how to get the number of open file descriptor
+   * On unix, we know how to get the number of open file descriptor. This class allow to share
+   *  the MXBeans code.
    */
   abstract static class OSResourceAnalyzer extends ResourceChecker.ResourceAnalyzer {
     protected static final OperatingSystemMXBean osStats;
@@ -95,9 +96,6 @@ public class ResourceCheckerJUnitListener extends RunListener {
     }
   }
 
-
-  public ResourceCheckerJUnitListener() {
-  }
 
   /**
    * To be implemented by sub classes if they want to add specific ResourceAnalyzer.
