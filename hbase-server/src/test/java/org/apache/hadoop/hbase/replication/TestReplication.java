@@ -131,8 +131,8 @@ public class TestReplication {
 
     LOG.info("Setup second Zk");
     CONF_WITH_LOCALFS = HBaseConfiguration.create(conf1);
-    utility1.startMiniCluster(2);
-    utility2.startMiniCluster(2);
+    utility1.startMiniCluster(3);
+    utility2.startMiniCluster(3);
 
     HTableDescriptor table = new HTableDescriptor(tableName);
     HColumnDescriptor fam = new HColumnDescriptor(famName);
@@ -799,8 +799,5 @@ public class TestReplication {
     return killer;
   }
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
 

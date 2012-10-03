@@ -39,6 +39,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.Threads;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
@@ -155,7 +156,7 @@ public class TestHCM {
     table.put(put2);
     assertNotNull(conn.getCachedLocation(TABLE_NAME, ROW));
 
-    // We can wait for all regions to be onlines, that makes log reading easier when debugging
+    // We can wait for all regions to be online, that makes log reading easier when debugging
     while (TEST_UTIL.getMiniHBaseCluster().getMaster().
       getAssignmentManager().getRegionStates().isRegionsInTransition()) {
     }
@@ -287,7 +288,7 @@ public class TestHCM {
     ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 10,
         60, TimeUnit.SECONDS,
         new SynchronousQueue<Runnable>(),
-        new DaemonThreadFactory("test-hcm-pool"));
+        Threads.newDaemonThreadFactory("test-hcm"));
 
     HTable table = new HTable(TABLE_NAME1, conn, pool);
     table.close();
@@ -456,8 +457,5 @@ public class TestHCM {
   }
 
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
 

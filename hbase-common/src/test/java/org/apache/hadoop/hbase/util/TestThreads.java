@@ -74,10 +74,4 @@ public class TestThreads {
     LOG.debug("Target sleep time: " + SLEEP_TIME_MS + ", time elapsed: " +
         timeElapsed);
   }
-
-
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
-

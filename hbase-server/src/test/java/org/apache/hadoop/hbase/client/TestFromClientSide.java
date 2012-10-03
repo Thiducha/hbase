@@ -69,6 +69,7 @@ import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.regionserver.NoSuchColumnFamilyException;
 import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
 import org.apache.hadoop.io.DataInputBuffer;
 import org.junit.After;
@@ -3969,7 +3970,7 @@ public class TestFromClientSide {
     ExecutorService pool = new ThreadPoolExecutor(1, Integer.MAX_VALUE,
       60, TimeUnit.SECONDS,
       new SynchronousQueue<Runnable>(),
-      new DaemonThreadFactory("test-from-client-pool"));
+      Threads.newDaemonThreadFactory("test-from-client"));
     ((ThreadPoolExecutor)pool).allowCoreThreadTimeOut(true);
     return new HTable(tableName, conn, pool);
   }
@@ -4898,8 +4899,5 @@ public class TestFromClientSide {
     assertEquals(1, regionsList.size());
   }
 
-   @org.junit.Rule
-   public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
 

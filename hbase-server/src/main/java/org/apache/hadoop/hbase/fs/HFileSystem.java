@@ -40,6 +40,7 @@ import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
+import org.apache.hadoop.hbase.regionserver.wal.HLogUtil;
 import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.protocol.ClientProtocol;
@@ -79,6 +80,7 @@ public class HFileSystem extends FilterFileSystem {
     this.useHBaseChecksum = useHBaseChecksum;
     
     fs.initialize(getDefaultUri(conf), conf);
+    addLocationsOrderInterceptor(conf);
 
     // If hbase checksum verification is switched on, then create a new
     // filesystem object that has cksum verification turned off.
@@ -89,12 +91,13 @@ public class HFileSystem extends FilterFileSystem {
     // This manifests itself in that incorrect data is read and HFileBlocks won't be able to read
     // their header magic numbers. See HBASE-5885
     if (useHBaseChecksum && !(fs instanceof LocalFileSystem)) {
+      conf = new Configuration(conf);
+      conf.setBoolean("dfs.client.read.shortcircuit.skip.checksum", true);
       this.noChecksumFs = newInstanceFileSystem(conf);
       this.noChecksumFs.setVerifyChecksum(false);
     } else {
       this.noChecksumFs = fs;
     }
-    addLocationsOrderInterceptor(conf);
   }
 
   /**
@@ -314,7 +317,7 @@ public class HFileSystem extends FilterFileSystem {
     public void reorderBlocks(Configuration conf, LocatedBlocks lbs, String src)
         throws IOException {
 
-      ServerName sn = HLog.getServerNameFromHLogDirectoryName(conf, src);
+      ServerName sn = HLogUtil.getServerNameFromHLogDirectoryName(conf, src);
       if (sn == null) {
         // It's not an HLOG
         return;

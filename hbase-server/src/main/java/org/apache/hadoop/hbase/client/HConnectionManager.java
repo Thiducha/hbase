@@ -915,6 +915,14 @@ public class HConnectionManager {
     public HRegionLocation relocateRegion(final byte [] tableName,
         final byte [] row)
     throws IOException{
+
+      // Since this is an explicit request not to use any caching, finding
+      // disabled tables should not be desirable.  This will ensure that an exception is thrown when
+      // the first time a disabled table is interacted with.
+      if (isTableDisabled(tableName)) {
+        throw new DoNotRetryIOException(Bytes.toString(tableName) + " is disabled.");
+      }
+
       return locateRegion(tableName, row, false, true);
     }
 
@@ -2450,7 +2458,7 @@ public class HConnectionManager {
       c.getInt("hbase.client.serverside.retries.multiplier", 10);
     int retries = hcRetries * serversideMultiplier;
     c.setInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER, retries);
-    log.debug("Set serverside HConnection retries=" + retries);
+    log.debug("HConnection retries=" + retries);
   }
 }
 

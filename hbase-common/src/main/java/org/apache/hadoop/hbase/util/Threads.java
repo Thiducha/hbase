@@ -39,7 +39,7 @@ import org.apache.hadoop.util.ReflectionUtils;
 @InterfaceStability.Stable
 public class Threads {
   protected static final Log LOG = LogFactory.getLog(Threads.class);
-
+  private static final AtomicInteger poolNumber = new AtomicInteger(1);
   /**
    * Utility method that sets name, daemon status and starts passed thread.
    * @param t thread to run
@@ -160,15 +160,15 @@ public class Threads {
   }
 
   /**
-   * Create a new CachedThreadPool with a bounded number as the maximum
+   * Create a new CachedThreadPool with a bounded number as the maximum 
    * thread size in the pool.
-   *
+   * 
    * @param maxCachedThread the maximum thread could be created in the pool
    * @param timeout the maximum time to wait
    * @param unit the time unit of the timeout argument
    * @param threadFactory the factory to use when creating new threads
-   * @return threadPoolExecutor the cachedThreadPool with a bounded number
-   * as the maximum thread size in the pool.
+   * @return threadPoolExecutor the cachedThreadPool with a bounded number 
+   * as the maximum thread size in the pool. 
    */
   public static ThreadPoolExecutor getBoundedCachedThreadPool(
       int maxCachedThread, long timeout, TimeUnit unit,
@@ -180,24 +180,53 @@ public class Threads {
     boundedCachedThreadPool.allowCoreThreadTimeOut(true);
     return boundedCachedThreadPool;
   }
-
-
+  
+  
   /**
-   * Returns a {@link java.util.concurrent.ThreadFactory} that names each
-   * created thread uniquely, with a common prefix.
-   *
-   * @param prefix  The prefix of every created Thread's name
+   * Returns a {@link java.util.concurrent.ThreadFactory} that names each created thread uniquely,
+   * with a common prefix.
+   * @param prefix The prefix of every created Thread's name
    * @return a {@link java.util.concurrent.ThreadFactory} that names threads
    */
   public static ThreadFactory getNamedThreadFactory(final String prefix) {
-    return new ThreadFactory() {
+    SecurityManager s = System.getSecurityManager();
+    final ThreadGroup threadGroup = (s != null) ? s.getThreadGroup() : Thread.currentThread()
+        .getThreadGroup();
 
-      private final AtomicInteger threadNumber = new AtomicInteger(1);
+    return new ThreadFactory() {
+      final AtomicInteger threadNumber = new AtomicInteger(1);
+      private final int poolNumber = Threads.poolNumber.getAndIncrement();
+      final ThreadGroup group = threadGroup;
 
       @Override
       public Thread newThread(Runnable r) {
-        return new Thread(r, prefix + threadNumber.getAndIncrement());
+        final String name = prefix + "-pool-" + poolNumber + "-thread-"
+            + threadNumber.getAndIncrement();
+        return new Thread(group, r, name);
       }
+    };
+  }
+
+  /**
+   * Get a named {@link ThreadFactory} that just builds daemon threads
+   * @param prefix name prefix for all threads created from the factory
+   * @return a thread factory that creates named, daemon threads
+   */
+  public static ThreadFactory newDaemonThreadFactory(final String prefix) {
+    final ThreadFactory namedFactory = getNamedThreadFactory(prefix);
+    return new ThreadFactory() {
+      @Override
+      public Thread newThread(Runnable r) {
+        Thread t = namedFactory.newThread(r);
+        if (!t.isDaemon()) {
+          t.setDaemon(true);
+        }
+        if (t.getPriority() != Thread.NORM_PRIORITY) {
+          t.setPriority(Thread.NORM_PRIORITY);
+        }
+        return t;
+      }
+
     };
   }
 }

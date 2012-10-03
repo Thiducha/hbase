@@ -53,7 +53,7 @@ import org.apache.hadoop.hbase.RemoteExceptionHandler;
 import org.apache.hadoop.hbase.backup.HFileArchiver;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.fs.HFileSystem;
-import org.apache.hadoop.hbase.io.HeapSize;
+import org.apache.hadoop.hbase.io.HFileLink;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.io.hfile.Compression;
 import org.apache.hadoop.hbase.io.hfile.HFile;
@@ -140,7 +140,7 @@ public class HStore extends SchemaConfigured implements Store {
    * List of store files inside this store. This is an immutable list that
    * is atomically replaced when its contents change.
    */
-  private ImmutableList<StoreFile> storefiles = null;
+  private volatile ImmutableList<StoreFile> storefiles = null;
 
   List<StoreFile> filesCompacting = Lists.newArrayList();
 
@@ -328,10 +328,28 @@ public class HStore extends SchemaConfigured implements Store {
    */
   public static Path getStoreHomedir(final Path tabledir,
       final String encodedName, final byte [] family) {
-    return new Path(tabledir, new Path(encodedName,
-      new Path(Bytes.toString(family))));
+    return getStoreHomedir(tabledir, encodedName, Bytes.toString(family));
   }
 
+  /**
+   * @param tabledir
+   * @param encodedName Encoded region name.
+   * @param family
+   * @return Path to family/Store home directory.
+   */
+  public static Path getStoreHomedir(final Path tabledir,
+      final String encodedName, final String family) {
+    return new Path(tabledir, new Path(encodedName, new Path(family)));
+  }
+
+  /**
+   * @param parentRegionDirectory directory for the parent region
+   * @param family family name of this store
+   * @return Path to the family/Store home directory
+   */
+  public static Path getStoreHomedir(final Path parentRegionDirectory, final byte[] family) {
+    return new Path(parentRegionDirectory, new Path(Bytes.toString(family)));
+  }
   /**
    * Return the directory in which this store stores its
    * StoreFiles
@@ -383,9 +401,10 @@ public class HStore extends SchemaConfigured implements Store {
         continue;
       }
       final Path p = files[i].getPath();
-      // Check for empty file. Should never be the case but can happen
+      // Check for empty hfile. Should never be the case but can happen
       // after data loss in hdfs for whatever reason (upgrade, etc.): HBASE-646
-      if (this.fs.getFileStatus(p).getLen() <= 0) {
+      // NOTE: that the HFileLink is just a name, so it's an empty file.
+      if (!HFileLink.isHFileLink(p) && this.fs.getFileStatus(p).getLen() <= 0) {
         LOG.warn("Skipping " + p + " because its empty. HBASE-646 DATA LOSS?");
         continue;
       }
@@ -1400,6 +1419,15 @@ public class HStore extends SchemaConfigured implements Store {
       int start = 0;
       double r = compactSelection.getCompactSelectionRatio();
 
+      // remove bulk import files that request to be excluded from minors
+      compactSelection.getFilesToCompact().removeAll(Collections2.filter(
+          compactSelection.getFilesToCompact(),
+          new Predicate<StoreFile>() {
+            public boolean apply(StoreFile input) {
+              return input.excludeFromMinorCompaction();
+            }
+          }));
+
       // skip selection algorithm if we don't have enough files
       if (compactSelection.getFilesToCompact().size() < this.minFilesToCompact) {
         if(LOG.isDebugEnabled()) {
@@ -1410,15 +1438,6 @@ public class HStore extends SchemaConfigured implements Store {
         compactSelection.emptyFileList();
         return compactSelection;
       }
-
-      // remove bulk import files that request to be excluded from minors
-      compactSelection.getFilesToCompact().removeAll(Collections2.filter(
-          compactSelection.getFilesToCompact(),
-          new Predicate<StoreFile>() {
-            public boolean apply(StoreFile input) {
-              return input.excludeFromMinorCompaction();
-            }
-          }));
 
       /* TODO: add sorting + unit test back in when HBASE-2856 is fixed
       // Sort files by size to correct when normal skew is altered by bulk load.

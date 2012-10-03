@@ -1,4 +1,5 @@
-/**
+/*
+ *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -15,32 +16,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.hbase.regionserver;
 
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.master.cleaner.BaseHFileCleanerDelegate;
+package org.apache.hadoop.hbase;
+
+import org.apache.hadoop.hbase.client.HConnectionTestingUtility;
 
 /**
- * HFile archive cleaner that just tells you if it has been run already or not (and allows resets) -
- * always attempts to delete the passed file.
- * <p>
- * Just a helper class for testing to make sure the cleaner has been run.
+ * Monitor the resources. use by the tests All resources in {@link ResourceCheckerJUnitListener}
+ *  plus the number of connection.
  */
-public class CheckedArchivingHFileCleaner extends BaseHFileCleanerDelegate {
+public class ServerResourceCheckerJUnitListener extends ResourceCheckerJUnitListener {
 
-  private static boolean checked;
+  static class ConnectionCountResourceAnalyzer extends ResourceChecker.ResourceAnalyzer {
+    @Override
+    public int getVal() {
+      return HConnectionTestingUtility.getConnectionCount();
+    }
+  }
 
   @Override
-  public boolean isFileDeletable(Path file) {
-    checked = true;
-    return true;
-  }
-
-  public static boolean getChecked() {
-    return checked;
-  }
-
-  public static void resetCheck() {
-    checked = false;
+  protected void addResourceAnalyzer(ResourceChecker rc) {
+    rc.addResourceAnalyzer(new ConnectionCountResourceAnalyzer());
   }
 }
