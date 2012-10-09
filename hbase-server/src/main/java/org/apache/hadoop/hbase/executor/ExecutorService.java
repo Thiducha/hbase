@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -102,7 +101,7 @@ public class ExecutorService {
      * @return Conflation of the executor type and the passed servername.
      */
     String getExecutorName(String serverName) {
-      return this.toString() + "-" + serverName;
+      return this.toString() + "-" + serverName.replace("%", "%%");
     }
   }
 

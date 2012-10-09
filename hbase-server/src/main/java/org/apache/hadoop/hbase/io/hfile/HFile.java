@@ -1,5 +1,4 @@
 /**
- * Copyright 2009 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -589,6 +588,39 @@ public class HFile {
     return pickReaderVersion(path, fsdis, fsdisNoFsChecksum,
         fs.getFileStatus(path).getLen(), closeIStream, cacheConf,
         preferredEncodingInCache, hfs);
+  }
+
+  /**
+   * @param fs A file system
+   * @param path Path to HFile
+   * @param fsdis an open checksummed stream of path's file
+   * @param fsdisNoFsChecksum an open unchecksummed stream of path's file
+   * @param size max size of the trailer.
+   * @param cacheConf Cache configuration for hfile's contents
+   * @param preferredEncodingInCache Preferred in-cache data encoding algorithm.
+   * @param closeIStream boolean for closing file after the getting the reader version.
+   * @return A version specific Hfile Reader
+   * @throws IOException If file is invalid, will throw CorruptHFileException flavored IOException
+   */
+  public static Reader createReaderWithEncoding(
+      FileSystem fs, Path path, FSDataInputStream fsdis,
+      FSDataInputStream fsdisNoFsChecksum, long size, CacheConfig cacheConf,
+      DataBlockEncoding preferredEncodingInCache, boolean closeIStream)
+      throws IOException {
+    HFileSystem hfs = null;
+
+    // If the fs is not an instance of HFileSystem, then create an
+    // instance of HFileSystem that wraps over the specified fs.
+    // In this case, we will not be able to avoid checksumming inside
+    // the filesystem.
+    if (!(fs instanceof HFileSystem)) {
+      hfs = new HFileSystem(fs);
+    } else {
+      hfs = (HFileSystem)fs;
+    }
+    return pickReaderVersion(path, fsdis, fsdisNoFsChecksum, size,
+                             closeIStream, cacheConf,
+                             preferredEncodingInCache, hfs);
   }
 
   /**

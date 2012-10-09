@@ -24,16 +24,20 @@ import org.apache.hadoop.metrics2.MetricsRecordBuilder;
 import org.apache.hadoop.metrics2.lib.Interns;
 import org.apache.hadoop.metrics2.lib.MutableCounterLong;
 import org.apache.hadoop.metrics2.lib.MutableGaugeLong;
+import org.apache.hadoop.metrics2.lib.MutableHistogram;
 
 /** Hadoop2 implementation of MasterMetricsSource. */
 public class MasterMetricsSourceImpl
     extends BaseMetricsSourceImpl implements MasterMetricsSource {
+
 
   MutableCounterLong clusterRequestsCounter;
   MutableGaugeLong ritGauge;
   MutableGaugeLong ritCountOverThresholdGauge;
   MutableGaugeLong ritOldestAgeGauge;
   private final MasterMetricsWrapper masterWrapper;
+  private MutableHistogram splitTimeHisto;
+  private MutableHistogram splitSizeHisto;
 
   public MasterMetricsSourceImpl(MasterMetricsWrapper masterMetricsWrapper) {
     this(METRICS_NAME,
@@ -51,10 +55,17 @@ public class MasterMetricsSourceImpl
     super(metricsName, metricsDescription, metricsContext, metricsJmxContext);
     this.masterWrapper = masterWrapper;
 
-    clusterRequestsCounter = getLongCounter("cluster_requests", 0);
-    ritGauge = getLongGauge("ritCount", 0);
-    ritCountOverThresholdGauge = getLongGauge("ritCountOverThreshold", 0);
-    ritOldestAgeGauge = getLongGauge("ritOldestAge", 0);
+  }
+
+ @Override
+ public void init() {
+    super.init();
+    clusterRequestsCounter = metricsRegistry.newCounter(CLUSTER_REQUESTS_NAME, "", 0l);
+    ritGauge = metricsRegistry.newGauge(RIT_COUNT_NAME, "", 0l);
+    ritCountOverThresholdGauge = metricsRegistry.newGauge(RIT_COUNT_OVER_THRESHOLD_NAME, "", 0l);
+    ritOldestAgeGauge = metricsRegistry.newGauge(RIT_OLDEST_AGE_NAME, "", 0l);
+    splitTimeHisto = metricsRegistry.newHistogram(SPLIT_SIZE_NAME, SPLIT_SIZE_DESC);
+    splitSizeHisto = metricsRegistry.newHistogram(SPLIT_TIME_NAME, SPLIT_TIME_DESC);
   }
 
   public void incRequests(final int inc) {
@@ -70,7 +81,17 @@ public class MasterMetricsSourceImpl
   }
 
   public void setRITOldestAge(long ritCount) {
-    ritCountOverThresholdGauge.set(ritCount);
+    ritOldestAgeGauge.set(ritCount);
+  }
+
+  @Override
+  public void updateSplitTime(long time) {
+    splitTimeHisto.add(time);
+  }
+
+  @Override
+  public void updateSplitSize(long size) {
+    splitSizeHisto.add(size);
   }
 
   @Override
@@ -83,7 +104,7 @@ public class MasterMetricsSourceImpl
     if (masterWrapper != null) {
       metricsRecordBuilder
           .addGauge(Interns.info(MASTER_ACTIVE_TIME_NAME,
-              MASTER_ACTIVE_TIME_DESC), masterWrapper.getMasterStartTime())
+              MASTER_ACTIVE_TIME_DESC), masterWrapper.getMasterActiveTime())
           .addGauge(Interns.info(MASTER_START_TIME_NAME,
               MASTER_START_TIME_DESC), masterWrapper.getMasterStartTime())
           .addGauge(Interns.info(AVERAGE_LOAD_NAME, AVERAGE_LOAD_DESC),

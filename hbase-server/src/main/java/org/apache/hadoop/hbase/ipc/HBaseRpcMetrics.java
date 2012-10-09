@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -63,8 +62,8 @@ public class HBaseRpcMetrics implements Updater {
 
     metricsRecord.setTag("port", port);
 
-    LOG.info("Initializing RPC Metrics with hostName="
-        + hostName + ", port=" + port);
+    LOG.info("Initializing RPC Metrics for className="
+        + hostName + " on port=" + port);
 
     context.registerUpdater(this);
 

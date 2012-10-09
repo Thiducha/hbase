@@ -1,5 +1,4 @@
 /*
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -47,6 +46,7 @@ import org.apache.hadoop.hbase.io.hfile.HFileScanner;
 import org.apache.hadoop.hbase.io.hfile.NoOpDataBlockEncoder;
 import org.apache.hadoop.hbase.regionserver.StoreFile.BloomType;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.junit.Assume;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -164,6 +164,10 @@ public class TestFSErrorsExposed {
    */
   @Test(timeout=5 * 60 * 1000)
   public void testFullSystemBubblesFSErrors() throws Exception {
+    // We won't have an error if the datanode is not there if we use short circuit
+    //  it's a known 'feature'.
+    Assume.assumeTrue(!util.isReadShortCircuitOn());
+
     try {
       // We set it not to run or it will trigger server shutdown while sync'ing
       // because all the datanodes are bad
@@ -267,7 +271,4 @@ public class TestFSErrorsExposed {
 
 
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }

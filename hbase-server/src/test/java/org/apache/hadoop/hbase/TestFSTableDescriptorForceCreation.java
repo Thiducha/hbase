@@ -1,5 +1,4 @@
 /**
- * Copyright 2011 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -72,8 +71,5 @@ public class TestFSTableDescriptorForceCreation {
       FSTableDescriptors.createTableDescriptor(fs, rootdir, htd, true));
   }
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
 

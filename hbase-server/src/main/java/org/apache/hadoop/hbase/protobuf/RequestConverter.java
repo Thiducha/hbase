@@ -42,7 +42,7 @@ import org.apache.hadoop.hbase.client.Row;
 import org.apache.hadoop.hbase.client.RowMutations;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.coprocessor.Exec;
-import org.apache.hadoop.hbase.filter.WritableByteArrayComparable;
+import org.apache.hadoop.hbase.filter.ByteArrayComparable;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CloseRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CompactRegionRequest;
@@ -101,6 +101,7 @@ import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.BalanceReque
 import org.apache.hadoop.hbase.protobuf.generated.MasterProtos.IsMasterRunningRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.SetBalancerRunningRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetClusterStatusRequest;
+import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.GetLastFlushedSequenceIdRequest;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.regionserver.wal.HLogKey;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
@@ -230,7 +231,7 @@ public final class RequestConverter {
    */
   public static MutateRequest buildMutateRequest(
       final byte[] regionName, final byte[] row, final byte[] family,
-      final byte [] qualifier, final WritableByteArrayComparable comparator,
+      final byte [] qualifier, final ByteArrayComparable comparator,
       final CompareType compareType, final Put put) throws IOException {
     MutateRequest.Builder builder = MutateRequest.newBuilder();
     RegionSpecifier region = buildRegionSpecifier(
@@ -258,7 +259,7 @@ public final class RequestConverter {
    */
   public static MutateRequest buildMutateRequest(
       final byte[] regionName, final byte[] row, final byte[] family,
-      final byte [] qualifier, final WritableByteArrayComparable comparator,
+      final byte [] qualifier, final ByteArrayComparable comparator,
       final CompareType compareType, final Delete delete) throws IOException {
     MutateRequest.Builder builder = MutateRequest.newBuilder();
     RegionSpecifier region = buildRegionSpecifier(
@@ -453,10 +454,12 @@ public final class RequestConverter {
    *
    * @param familyPaths
    * @param regionName
+   * @param assignSeqNum
    * @return a bulk load request
    */
   public static BulkLoadHFileRequest buildBulkLoadHFileRequest(
-      final List<Pair<byte[], String>> familyPaths, final byte[] regionName) {
+      final List<Pair<byte[], String>> familyPaths,
+      final byte[] regionName, boolean assignSeqNum) {
     BulkLoadHFileRequest.Builder builder = BulkLoadHFileRequest.newBuilder();
     RegionSpecifier region = buildRegionSpecifier(
       RegionSpecifierType.REGION_NAME, regionName);
@@ -467,6 +470,7 @@ public final class RequestConverter {
       familyPathBuilder.setPath(familyPath.getSecond());
       builder.addFamilyPath(familyPathBuilder.build());
     }
+    builder.setAssignSeqNum(assignSeqNum);
     return builder.build();
   }
 
@@ -862,7 +866,7 @@ public final class RequestConverter {
    */
   private static Condition buildCondition(final byte[] row,
       final byte[] family, final byte [] qualifier,
-      final WritableByteArrayComparable comparator,
+      final ByteArrayComparable comparator,
       final CompareType compareType) throws IOException {
     Condition.Builder builder = Condition.newBuilder();
     builder.setRow(ByteString.copyFrom(row));
@@ -1137,5 +1141,16 @@ public final class RequestConverter {
    */
   public static IsCatalogJanitorEnabledRequest buildIsCatalogJanitorEnabledRequest() {
     return IsCatalogJanitorEnabledRequest.newBuilder().build();
+  }
+
+  /**
+   * Creates a request for querying the master the last flushed sequence Id for a region
+   * @param regionName
+   * @return A {@link GetLastFlushedSequenceIdRequest}
+   */
+  public static GetLastFlushedSequenceIdRequest buildGetLastFlushedSequenceIdRequest(
+      byte[] regionName) {
+    return GetLastFlushedSequenceIdRequest.newBuilder().setRegionName(
+        ByteString.copyFrom(regionName)).build();
   }
 }

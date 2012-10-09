@@ -1,5 +1,4 @@
 /**
- *  Copyright 2010 The Apache Software Foundation
  * 
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -70,8 +69,5 @@ public class TestBitComparator {
     assertEquals(comparator.compareTo(data), expected);
   }
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
 

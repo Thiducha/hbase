@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -57,7 +56,7 @@ public class RowFilter extends CompareFilter {
    * @param rowComparator the comparator for row matching
    */
   public RowFilter(final CompareOp rowCompareOp,
-      final WritableByteArrayComparable rowComparator) {
+      final ByteArrayComparable rowComparator) {
     super(rowCompareOp, rowComparator);
   }
 
@@ -90,7 +89,7 @@ public class RowFilter extends CompareFilter {
   public static Filter createFilterFromArguments(ArrayList<byte []> filterArguments) {
     ArrayList arguments = CompareFilter.extractArguments(filterArguments);
     CompareOp compareOp = (CompareOp)arguments.get(0);
-    WritableByteArrayComparable comparator = (WritableByteArrayComparable)arguments.get(1);
+    ByteArrayComparable comparator = (ByteArrayComparable)arguments.get(1);
     return new RowFilter(compareOp, comparator);
   }
 
@@ -120,7 +119,7 @@ public class RowFilter extends CompareFilter {
     }
     final CompareOp valueCompareOp =
       CompareOp.valueOf(proto.getCompareFilter().getCompareOp().name());
-    WritableByteArrayComparable valueComparator = null;
+    ByteArrayComparable valueComparator = null;
     try {
       if (proto.getCompareFilter().hasComparator()) {
         valueComparator = ProtobufUtil.toComparator(proto.getCompareFilter().getComparator());

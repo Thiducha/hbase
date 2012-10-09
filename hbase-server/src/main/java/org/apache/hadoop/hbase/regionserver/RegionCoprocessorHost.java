@@ -1,5 +1,4 @@
 /*
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -50,11 +49,12 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.coprocessor.CoprocessorHost;
+import org.apache.hadoop.hbase.coprocessor.CoprocessorService;
 import org.apache.hadoop.hbase.coprocessor.ObserverContext;
 import org.apache.hadoop.hbase.coprocessor.RegionCoprocessorEnvironment;
 import org.apache.hadoop.hbase.coprocessor.RegionObserver;
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp;
-import org.apache.hadoop.hbase.filter.WritableByteArrayComparable;
+import org.apache.hadoop.hbase.filter.ByteArrayComparable;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.ipc.CoprocessorProtocol;
 import org.apache.hadoop.hbase.regionserver.wal.HLogKey;
@@ -217,7 +217,11 @@ public class RegionCoprocessorHost
     for (Class c : implClass.getInterfaces()) {
       if (CoprocessorProtocol.class.isAssignableFrom(c)) {
         region.registerProtocol(c, (CoprocessorProtocol)instance);
-        break;
+      }
+      // we allow endpoints to register as both CoproocessorProtocols and Services
+      // for ease of transition
+      if (CoprocessorService.class.isAssignableFrom(c)) {
+        region.registerService( ((CoprocessorService)instance).getService() );
       }
     }
     ConcurrentMap<String, Object> classData;
@@ -982,7 +986,7 @@ public class RegionCoprocessorHost
    */
   public Boolean preCheckAndPut(final byte [] row, final byte [] family,
       final byte [] qualifier, final CompareOp compareOp,
-      final WritableByteArrayComparable comparator, Put put)
+      final ByteArrayComparable comparator, Put put)
     throws IOException {
     boolean bypass = false;
     boolean result = false;
@@ -1018,7 +1022,7 @@ public class RegionCoprocessorHost
    */
   public boolean postCheckAndPut(final byte [] row, final byte [] family,
       final byte [] qualifier, final CompareOp compareOp,
-      final WritableByteArrayComparable comparator, final Put put,
+      final ByteArrayComparable comparator, final Put put,
       boolean result)
     throws IOException {
     ObserverContext<RegionCoprocessorEnvironment> ctx = null;
@@ -1052,7 +1056,7 @@ public class RegionCoprocessorHost
    */
   public Boolean preCheckAndDelete(final byte [] row, final byte [] family,
       final byte [] qualifier, final CompareOp compareOp,
-      final WritableByteArrayComparable comparator, Delete delete)
+      final ByteArrayComparable comparator, Delete delete)
       throws IOException {
     boolean bypass = false;
     boolean result = false;
@@ -1086,7 +1090,7 @@ public class RegionCoprocessorHost
    */
   public boolean postCheckAndDelete(final byte [] row, final byte [] family,
       final byte [] qualifier, final CompareOp compareOp,
-      final WritableByteArrayComparable comparator, final Delete delete,
+      final ByteArrayComparable comparator, final Delete delete,
       boolean result)
     throws IOException {
     ObserverContext<RegionCoprocessorEnvironment> ctx = null;

@@ -1,4 +1,3 @@
-# Copyright 2011 The Apache Software Foundation
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -129,7 +128,7 @@ def isSuccessfulScan(admin, r)
   scan.setBatch(1)
   scan.setCaching(1)
   scan.setFilter(FirstKeyOnlyFilter.new()) 
-  table = getTable(admin.getConfiguration(), r.getTableDesc().getName()) 
+  table = getTable(admin.getConfiguration(), r.getTableName()) 
   scanner = table.getScanner(scan)
   begin
     results = scanner.next() 

@@ -1,5 +1,4 @@
 /*
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -40,6 +39,7 @@ import org.apache.hadoop.hbase.rest.client.Response;
 import org.apache.hadoop.hbase.rest.model.CellModel;
 import org.apache.hadoop.hbase.rest.model.CellSetModel;
 import org.apache.hadoop.hbase.rest.model.RowModel;
+import org.apache.hadoop.hbase.test.MetricsAssertHelper;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import static org.junit.Assert.*;
@@ -68,6 +68,8 @@ public class TestRowResource {
   private static final HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
   private static final HBaseRESTTestingUtility REST_TEST_UTIL = 
     new HBaseRESTTestingUtility();
+  private static final MetricsAssertHelper METRICS_ASSERT =
+      CompatibilityFactory.getInstance(MetricsAssertHelper.class);
   private static Client client;
   private static JAXBContext context;
   private static Marshaller marshaller;
@@ -527,6 +529,35 @@ public class TestRowResource {
   }
 
   @Test
+  public void testMetrics() throws IOException, JAXBException {
+    final String path = "/" + TABLE + "/" + ROW_4 + "/" + COLUMN_1;
+    Response response = client.put(path, Constants.MIMETYPE_BINARY,
+        Bytes.toBytes(VALUE_4));
+    assertEquals(response.getCode(), 200);
+    Thread.yield();
+    response = client.get(path, Constants.MIMETYPE_JSON);
+    assertEquals(response.getCode(), 200);
+    response = deleteRow(TABLE, ROW_4);
+    assertEquals(response.getCode(), 200);
+
+    METRICS_ASSERT.assertCounterGt("requests",
+                                    2l,
+                                    RESTServlet.getInstance(conf).getMetrics().getSource());
+
+    METRICS_ASSERT.assertCounterGt("successfulGet",
+                                   0l,
+                                   RESTServlet.getInstance(conf).getMetrics().getSource());
+
+    METRICS_ASSERT.assertCounterGt("successfulPut",
+                                    0l,
+                                    RESTServlet.getInstance(conf).getMetrics().getSource());
+
+    METRICS_ASSERT.assertCounterGt("successfulDelete",
+                                    0l,
+                                    RESTServlet.getInstance(conf).getMetrics().getSource());
+  }
+
+  @Test
   public void testURLEncodedKey() throws IOException, JAXBException {
     String urlKey = "http://example.com/foo";
     StringBuilder path = new StringBuilder();
@@ -662,8 +693,5 @@ public class TestRowResource {
     }
   }
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
 

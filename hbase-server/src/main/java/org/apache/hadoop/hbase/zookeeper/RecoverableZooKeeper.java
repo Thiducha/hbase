@@ -1,5 +1,4 @@
 /**
- * Copyright 2011 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -135,12 +134,11 @@ public class RecoverableZooKeeper {
         switch (e.code()) {
           case NONODE:
             if (isRetry) {
-              LOG.info("Node " + path + " already deleted. Assuming that a " +
+              LOG.info("Node " + path + " already deleted. Assuming a " +
                   "previous attempt succeeded.");
               return;
             }
-            LOG.warn("Node " + path + " already deleted, and this is not a " +
-                     "retry");
+            LOG.warn("Node " + path + " already deleted, retry=" + isRetry);
             throw e;
 
           case CONNECTIONLOSS:

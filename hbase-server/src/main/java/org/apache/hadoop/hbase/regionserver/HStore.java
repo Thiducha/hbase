@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -54,7 +53,7 @@ import org.apache.hadoop.hbase.RemoteExceptionHandler;
 import org.apache.hadoop.hbase.backup.HFileArchiver;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.fs.HFileSystem;
-import org.apache.hadoop.hbase.io.HeapSize;
+import org.apache.hadoop.hbase.io.HFileLink;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.io.hfile.Compression;
 import org.apache.hadoop.hbase.io.hfile.HFile;
@@ -141,7 +140,7 @@ public class HStore extends SchemaConfigured implements Store {
    * List of store files inside this store. This is an immutable list that
    * is atomically replaced when its contents change.
    */
-  private ImmutableList<StoreFile> storefiles = null;
+  private volatile ImmutableList<StoreFile> storefiles = null;
 
   List<StoreFile> filesCompacting = Lists.newArrayList();
 
@@ -312,8 +311,8 @@ public class HStore extends SchemaConfigured implements Store {
   /**
    * @return The maximum sequence id in all store files.
    */
-  long getMaxSequenceId() {
-    return StoreFile.getMaxSequenceIdInList(this.getStorefiles());
+  long getMaxSequenceId(boolean includeBulkFiles) {
+    return StoreFile.getMaxSequenceIdInList(this.getStorefiles(), includeBulkFiles);
   }
 
   @Override
@@ -329,10 +328,28 @@ public class HStore extends SchemaConfigured implements Store {
    */
   public static Path getStoreHomedir(final Path tabledir,
       final String encodedName, final byte [] family) {
-    return new Path(tabledir, new Path(encodedName,
-      new Path(Bytes.toString(family))));
+    return getStoreHomedir(tabledir, encodedName, Bytes.toString(family));
   }
 
+  /**
+   * @param tabledir
+   * @param encodedName Encoded region name.
+   * @param family
+   * @return Path to family/Store home directory.
+   */
+  public static Path getStoreHomedir(final Path tabledir,
+      final String encodedName, final String family) {
+    return new Path(tabledir, new Path(encodedName, new Path(family)));
+  }
+
+  /**
+   * @param parentRegionDirectory directory for the parent region
+   * @param family family name of this store
+   * @return Path to the family/Store home directory
+   */
+  public static Path getStoreHomedir(final Path parentRegionDirectory, final byte[] family) {
+    return new Path(parentRegionDirectory, new Path(Bytes.toString(family)));
+  }
   /**
    * Return the directory in which this store stores its
    * StoreFiles
@@ -384,9 +401,10 @@ public class HStore extends SchemaConfigured implements Store {
         continue;
       }
       final Path p = files[i].getPath();
-      // Check for empty file. Should never be the case but can happen
+      // Check for empty hfile. Should never be the case but can happen
       // after data loss in hdfs for whatever reason (upgrade, etc.): HBASE-646
-      if (this.fs.getFileStatus(p).getLen() <= 0) {
+      // NOTE: that the HFileLink is just a name, so it's an empty file.
+      if (!HFileLink.isHFileLink(p) && this.fs.getFileStatus(p).getLen() <= 0) {
         LOG.warn("Skipping " + p + " because its empty. HBASE-646 DATA LOSS?");
         continue;
       }
@@ -533,7 +551,7 @@ public class HStore extends SchemaConfigured implements Store {
   }
 
   @Override
-  public void bulkLoadHFile(String srcPathStr) throws IOException {
+  public void bulkLoadHFile(String srcPathStr, long seqNum) throws IOException {
     Path srcPath = new Path(srcPathStr);
 
     // Copy the file if it's on another filesystem
@@ -548,7 +566,8 @@ public class HStore extends SchemaConfigured implements Store {
       srcPath = tmpPath;
     }
 
-    Path dstPath = StoreFile.getRandomFilename(fs, homedir);
+    Path dstPath = StoreFile.getRandomFilename(fs, homedir,
+        (seqNum == -1) ? null : "_SeqId_" + seqNum + "_");
     LOG.debug("Renaming bulk load file " + srcPath + " to " + dstPath);
     StoreFile.rename(fs, srcPath, dstPath);
 
@@ -991,7 +1010,7 @@ public class HStore extends SchemaConfigured implements Store {
     }
 
     // Max-sequenceID is the last key in the files we're compacting
-    long maxId = StoreFile.getMaxSequenceIdInList(filesToCompact);
+    long maxId = StoreFile.getMaxSequenceIdInList(filesToCompact, true);
 
     // Ready to go. Have list of files to compact.
     LOG.info("Starting compaction of " + filesToCompact.size() + " file(s) in "
@@ -1058,10 +1077,10 @@ public class HStore extends SchemaConfigured implements Store {
         }
 
         filesToCompact = filesToCompact.subList(count - N, count);
-        maxId = StoreFile.getMaxSequenceIdInList(filesToCompact);
+        maxId = StoreFile.getMaxSequenceIdInList(filesToCompact, true);
         isMajor = (filesToCompact.size() == storefiles.size());
         filesCompacting.addAll(filesToCompact);
-        Collections.sort(filesCompacting, StoreFile.Comparators.FLUSH_TIME);
+        Collections.sort(filesCompacting, StoreFile.Comparators.SEQ_ID);
       }
     } finally {
       this.lock.readLock().unlock();
@@ -1276,7 +1295,7 @@ public class HStore extends SchemaConfigured implements Store {
               filesToCompact, filesCompacting);
         }
         filesCompacting.addAll(filesToCompact.getFilesToCompact());
-        Collections.sort(filesCompacting, StoreFile.Comparators.FLUSH_TIME);
+        Collections.sort(filesCompacting, StoreFile.Comparators.SEQ_ID);
 
         // major compaction iff all StoreFiles are included
         boolean isMajor = (filesToCompact.getFilesToCompact().size() == this.storefiles.size());
@@ -1400,6 +1419,15 @@ public class HStore extends SchemaConfigured implements Store {
       int start = 0;
       double r = compactSelection.getCompactSelectionRatio();
 
+      // remove bulk import files that request to be excluded from minors
+      compactSelection.getFilesToCompact().removeAll(Collections2.filter(
+          compactSelection.getFilesToCompact(),
+          new Predicate<StoreFile>() {
+            public boolean apply(StoreFile input) {
+              return input.excludeFromMinorCompaction();
+            }
+          }));
+
       // skip selection algorithm if we don't have enough files
       if (compactSelection.getFilesToCompact().size() < this.minFilesToCompact) {
         if(LOG.isDebugEnabled()) {
@@ -1410,15 +1438,6 @@ public class HStore extends SchemaConfigured implements Store {
         compactSelection.emptyFileList();
         return compactSelection;
       }
-
-      // remove bulk import files that request to be excluded from minors
-      compactSelection.getFilesToCompact().removeAll(Collections2.filter(
-          compactSelection.getFilesToCompact(),
-          new Predicate<StoreFile>() {
-            public boolean apply(StoreFile input) {
-              return input.excludeFromMinorCompaction();
-            }
-          }));
 
       /* TODO: add sorting + unit test back in when HBASE-2856 is fixed
       // Sort files by size to correct when normal skew is altered by bulk load.
@@ -1617,7 +1636,7 @@ public class HStore extends SchemaConfigured implements Store {
   }
 
   public ImmutableList<StoreFile> sortAndClone(List<StoreFile> storeFiles) {
-    Collections.sort(storeFiles, StoreFile.Comparators.FLUSH_TIME);
+    Collections.sort(storeFiles, StoreFile.Comparators.SEQ_ID);
     ImmutableList<StoreFile> newList = ImmutableList.copyOf(storeFiles);
     return newList;
   }
@@ -1698,6 +1717,7 @@ public class HStore extends SchemaConfigured implements Store {
     }
     // TODO: Cache these keys rather than make each time?
     byte [] fk = r.getFirstKey();
+    if (fk == null) return;
     KeyValue firstKV = KeyValue.createKeyValueFromKey(fk, 0, fk.length);
     byte [] lk = r.getLastKey();
     KeyValue lastKV = KeyValue.createKeyValueFromKey(lk, 0, lk.length);
@@ -1711,7 +1731,7 @@ public class HStore extends SchemaConfigured implements Store {
       firstOnRow = new KeyValue(lastKV.getRow(), HConstants.LATEST_TIMESTAMP);
     }
     // Get a scanner that caches blocks and that uses pread.
-    HFileScanner scanner = r.getHFileReader().getScanner(true, true, false);
+    HFileScanner scanner = r.getScanner(true, true, false);
     // Seek scanner.  If can't seek it, return.
     if (!seekToScanner(scanner, firstOnRow, firstKV)) return;
     // If we found candidate on firstOnRow, just return. THIS WILL NEVER HAPPEN!

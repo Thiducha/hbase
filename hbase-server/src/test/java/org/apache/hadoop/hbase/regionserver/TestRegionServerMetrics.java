@@ -40,6 +40,7 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.regionserver.metrics.RegionMetricsStorage;
+import org.apache.hadoop.hbase.regionserver.metrics.RegionServerMetrics;
 import org.apache.hadoop.hbase.regionserver.metrics.SchemaMetrics;
 import org.apache.hadoop.hbase.regionserver.metrics.SchemaMetrics.
     StoreMetricType;
@@ -124,7 +125,7 @@ public class TestRegionServerMetrics {
         RegionMetricsStorage.getNumericMetric(storeMetricName)
             - (startValue != null ? startValue : 0));
   }
-  
+
   @Test
   public void testOperationMetrics() throws IOException {
     String cf = "OPCF";
@@ -188,14 +189,63 @@ public class TestRegionServerMetrics {
     assertTimeVaryingMetricCount(1, TABLE_NAME, cf, regionName, "append_");
 
     // One delete where the cf is known
-    assertTimeVaryingMetricCount(1, TABLE_NAME, cf, null, "delete_");
+    assertTimeVaryingMetricCount(1, TABLE_NAME, cf, null, "multidelete_");
 
     // two deletes in the region.
-    assertTimeVaryingMetricCount(2, TABLE_NAME, null, regionName, "delete_");
+    assertTimeVaryingMetricCount(2, TABLE_NAME, null, regionName, "multidelete_");
 
     // Three gets. one for gets. One for append. One for increment.
     assertTimeVaryingMetricCount(3, TABLE_NAME, cf, regionName, "get_");
 
+  }
+
+  private void assertCheckAndMutateMetrics(final HRegionServer rs,
+      long expectedPassed, long expectedFailed) {
+    rs.doMetrics();
+    RegionServerMetrics metrics = rs.getMetrics();
+    assertEquals("checkAndMutatePassed metrics incorrect",
+      expectedPassed, metrics.checkAndMutateChecksPassed.get());
+    assertEquals("checkAndMutateFailed metrics incorrect",
+      expectedFailed, metrics.checkAndMutateChecksFailed.get());
+  }
+
+  @Test
+  public void testCheckAndMutateMetrics() throws Exception {
+    final HRegionServer rs =
+      TEST_UTIL.getMiniHBaseCluster().getRegionServer(0);
+    byte [] tableName = Bytes.toBytes("testCheckAndMutateMetrics");
+    byte [] family = Bytes.toBytes("family");
+    byte [] qualifier = Bytes.toBytes("qualifier");
+    byte [] row = Bytes.toBytes("row1");
+    HTable table = TEST_UTIL.createTable(tableName, family);
+    long expectedPassed = 0;
+    long expectedFailed = 0;
+
+    // checkAndPut success
+    Put put = new Put(row);
+    byte [] val1 = Bytes.toBytes("val1");
+    put.add(family, qualifier, val1);
+    table.checkAndPut(row, family, qualifier, null, put);
+    expectedPassed++;
+    assertCheckAndMutateMetrics(rs, expectedPassed, expectedFailed);
+
+    // checkAndPut failure
+    byte [] val2 = Bytes.toBytes("val2");
+    table.checkAndPut(row, family, qualifier, val2, put);
+    expectedFailed++;
+    assertCheckAndMutateMetrics(rs, expectedPassed, expectedFailed);
+
+    // checkAndDelete success
+    Delete delete = new Delete(row);
+    delete.deleteColumn(family, qualifier);
+    table.checkAndDelete(row, family, qualifier, val1, delete);
+    expectedPassed++;
+    assertCheckAndMutateMetrics(rs, expectedPassed, expectedFailed);
+
+    // checkAndDelete failure
+    table.checkAndDelete(row, family, qualifier, val1, delete);
+    expectedFailed++;
+    assertCheckAndMutateMetrics(rs, expectedPassed, expectedFailed);
   }
 
   @Test
@@ -264,9 +314,6 @@ public class TestRegionServerMetrics {
   }
 
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 
   private void assertSizeMetric(String table, String[] cfs, int[] metrics) {
     // we have getsize & nextsize for each column family

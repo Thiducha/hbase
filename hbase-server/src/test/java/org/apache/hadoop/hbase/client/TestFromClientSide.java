@@ -1,5 +1,4 @@
 /**
- * Copyright 2009 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -40,6 +39,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -62,14 +62,14 @@ import org.apache.hadoop.hbase.filter.RegexStringComparator;
 import org.apache.hadoop.hbase.filter.RowFilter;
 import org.apache.hadoop.hbase.filter.SingleColumnValueFilter;
 import org.apache.hadoop.hbase.filter.WhileMatchFilter;
-import org.apache.hadoop.hbase.generated.master.table_jsp;
 import org.apache.hadoop.hbase.io.hfile.BlockCache;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
+import org.apache.hadoop.hbase.regionserver.NoSuchColumnFamilyException;
 import org.apache.hadoop.hbase.regionserver.Store;
-import org.apache.hadoop.hbase.regionserver.HStore;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
 import org.apache.hadoop.io.DataInputBuffer;
 import org.junit.After;
@@ -88,6 +88,7 @@ import static org.junit.Assert.*;
  * Each creates a table named for the method and does its stuff against that.
  */
 @Category(LargeTests.class)
+@SuppressWarnings ("deprecation")
 public class TestFromClientSide {
   final Log LOG = LogFactory.getLog(getClass());
   protected final static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
@@ -3684,6 +3685,25 @@ public class TestFromClientSide {
   }
 
   @Test
+  public void testPutNoCF() throws IOException {
+    final byte[] BAD_FAM = Bytes.toBytes("BAD_CF");
+    final byte[] VAL = Bytes.toBytes(100);
+    HTable table = TEST_UTIL.createTable(Bytes.toBytes("testPutNoCF"), new byte[][]{FAMILY});
+
+    boolean caughtNSCFE = false;
+
+    try {
+      Put p = new Put(ROW);
+      p.add(BAD_FAM, QUALIFIER, VAL);
+      table.put(p);
+    } catch (RetriesExhaustedWithDetailsException e) {
+      caughtNSCFE = e.getCause(0) instanceof NoSuchColumnFamilyException;
+    }
+    assertTrue("Should throw NoSuchColumnFamilyException", caughtNSCFE);
+
+  }
+
+  @Test
   public void testRowsPut() throws IOException {
     final byte[] CONTENTS_FAMILY = Bytes.toBytes("contents");
     final byte[] SMALL_FAMILY = Bytes.toBytes("smallfam");
@@ -3950,7 +3970,7 @@ public class TestFromClientSide {
     ExecutorService pool = new ThreadPoolExecutor(1, Integer.MAX_VALUE,
       60, TimeUnit.SECONDS,
       new SynchronousQueue<Runnable>(),
-      new DaemonThreadFactory("test-from-client-pool"));
+      Threads.newDaemonThreadFactory("test-from-client"));
     ((ThreadPoolExecutor)pool).allowCoreThreadTimeOut(true);
     return new HTable(tableName, conn, pool);
   }
@@ -4275,6 +4295,8 @@ public class TestFromClientSide {
     }
   }
 
+
+
   @Test
   public void testIncrement() throws Exception {
     LOG.info("Starting testIncrement");
@@ -4478,8 +4500,8 @@ public class TestFromClientSide {
     }
 
     final Object waitLock = new Object();
-
     ExecutorService executorService = Executors.newFixedThreadPool(numVersions);
+    final AtomicReference<AssertionError> error = new AtomicReference<AssertionError>(null);
     for (int versions = numVersions; versions < numVersions * 2; versions++) {
       final int versionsCopy = versions;
       executorService.submit(new Callable<Void>() {
@@ -4504,6 +4526,11 @@ public class TestFromClientSide {
               waitLock.wait();
             }
           } catch (Exception e) {
+          } catch (AssertionError e) {
+            // the error happens in a thread, it won't fail the test,
+            // need to pass it to the caller for proper handling.
+            error.set(e);
+            LOG.error(e);
           }
 
           return null;
@@ -4514,8 +4541,8 @@ public class TestFromClientSide {
       waitLock.notifyAll();
     }
     executorService.shutdownNow();
+    assertNull(error.get());
   }
-
 
   @Test
   public void testCheckAndPut() throws IOException {
@@ -4562,6 +4589,7 @@ public class TestFromClientSide {
   * @throws Exception
   */
   @Test
+  @SuppressWarnings ("unused")
   public void testScanMetrics() throws Exception {
     byte [] TABLENAME = Bytes.toBytes("testScanMetrics");
 
@@ -4630,9 +4658,8 @@ public class TestFromClientSide {
     ScanMetrics scanMetricsWithClose = getScanMetrics(scanWithClose);
     assertEquals("Did not access all the regions in the table", numOfRegions,
         scanMetricsWithClose.countOfRegions.getCurrentIntervalValue());
-
   }
-  
+
   private ScanMetrics getScanMetrics(Scan scan) throws Exception {
     byte[] serializedMetrics = scan.getAttribute(Scan.SCAN_ATTRIBUTES_METRICS_DATA);
     assertTrue("Serialized metrics were not found.", serializedMetrics != null);
@@ -4671,6 +4698,20 @@ public class TestFromClientSide {
     long startBlockCount = cache.getBlockCount();
     long startBlockHits = cache.getStats().getHitCount();
     long startBlockMiss = cache.getStats().getMissCount();
+
+    // wait till baseline is stable, (minimal 500 ms)
+    for (int i = 0; i < 5; i++) {
+      Thread.sleep(100);
+      if (startBlockCount != cache.getBlockCount()
+          || startBlockHits != cache.getStats().getHitCount()
+          || startBlockMiss != cache.getStats().getMissCount()) {
+        startBlockCount = cache.getBlockCount();
+        startBlockHits = cache.getStats().getHitCount();
+        startBlockMiss = cache.getStats().getMissCount();
+        i = -1;
+      }
+    }
+
     // insert data
     Put put = new Put(ROW);
     put.add(FAMILY, QUALIFIER, data);
@@ -4813,7 +4854,6 @@ public class TestFromClientSide {
     HTable table = TEST_UTIL.createTable(TABLE, new byte[][] {FAMILY}, 10);
     int numOfRegions = TEST_UTIL.createMultiRegions(table, FAMILY);
     assertEquals(25, numOfRegions);
-    HBaseAdmin admin = new HBaseAdmin(TEST_UTIL.getConfiguration());
 
     // Get the regions in this range
     List<HRegionLocation> regionsList = table.getRegionsInRange(startKey,
@@ -4859,8 +4899,31 @@ public class TestFromClientSide {
     assertEquals(1, regionsList.size());
   }
 
-   @org.junit.Rule
-   public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
+  @Test
+  public void testJira6912() throws Exception {
+    byte [] TABLE = Bytes.toBytes("testJira6912");
+    HTable foo = TEST_UTIL.createTable(TABLE, new byte[][] {FAMILY}, 10);
+
+    List<Put> puts = new ArrayList<Put>();
+    for (int i=0;i !=100; i++){
+      Put put = new Put(Bytes.toBytes(i));
+      put.add(FAMILY, FAMILY, Bytes.toBytes(i));
+      puts.add(put);
+    }
+    foo.put(puts);
+    // If i comment this out it works
+    TEST_UTIL.flush();
+
+    Scan scan = new Scan();
+    scan.setStartRow(Bytes.toBytes(1));
+    scan.setStopRow(Bytes.toBytes(3));
+    scan.addColumn(FAMILY, FAMILY);
+    scan.setFilter(new RowFilter(CompareFilter.CompareOp.NOT_EQUAL, new BinaryComparator(Bytes.toBytes(1))));
+
+    ResultScanner scanner = foo.getScanner(scan);
+    Result[] bar = scanner.next(100);
+    assertEquals(1, bar.length);
+  }
+
 }
 

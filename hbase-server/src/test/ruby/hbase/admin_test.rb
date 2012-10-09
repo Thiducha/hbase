@@ -1,5 +1,4 @@
 #
-# Copyright 2010 The Apache Software Foundation
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -160,17 +159,6 @@ module Hbase
       drop_test_table(@create_test_name)
       admin.create(@create_test_name, { NAME => 'a'}, { NAME => 'b'})
       assert_equal(['a:', 'b:'], table(@create_test_name).get_all_columns.sort)
-    end
-
-    #-------------------------------------------------------------------------------
-
-    define_test "close should work without region server name" do
-      if admin.exists?(@create_test_name)
-        admin.disable(@create_test_name)
-        admin.drop(@create_test_name)
-      end
-      admin.create(@create_test_name, 'foo')
-      admin.close_region(@create_test_name + ',,0', nil)
     end
 
     #-------------------------------------------------------------------------------

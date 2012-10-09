@@ -1,5 +1,4 @@
 /*
- * Copyright 2009 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -172,7 +171,7 @@ public class MiniZooKeeperCluster {
           LOG.debug("Failed binding ZK Server to client port: " +
               tentativePort);
           // This port is already in use, try to use another.
-          tentativePort++;
+          tentativePort = selectClientPort();
           continue;
         }
         break;

@@ -1,5 +1,4 @@
 /**
- * Copyright 2011 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -82,6 +81,8 @@ import org.apache.hadoop.hbase.ipc.HBaseRPC;
 import org.apache.hadoop.hbase.ipc.HBaseServer;
 import org.apache.hadoop.hbase.ipc.ProtocolSignature;
 import org.apache.hadoop.hbase.ipc.RpcServer;
+import org.apache.hadoop.hbase.master.balancer.BalancerChore;
+import org.apache.hadoop.hbase.master.balancer.ClusterStatusChore;
 import org.apache.hadoop.hbase.master.balancer.LoadBalancerFactory;
 import org.apache.hadoop.hbase.master.cleaner.HFileCleaner;
 import org.apache.hadoop.hbase.master.cleaner.LogCleaner;
@@ -151,6 +152,8 @@ import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDe
 import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDescriptorsResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterProtos.IsMasterRunningRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterProtos.IsMasterRunningResponse;
+import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.GetLastFlushedSequenceIdRequest;
+import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.GetLastFlushedSequenceIdResponse;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerReportRequest;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerReportResponse;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
@@ -172,6 +175,7 @@ import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.util.VersionInfo;
 import org.apache.hadoop.hbase.zookeeper.ClusterStatusTracker;
 import org.apache.hadoop.hbase.zookeeper.DrainingServerTracker;
+import org.apache.hadoop.hbase.zookeeper.LoadBalancerTracker;
 import org.apache.hadoop.hbase.zookeeper.RegionServerTracker;
 import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
 import org.apache.hadoop.hbase.zookeeper.ZKUtil;
@@ -181,6 +185,7 @@ import org.apache.hadoop.net.DNS;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.Watcher;
 import org.apache.hadoop.hbase.trace.SpanReceiverHost;
+import org.apache.hadoop.hbase.util.FSUtils;
 
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
@@ -227,6 +232,8 @@ Server {
   private RegionServerTracker regionServerTracker;
   // Draining region server tracker
   private DrainingServerTracker drainingServerTracker;
+  // Tracker for load balancer state
+  private LoadBalancerTracker loadBalancerTracker;
 
   // RPC server for the HMaster
   private final RpcServer rpcServer;
@@ -276,8 +283,7 @@ Server {
 
   private LoadBalancer balancer;
   private Thread balancerChore;
-  // If 'true', the balancer is 'on'.  If 'false', the balancer will not run.
-  private volatile boolean balanceSwitch = true;
+  private Thread clusterStatusChore;
 
   private CatalogJanitor catalogJanitorChore;
   private LogCleaner logCleaner;
@@ -303,6 +309,7 @@ Server {
   private final boolean masterCheckCompression;
 
   private SpanReceiverHost spanReceiverHost;
+
   /**
    * Initializes the HMaster. The steps are as follows:
    * <p>
@@ -318,6 +325,8 @@ Server {
   public HMaster(final Configuration conf)
   throws IOException, KeeperException, InterruptedException {
     this.conf = new Configuration(conf);
+    LOG.info("hbase.rootdir=" + FSUtils.getRootDir(this.conf) +
+      ", hbase.cluster.distributed=" + this.conf.getBoolean("hbase.cluster.distributed", false));
     // Disable the block cache on the master
     this.conf.setFloat(HConstants.HFILE_BLOCK_CACHE_SIZE_KEY, 0.0f);
     // Set how many times to retry talking to another server over HConnection.
@@ -327,7 +336,7 @@ Server {
       conf.get("hbase.master.dns.interface", "default"),
       conf.get("hbase.master.dns.nameserver", "default")));
     int port = conf.getInt(HConstants.MASTER_PORT, HConstants.DEFAULT_MASTER_PORT);
-    // Creation of a HSA will force a resolve.
+    // Creation of a ISA will force a resolve.
     InetSocketAddress initialIsa = new InetSocketAddress(hostname, port);
     if (initialIsa.getAddress() == null) {
       throw new IllegalArgumentException("Failed resolve of " + initialIsa);
@@ -511,6 +520,8 @@ Server {
     this.catalogTracker.start();
 
     this.balancer = LoadBalancerFactory.getLoadBalancer(conf);
+    this.loadBalancerTracker = new LoadBalancerTracker(zooKeeper, this);
+    this.loadBalancerTracker.start();
     this.assignmentManager = new AssignmentManager(this, serverManager,
       this.catalogTracker, this.balancer, this.executorService, this.metrics);
     zooKeeper.registerListenerFirst(assignmentManager);
@@ -649,7 +660,7 @@ Server {
 
     // Wait for region servers to report in.
     this.serverManager.waitForRegionServers(status);
-    // Check zk for regionservers that are up but didn't register
+    // Check zk for region servers that are up but didn't register
     for (ServerName sn: this.regionServerTracker.getOnlineServers()) {
       if (!this.serverManager.isServerOnline(sn)) {
         // Not registered; add it.
@@ -678,7 +689,7 @@ Server {
       .updateRootAndMetaIfNecessary(this);
 
     this.balancer.setMasterServices(this);
-    // Fixup assignment manager status
+    // Fix up assignment manager status
     status.setStatus("Starting assignment manager");
     this.assignmentManager.joinCluster();
 
@@ -692,6 +703,7 @@ Server {
       // Start balancer and meta catalog janitor after meta and regions have
       // been assigned.
       status.setStatus("Starting balancer and catalog janitor");
+      this.clusterStatusChore = getAndStartClusterStatusChore(this);
       this.balancerChore = getAndStartBalancerChore(this);
       this.catalogJanitorChore = new CatalogJanitor(this, this);
       startCatalogJanitorChore();
@@ -752,12 +764,11 @@ Server {
   /**
    * If ServerShutdownHandler is disabled, we enable it and expire those dead
    * but not expired servers.
-   * @throws IOException
    */
-  private void enableServerShutdownHandler() throws IOException {
+  private void enableServerShutdownHandler() {
     if (!serverShutdownHandlerEnabled) {
       serverShutdownHandlerEnabled = true;
-      this.serverManager.expireDeadNotExpiredServers();
+      this.serverManager.processQueuedDeadServers();
     }
   }
 
@@ -832,7 +843,7 @@ Server {
       enableSSHandWaitForMeta();
       assigned++;
     } else {
-      // Region already assigned.  We didnt' assign it.  Add to in-memory state.
+      // Region already assigned.  We didn't assign it.  Add to in-memory state.
       this.assignmentManager.regionOnline(HRegionInfo.FIRST_META_REGIONINFO,
         this.catalogTracker.getMetaLocation());
     }
@@ -898,8 +909,11 @@ Server {
     // Now work on our list of found parents. See if any we can clean up.
     int fixups = 0;
     for (Map.Entry<HRegionInfo, Result> e : offlineSplitParents.entrySet()) {
-      fixups += ServerShutdownHandler.fixupDaughters(
+      ServerName sn = HRegionInfo.getServerName(e.getValue());
+      if (!serverManager.isServerDead(sn)) { // Otherwise, let SSH take care of it
+        fixups += ServerShutdownHandler.fixupDaughters(
           e.getValue(), assignmentManager, catalogTracker);
+      }
     }
     if (fixups != 0) {
       LOG.info("Scanned the catalog and fixed up " + fixups +
@@ -1075,23 +1089,26 @@ Server {
     if (this.executorService != null) this.executorService.shutdown();
   }
 
+  private static Thread getAndStartClusterStatusChore(HMaster master) {
+    if (master == null || master.balancer == null) {
+      return null;
+    }
+    Chore chore = new ClusterStatusChore(master, master.balancer);
+    return Threads.setDaemonThreadRunning(chore.getThread());
+  }
+
   private static Thread getAndStartBalancerChore(final HMaster master) {
-    String name = master.getServerName() + "-BalancerChore";
-    int balancerPeriod =
-      master.getConfiguration().getInt("hbase.balancer.period", 300000);
     // Start up the load balancer chore
-    Chore chore = new Chore(name, balancerPeriod, master) {
-      @Override
-      protected void chore() {
-        master.balance();
-      }
-    };
+    Chore chore = new BalancerChore(master);
     return Threads.setDaemonThreadRunning(chore.getThread());
   }
 
   private void stopChores() {
     if (this.balancerChore != null) {
       this.balancerChore.interrupt();
+    }
+    if (this.clusterStatusChore != null) {
+      this.clusterStatusChore.interrupt();
     }
     if (this.catalogJanitorChore != null) {
       this.catalogJanitorChore.interrupt();
@@ -1151,8 +1168,16 @@ Server {
   }
 
   @Override
+  public GetLastFlushedSequenceIdResponse getLastFlushedSequenceId(RpcController controller,
+      GetLastFlushedSequenceIdRequest request) throws ServiceException {
+    byte[] regionName = request.getRegionName().toByteArray();
+    long seqId = serverManager.getLastFlushedSequenceId(regionName);
+    return ResponseConverter.buildGetLastFlushedSequenceIdResponse(seqId);
+  }
+
+  @Override
   public RegionServerReportResponse regionServerReport(
-      RpcController controller,RegionServerReportRequest request) throws ServiceException {
+      RpcController controller, RegionServerReportRequest request) throws ServiceException {
     try {
       HBaseProtos.ServerLoad sl = request.getLoad();
       this.serverManager.regionServerReport(ProtobufUtil.toServerName(request.getServer()), new ServerLoad(sl));
@@ -1237,7 +1262,7 @@ Server {
       return false;
     }
     // If balance not true, don't run balancer.
-    if (!this.balanceSwitch) return false;
+    if (!this.loadBalancerTracker.isBalancerOn()) return false;
     // Do this call outside of synchronized block.
     int maximumBalanceTime = getBalancerCutoffTime();
     long cutoffTime = System.currentTimeMillis() + maximumBalanceTime;
@@ -1326,19 +1351,23 @@ Server {
    * @param mode BalanceSwitchMode
    * @return old balancer switch
    */
-  public boolean switchBalancer(final boolean b, BalanceSwitchMode mode) {
-    boolean oldValue = this.balanceSwitch;
+  public boolean switchBalancer(final boolean b, BalanceSwitchMode mode) throws IOException {
+    boolean oldValue = this.loadBalancerTracker.isBalancerOn();
     boolean newValue = b;
     try {
       if (this.cpHost != null) {
         newValue = this.cpHost.preBalanceSwitch(newValue);
       }
-      if (mode == BalanceSwitchMode.SYNC) {
-        synchronized (this.balancer) {
-          this.balanceSwitch = newValue;
+      try {
+        if (mode == BalanceSwitchMode.SYNC) {
+          synchronized (this.balancer) {
+            this.loadBalancerTracker.setBalancerOn(newValue);
+          }
+        } else {
+          this.loadBalancerTracker.setBalancerOn(newValue);
         }
-      } else {
-        this.balanceSwitch = newValue;
+      } catch (KeeperException ke) {
+        throw new IOException(ke);
       }
       LOG.info("BalanceSwitch=" + newValue);
       if (this.cpHost != null) {
@@ -1350,20 +1379,24 @@ Server {
     return oldValue;
   }
 
-  public boolean synchronousBalanceSwitch(final boolean b) {
+  public boolean synchronousBalanceSwitch(final boolean b) throws IOException {
     return switchBalancer(b, BalanceSwitchMode.SYNC);
   }
 
-  public boolean balanceSwitch(final boolean b) {
+  public boolean balanceSwitch(final boolean b) throws IOException {
     return switchBalancer(b, BalanceSwitchMode.ASYNC);
   }
 
   @Override
   public SetBalancerRunningResponse setBalancerRunning(
       RpcController controller, SetBalancerRunningRequest req) throws ServiceException {
-    boolean prevValue = (req.getSynchronous())?
-      synchronousBalanceSwitch(req.getOn()):balanceSwitch(req.getOn());
-    return SetBalancerRunningResponse.newBuilder().setPrevBalanceValue(prevValue).build();
+    try {
+      boolean prevValue = (req.getSynchronous())?
+        synchronousBalanceSwitch(req.getOn()):balanceSwitch(req.getOn());
+      return SetBalancerRunningResponse.newBuilder().setPrevBalanceValue(prevValue).build();
+    } catch (IOException ioe) {
+      throw new ServiceException(ioe);
+    }
   }
 
   /**
@@ -1452,7 +1485,7 @@ Server {
     }
 
     this.executorService.submit(new CreateTableHandler(this,
-      this.fileSystemManager, this.serverManager, hTableDescriptor, conf,
+      this.fileSystemManager, hTableDescriptor, conf,
       newRegions, catalogTracker, assignmentManager));
     if (cpHost != null) {
       cpHost.postCreateTable(hTableDescriptor, newRegions);
@@ -1747,12 +1780,14 @@ Server {
   }
 
   @Override
-  public GetClusterStatusResponse getClusterStatus(RpcController controller, GetClusterStatusRequest req)
+  public GetClusterStatusResponse getClusterStatus(RpcController controller,
+      GetClusterStatusRequest req)
   throws ServiceException {
     GetClusterStatusResponse.Builder response = GetClusterStatusResponse.newBuilder();
     response.setClusterStatus(getClusterStatus().convert());
     return response.build();
   }
+
   /**
    * @return cluster status
    */
@@ -1771,7 +1806,8 @@ Server {
     for (String s: backupMasterStrings) {
       try {
         byte [] bytes =
-            ZKUtil.getData(this.zooKeeper, ZKUtil.joinZNode(this.zooKeeper.backupMasterAddressesZNode, s));
+            ZKUtil.getData(this.zooKeeper, ZKUtil.joinZNode(
+                this.zooKeeper.backupMasterAddressesZNode, s));
         if (bytes != null) {
           ServerName sn;
           try {
@@ -1799,7 +1835,7 @@ Server {
       this.serverName,
       backupMasters,
       this.assignmentManager.getRegionStates().getRegionsInTransition(),
-      this.getCoprocessors(), this.balanceSwitch);
+      this.getCoprocessors(), this.loadBalancerTracker.isBalancerOn());
   }
 
   public String getClusterId() {
@@ -2258,7 +2294,7 @@ Server {
    * @see org.apache.hadoop.hbase.master.HMasterCommandLine
    */
   public static void main(String [] args) throws Exception {
-	VersionInfo.logVersion();
+    VersionInfo.logVersion();
     new HMasterCommandLine(HMaster.class).doMain(args);
   }
 

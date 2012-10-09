@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -46,6 +45,7 @@ import org.apache.hadoop.metrics.util.MetricsRegistry;
  * org.apache.hadoop.metrics.util implementations.
  *
  */
+@Deprecated
 @InterfaceAudience.Private
 public class MetricsMBeanBase extends MetricsDynamicMBeanBase {
 

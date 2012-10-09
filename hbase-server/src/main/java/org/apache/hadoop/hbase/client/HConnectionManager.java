@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -93,7 +92,7 @@ import org.apache.hadoop.hbase.util.Triple;
 import org.apache.hadoop.hbase.zookeeper.MasterAddressTracker;
 import org.apache.hadoop.hbase.zookeeper.RootRegionTracker;
 import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
-import org.apache.hadoop.hbase.zookeeper.ZKTable;
+import org.apache.hadoop.hbase.zookeeper.ZKTableReadOnly;
 import org.apache.hadoop.hbase.zookeeper.ZKUtil;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
 import org.apache.hadoop.ipc.RemoteException;
@@ -881,9 +880,9 @@ public class HConnectionManager {
       ZooKeeperKeepAliveConnection zkw = getKeepAliveZooKeeperWatcher();
       try {
         if (online) {
-          return ZKTable.isEnabledTable(zkw, tableNameStr);
+          return ZKTableReadOnly.isEnabledTable(zkw, tableNameStr);
         }
-        return ZKTable.isDisabledTable(zkw, tableNameStr);
+        return ZKTableReadOnly.isDisabledTable(zkw, tableNameStr);
       } catch (KeeperException e) {
         throw new IOException("Enable/Disable failed", e);
       }finally {
@@ -916,6 +915,14 @@ public class HConnectionManager {
     public HRegionLocation relocateRegion(final byte [] tableName,
         final byte [] row)
     throws IOException{
+
+      // Since this is an explicit request not to use any caching, finding
+      // disabled tables should not be desirable.  This will ensure that an exception is thrown when
+      // the first time a disabled table is interacted with.
+      if (isTableDisabled(tableName)) {
+        throw new DoNotRetryIOException(Bytes.toString(tableName) + " is disabled.");
+      }
+
       return locateRegion(tableName, row, false, true);
     }
 
@@ -1618,26 +1625,16 @@ public class HConnectionManager {
       return getKeepAliveMasterMonitor();
     }
 
-    /**
-     * This function allows HBaseAdmin and potentially others
-     * to get a shared MasterAdminProtocol connection.
-     *
-     * @return The shared instance. Never returns null.
-     * @throws MasterNotRunningException
-     */
-    MasterAdminKeepAliveConnection getKeepAliveMasterAdmin() throws MasterNotRunningException {
+    @Override
+    public MasterAdminKeepAliveConnection getKeepAliveMasterAdmin()
+        throws MasterNotRunningException {
       return (MasterAdminKeepAliveConnection)
         getKeepAliveMasterProtocol(masterAdminProtocol, MasterAdminKeepAliveConnection.class);
     }
 
-    /**
-     * This function allows HBaseAdminProtocol and potentially others
-     * to get a shared MasterMonitor connection.
-     *
-     * @return The shared instance. Never returns null.
-     * @throws MasterNotRunningException
-     */
-    MasterMonitorKeepAliveConnection getKeepAliveMasterMonitor() throws MasterNotRunningException {
+    @Override
+    public MasterMonitorKeepAliveConnection getKeepAliveMasterMonitor()
+        throws MasterNotRunningException {
       return (MasterMonitorKeepAliveConnection)
         getKeepAliveMasterProtocol(masterMonitorProtocol, MasterMonitorKeepAliveConnection.class);
     }
@@ -2151,6 +2148,7 @@ public class HConnectionManager {
      * @param <R> the callable's return type
      * @throws IOException
      */
+    @Deprecated
     public <T extends CoprocessorProtocol,R> void processExecs(
         final Class<T> protocol,
         List<byte[]> rows,
@@ -2460,7 +2458,7 @@ public class HConnectionManager {
       c.getInt("hbase.client.serverside.retries.multiplier", 10);
     int retries = hcRetries * serversideMultiplier;
     c.setInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER, retries);
-    log.debug("Set serverside HConnection retries=" + retries);
+    log.debug("HConnection retries=" + retries);
   }
 }
 

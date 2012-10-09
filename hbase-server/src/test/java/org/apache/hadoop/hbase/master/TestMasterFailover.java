@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -35,7 +34,19 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.*;
+import org.apache.hadoop.hbase.Abortable;
+import org.apache.hadoop.hbase.ClusterStatus;
+import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.HBaseTestingUtility;
+import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.HRegionInfo;
+import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.LargeTests;
+import org.apache.hadoop.hbase.MasterNotRunningException;
+import org.apache.hadoop.hbase.MiniHBaseCluster;
+import org.apache.hadoop.hbase.RegionTransition;
+import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.executor.EventHandler.EventType;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.regionserver.HRegion;
@@ -43,9 +54,9 @@ import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.FSTableDescriptors;
 import org.apache.hadoop.hbase.util.JVMClusterUtil;
-import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.util.JVMClusterUtil.MasterThread;
 import org.apache.hadoop.hbase.util.JVMClusterUtil.RegionServerThread;
+import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.zookeeper.ZKAssign;
 import org.apache.hadoop.hbase.zookeeper.ZKTable;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
@@ -220,7 +231,7 @@ public class TestMasterFailover {
     enabledAndAssignedRegions.add(enabledRegions.remove(0));
     enabledAndAssignedRegions.add(enabledRegions.remove(0));
     enabledAndAssignedRegions.add(closingRegion);
-    
+
     List<HRegionInfo> disabledAndAssignedRegions = new ArrayList<HRegionInfo>();
     disabledAndAssignedRegions.add(disabledRegions.remove(0));
     disabledAndAssignedRegions.add(disabledRegions.remove(0));
@@ -458,18 +469,18 @@ public class TestMasterFailover {
     // Create a ZKW to use in the test
     ZooKeeperWatcher zkw = new ZooKeeperWatcher(TEST_UTIL.getConfiguration(),
         "unittest", new Abortable() {
-          
+
           @Override
           public void abort(String why, Throwable e) {
             LOG.error("Fatal ZK Error: " + why, e);
             org.junit.Assert.assertFalse("Fatal ZK error", true);
           }
-          
+
           @Override
           public boolean isAborted() {
             return false;
           }
-          
+
     });
 
     // get all the master threads
@@ -770,34 +781,14 @@ public class TestMasterFailover {
     region = enabledRegions.remove(0);
     regionsThatShouldBeOnline.add(region);
     master.getAssignmentManager().getRegionStates().updateRegionState(
-      region, RegionState.State.PENDING_OPEN, null);
+      region, RegionState.State.PENDING_OPEN);
     ZKAssign.createNodeOffline(zkw, region, master.getServerName());
     // PENDING_OPEN and disabled
     region = disabledRegions.remove(0);
     regionsThatShouldBeOffline.add(region);
     master.getAssignmentManager().getRegionStates().updateRegionState(
-      region, RegionState.State.PENDING_OPEN, null);
+      region, RegionState.State.PENDING_OPEN);
     ZKAssign.createNodeOffline(zkw, region, master.getServerName());
-    // This test is bad.  It puts up a PENDING_CLOSE but doesn't say what
-    // server we were PENDING_CLOSE against -- i.e. an entry in
-    // AssignmentManager#regions.  W/o a server, we NPE trying to resend close.
-    // In past, there was wonky logic that had us reassign region if no server
-    // at tail of the unassign.  This was removed.  Commenting out for now.
-    // TODO: Remove completely.
-    /*
-    // PENDING_CLOSE and enabled
-    region = enabledRegions.remove(0);
-    LOG.info("Setting PENDING_CLOSE enabled " + region.getEncodedName());
-    regionsThatShouldBeOnline.add(region);
-    master.assignmentManager.regionsInTransition.put(region.getEncodedName(),
-      new RegionState(region, RegionState.State.PENDING_CLOSE, 0));
-    // PENDING_CLOSE and disabled
-    region = disabledRegions.remove(0);
-    LOG.info("Setting PENDING_CLOSE disabled " + region.getEncodedName());
-    regionsThatShouldBeOffline.add(region);
-    master.assignmentManager.regionsInTransition.put(region.getEncodedName(),
-      new RegionState(region, RegionState.State.PENDING_CLOSE, 0));
-      */
 
     // Failover should be completed, now wait for no RIT
     log("Waiting for no more RIT");
@@ -896,8 +887,8 @@ public class TestMasterFailover {
     TEST_UTIL.shutdownMiniHBaseCluster();
 
     // Create a ZKW to use in the test
-    ZooKeeperWatcher zkw = 
-      HBaseTestingUtility.createAndForceNodeToOpenedState(TEST_UTIL, 
+    ZooKeeperWatcher zkw =
+      HBaseTestingUtility.createAndForceNodeToOpenedState(TEST_UTIL,
           metaRegion, regionServer.getServerName());
 
     LOG.info("Staring cluster for second time");
@@ -1022,9 +1013,83 @@ public class TestMasterFailover {
     TEST_UTIL.shutdownMiniCluster();
   }
 
+  /**
+   * return the index of the active master in the cluster
+   * @throws MasterNotRunningException if no active master found
+   */
+  private int getActiveMasterIndex(MiniHBaseCluster cluster) throws MasterNotRunningException {
+    // get all the master threads
+    List<MasterThread> masterThreads = cluster.getMasterThreads();
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
+    for (int i = 0; i < masterThreads.size(); i++) {
+      if (masterThreads.get(i).getMaster().isActiveMaster()) {
+        return i;
+      }
+    }
+    throw new MasterNotRunningException();
+  }
+
+  /**
+   * Kill the master and wait for a new active master to show up
+   * @param cluster
+   * @return the new active master
+   * @throws InterruptedException
+   * @throws IOException
+   */
+  private HMaster killActiveAndWaitForNewActive(MiniHBaseCluster cluster)
+  throws InterruptedException, IOException {
+    int activeIndex = getActiveMasterIndex(cluster);
+    HMaster active = cluster.getMaster();
+    cluster.stopMaster(activeIndex);
+    cluster.waitOnMaster(activeIndex);
+    assertTrue(cluster.waitForActiveAndReadyMaster());
+    // double check this is actually a new master
+    HMaster newActive = cluster.getMaster();
+    assertFalse(active == newActive);
+    return newActive;
+  }
+
+  /**
+   * Test that if the master fails, the load balancer maintains its
+   * state (running or not) when the next master takes over
+   * @throws Exception
+   */
+  @Test (timeout=240000)
+  public void testMasterFailoverBalancerPersistence() throws Exception {
+    final int NUM_MASTERS = 3;
+    final int NUM_RS = 1;
+
+    // Start the cluster
+    HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
+
+    TEST_UTIL.startMiniCluster(NUM_MASTERS, NUM_RS);
+    MiniHBaseCluster cluster = TEST_UTIL.getHBaseCluster();
+
+    assertTrue(cluster.waitForActiveAndReadyMaster());
+    HMaster active = cluster.getMaster();
+    // check that the balancer is on by default for the active master
+    ClusterStatus clusterStatus = active.getClusterStatus();
+    assertTrue(clusterStatus.isBalancerOn());
+
+    active = killActiveAndWaitForNewActive(cluster);
+
+    // ensure the load balancer is still running on new master
+    clusterStatus = active.getClusterStatus();
+    assertTrue(clusterStatus.isBalancerOn());
+
+    // turn off the load balancer
+    active.balanceSwitch(false);
+
+    // once more, kill active master and wait for new active master to show up
+    active = killActiveAndWaitForNewActive(cluster);
+
+    // ensure the load balancer is not running on the new master
+    clusterStatus = active.getClusterStatus();
+    assertFalse(clusterStatus.isBalancerOn());
+
+    // Stop the cluster
+    TEST_UTIL.shutdownMiniCluster();
+  }
+
 }
 

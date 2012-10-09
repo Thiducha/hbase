@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -215,7 +214,7 @@ public class SequenceFileLogReader implements HLog.Reader {
     if (e == null) {
       HLogKey key;
       if (keyClass == null) {
-        key = HLog.newKey(conf);
+        key = HLogUtil.newKey(conf);
       } else {
         try {
           key = keyClass.newInstance();

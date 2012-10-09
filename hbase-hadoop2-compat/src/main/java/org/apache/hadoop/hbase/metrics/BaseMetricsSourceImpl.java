@@ -22,8 +22,10 @@ import org.apache.hadoop.metrics2.MetricsCollector;
 import org.apache.hadoop.metrics2.MetricsSource;
 import org.apache.hadoop.metrics2.lib.DefaultMetricsSystem;
 import org.apache.hadoop.metrics2.lib.DynamicMetricsRegistry;
+import org.apache.hadoop.metrics2.lib.MetricMutableQuantiles;
 import org.apache.hadoop.metrics2.lib.MutableCounterLong;
 import org.apache.hadoop.metrics2.lib.MutableGaugeLong;
+import org.apache.hadoop.metrics2.lib.MutableHistogram;
 import org.apache.hadoop.metrics2.source.JvmMetrics;
 
 /**
@@ -31,7 +33,20 @@ import org.apache.hadoop.metrics2.source.JvmMetrics;
  */
 public class BaseMetricsSourceImpl implements BaseMetricsSource, MetricsSource {
 
-  private static boolean defaultMetricsSystemInited = false;
+  private static enum DefaultMetricsSystemInitializer {
+    INSTANCE;
+    private boolean inited = false;
+    private JvmMetrics jvmMetricsSource;
+
+    synchronized void init(String name) {
+      if (inited) return;
+      inited = true;
+      DefaultMetricsSystem.initialize(HBASE_METRICS_SYSTEM_NAME);
+      jvmMetricsSource = JvmMetrics.create(name, "", DefaultMetricsSystem.instance());
+
+    }
+  }
+
   public static final String HBASE_METRICS_SYSTEM_NAME = "hbase";
 
   protected final DynamicMetricsRegistry metricsRegistry;
@@ -39,8 +54,6 @@ public class BaseMetricsSourceImpl implements BaseMetricsSource, MetricsSource {
   protected final String metricsDescription;
   protected final String metricsContext;
   protected final String metricsJmxContext;
-
-  private JvmMetrics jvmMetricsSource;
 
   public BaseMetricsSourceImpl(
       String metricsName,
@@ -54,16 +67,16 @@ public class BaseMetricsSourceImpl implements BaseMetricsSource, MetricsSource {
     this.metricsJmxContext = metricsJmxContext;
 
     metricsRegistry = new DynamicMetricsRegistry(metricsName).setContext(metricsContext);
+    DefaultMetricsSystemInitializer.INSTANCE.init(metricsName);
 
-    if (!defaultMetricsSystemInited) {
-      //Not too worried about mutlithread here as all it does is spam the logs.
-      defaultMetricsSystemInited = true;
-      DefaultMetricsSystem.initialize(HBASE_METRICS_SYSTEM_NAME);
-      jvmMetricsSource = JvmMetrics.create(metricsName, "", DefaultMetricsSystem.instance());
-    }
-
+    //Register this instance.
     DefaultMetricsSystem.instance().register(metricsJmxContext, metricsDescription, this);
+    init();
 
+  }
+
+  public void init() {
+    this.metricsRegistry.clearMetrics();
   }
 
   /**
@@ -73,7 +86,7 @@ public class BaseMetricsSourceImpl implements BaseMetricsSource, MetricsSource {
    * @param value     the new value of the gauge.
    */
   public void setGauge(String gaugeName, long value) {
-    MutableGaugeLong gaugeInt = getLongGauge(gaugeName, value);
+    MutableGaugeLong gaugeInt = metricsRegistry.getLongGauge(gaugeName, value);
     gaugeInt.set(value);
   }
 
@@ -84,7 +97,7 @@ public class BaseMetricsSourceImpl implements BaseMetricsSource, MetricsSource {
    * @param delta     The amount to increment the gauge by.
    */
   public void incGauge(String gaugeName, long delta) {
-    MutableGaugeLong gaugeInt = getLongGauge(gaugeName, 0l);
+    MutableGaugeLong gaugeInt = metricsRegistry.getLongGauge(gaugeName, 0l);
     gaugeInt.incr(delta);
   }
 
@@ -95,7 +108,7 @@ public class BaseMetricsSourceImpl implements BaseMetricsSource, MetricsSource {
    * @param delta     the ammount to subtract from a gauge value.
    */
   public void decGauge(String gaugeName, long delta) {
-    MutableGaugeLong gaugeInt = getLongGauge(gaugeName, 0l);
+    MutableGaugeLong gaugeInt = metricsRegistry.getLongGauge(gaugeName, 0l);
     gaugeInt.decr(delta);
   }
 
@@ -106,9 +119,21 @@ public class BaseMetricsSourceImpl implements BaseMetricsSource, MetricsSource {
    * @param delta the ammount to increment
    */
   public void incCounters(String key, long delta) {
-    MutableCounterLong counter = getLongCounter(key, 0l);
+    MutableCounterLong counter = metricsRegistry.getLongCounter(key, 0l);
     counter.incr(delta);
 
+  }
+
+  @Override
+  public void updateHistogram(String name, long value) {
+    MutableHistogram histo = metricsRegistry.getHistogram(name);
+    histo.add(value);
+  }
+
+  @Override
+  public void updateQuantile(String name, long value) {
+    MetricMutableQuantiles histo = metricsRegistry.getQuantile(name);
+    histo.add(value);
   }
 
   /**
@@ -129,30 +154,14 @@ public class BaseMetricsSourceImpl implements BaseMetricsSource, MetricsSource {
     metricsRegistry.removeMetric(key);
   }
 
-  /**
-   * Get a MetricMutableGaugeLong from the storage.  If it is not there atomically put it.
-   *
-   * @param gaugeName              name of the gauge to create or get.
-   * @param potentialStartingValue value of the new counter if we have to create it.
-   * @return
-   */
-  protected MutableGaugeLong getLongGauge(String gaugeName, long potentialStartingValue) {
-    return metricsRegistry.getLongGauge(gaugeName, potentialStartingValue);
-  }
-
-  /**
-   * Get a MetricMutableCounterLong from the storage.  If it is not there atomically put it.
-   *
-   * @param counterName            Name of the counter to get
-   * @param potentialStartingValue starting value if we have to create a new counter
-   * @return
-   */
-  protected MutableCounterLong getLongCounter(String counterName, long potentialStartingValue) {
-    return metricsRegistry.getLongCounter(counterName, potentialStartingValue);
+  protected DynamicMetricsRegistry getMetricsRegistry() {
+    return metricsRegistry;
   }
 
   @Override
   public void getMetrics(MetricsCollector metricsCollector, boolean all) {
     metricsRegistry.snapshot(metricsCollector.addRecord(metricsRegistry.info()), all);
   }
+
+
 }

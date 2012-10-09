@@ -1,6 +1,5 @@
 
 /*
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -31,7 +30,7 @@ import org.apache.hadoop.conf.Configuration;
 
 /**
  * Implements the coprocessor environment and runtime support for coprocessors
- * loaded within a {@link HLog}.
+ * loaded within a {@link FSHLog}.
  */
 @InterfaceAudience.Private
 public class WALCoprocessorHost
@@ -43,10 +42,10 @@ public class WALCoprocessorHost
   static class WALEnvironment extends CoprocessorHost.Environment
     implements WALCoprocessorEnvironment {
 
-    private HLog wal;
+    private FSHLog wal;
 
     @Override
-    public HLog getWAL() {
+    public FSHLog getWAL() {
       return wal;
     }
 
@@ -60,19 +59,19 @@ public class WALCoprocessorHost
      */
     public WALEnvironment(Class<?> implClass, final Coprocessor impl,
         final int priority, final int seq, final Configuration conf,
-        final HLog hlog) {
+        final FSHLog hlog) {
       super(impl, priority, seq, conf);
       this.wal = hlog;
     }
   }
 
-  HLog wal;
+  FSHLog wal;
   /**
    * Constructor
    * @param log the write ahead log
    * @param conf the configuration
    */
-  public WALCoprocessorHost(final HLog log, final Configuration conf) {
+  public WALCoprocessorHost(final FSHLog log, final Configuration conf) {
     this.wal = log;
     // load system default cp's from configuration.
     loadSystemCoprocessors(conf, WAL_COPROCESSOR_CONF_KEY);

@@ -23,9 +23,11 @@ package org.apache.hadoop.hbase.fs;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
+import java.lang.reflect.UndeclaredThrowableException;
 import java.net.URI;
 
 import org.apache.commons.logging.Log;
@@ -38,6 +40,7 @@ import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
+import org.apache.hadoop.hbase.regionserver.wal.HLogUtil;
 import org.apache.hadoop.hdfs.DFSClient;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.hadoop.hdfs.protocol.ClientProtocol;
@@ -77,6 +80,7 @@ public class HFileSystem extends FilterFileSystem {
     this.useHBaseChecksum = useHBaseChecksum;
     
     fs.initialize(getDefaultUri(conf), conf);
+    addLocationsOrderInterceptor(conf);
 
     // If hbase checksum verification is switched on, then create a new
     // filesystem object that has cksum verification turned off.
@@ -87,12 +91,13 @@ public class HFileSystem extends FilterFileSystem {
     // This manifests itself in that incorrect data is read and HFileBlocks won't be able to read
     // their header magic numbers. See HBASE-5885
     if (useHBaseChecksum && !(fs instanceof LocalFileSystem)) {
+      conf = new Configuration(conf);
+      conf.setBoolean("dfs.client.read.shortcircuit.skip.checksum", true);
       this.noChecksumFs = newInstanceFileSystem(conf);
       this.noChecksumFs.setVerifyChecksum(false);
     } else {
       this.noChecksumFs = fs;
     }
-    addLocationsOrderInterceptor(conf);
   }
 
   /**
@@ -258,14 +263,33 @@ public class HFileSystem extends FilterFileSystem {
             new InvocationHandler() {
               public Object invoke(Object proxy, Method method,
                                    Object[] args) throws Throwable {
-                Object res = method.invoke(cp, args);
-                if (res != null && args.length == 3 && "getBlockLocations".equals(method.getName())
-                    && res instanceof LocatedBlocks
-                    && args[0] instanceof String
-                    && args[0] != null) {
-                  lrb.reorderBlocks(conf, (LocatedBlocks) res, (String) args[0]);
+                try { 
+                  Object res = method.invoke(cp, args);
+                  if (res != null && args != null && args.length == 3
+                      && "getBlockLocations".equals(method.getName())
+                      && res instanceof LocatedBlocks
+                      && args[0] instanceof String
+                      && args[0] != null) {
+                    lrb.reorderBlocks(conf, (LocatedBlocks) res, (String) args[0]);
+                  }
+                  return res;
+                } catch  (InvocationTargetException ite) {
+                  // We will have this for all the exception, checked on not, sent
+                  //  by any layer, including the functional exception
+                  Throwable cause = ite.getCause();
+                  if (cause == null){
+                    throw new RuntimeException(
+                      "Proxy invocation failed and getCause is null", ite);
+                  }
+                  if (cause instanceof UndeclaredThrowableException) {
+                    Throwable causeCause = cause.getCause();
+                    if (causeCause == null) {
+                      throw new RuntimeException("UndeclaredThrowableException had null cause!");
+                    }
+                    cause = cause.getCause();
+                  }
+                  throw cause;
                 }
-                return res;
               }
             });
   }
@@ -293,7 +317,7 @@ public class HFileSystem extends FilterFileSystem {
     public void reorderBlocks(Configuration conf, LocatedBlocks lbs, String src)
         throws IOException {
 
-      ServerName sn = HLog.getServerNameFromHLogDirectoryName(conf, src);
+      ServerName sn = HLogUtil.getServerNameFromHLogDirectoryName(conf, src);
       if (sn == null) {
         // It's not an HLOG
         return;

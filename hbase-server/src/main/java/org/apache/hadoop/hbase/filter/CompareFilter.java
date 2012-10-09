@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -69,7 +68,7 @@ public abstract class CompareFilter extends FilterBase {
   }
 
   protected CompareOp compareOp;
-  protected WritableByteArrayComparable comparator;
+  protected ByteArrayComparable comparator;
 
   /**
    * Constructor.
@@ -77,7 +76,7 @@ public abstract class CompareFilter extends FilterBase {
    * @param comparator the comparator for row matching
    */
   public CompareFilter(final CompareOp compareOp,
-      final WritableByteArrayComparable comparator) {
+      final ByteArrayComparable comparator) {
     this.compareOp = compareOp;
     this.comparator = comparator;
   }
@@ -92,12 +91,12 @@ public abstract class CompareFilter extends FilterBase {
   /**
    * @return the comparator
    */
-  public WritableByteArrayComparable getComparator() {
+  public ByteArrayComparable getComparator() {
     return comparator;
   }
 
   protected boolean doCompare(final CompareOp compareOp,
-      final WritableByteArrayComparable comparator, final byte [] data,
+      final ByteArrayComparable comparator, final byte [] data,
       final int offset, final int length) {
     if (compareOp == CompareOp.NO_OP) {
       return true;
@@ -126,7 +125,7 @@ public abstract class CompareFilter extends FilterBase {
     Preconditions.checkArgument(filterArguments.size() == 2,
                                 "Expected 2 but got: %s", filterArguments.size());
     CompareOp compareOp = ParseFilter.createCompareOp(filterArguments.get(0));
-    WritableByteArrayComparable comparator = ParseFilter.createComparator(
+    ByteArrayComparable comparator = ParseFilter.createComparator(
       ParseFilter.removeQuotesFromByteArray(filterArguments.get(1)));
 
     if (comparator instanceof RegexStringComparator ||

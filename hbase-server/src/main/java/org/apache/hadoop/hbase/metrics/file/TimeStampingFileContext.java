@@ -1,5 +1,4 @@
 /**
- * Copyright 2008 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -35,6 +34,7 @@ import org.apache.hadoop.metrics.spi.OutputRecord;
 /**
  * Add timestamp to {@link org.apache.hadoop.metrics.file.FileContext#emitRecord(String, String, OutputRecord)}.
  */
+@Deprecated
 @InterfaceAudience.Private
 public class TimeStampingFileContext extends FileContext {
   // Copies bunch of FileContext here because writer and file are private in

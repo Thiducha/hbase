@@ -25,21 +25,22 @@ import org.apache.hadoop.metrics2.MetricsBuilder;
 import org.apache.hadoop.metrics2.MetricsRecordBuilder;
 import org.apache.hadoop.metrics2.lib.MetricMutableCounterLong;
 import org.apache.hadoop.metrics2.lib.MetricMutableGaugeLong;
+import org.apache.hadoop.metrics2.lib.MetricMutableHistogram;
 
-/**
- * Hadoop1 implementation of MasterMetricsSource.
- */
+/** Hadoop1 implementation of MasterMetricsSource. */
 public class MasterMetricsSourceImpl
-        extends BaseMetricsSourceImpl implements MasterMetricsSource {
+    extends BaseMetricsSourceImpl implements MasterMetricsSource {
 
   private static final Log LOG = LogFactory.getLog(MasterMetricsSourceImpl.class.getName());
 
-  final MetricMutableCounterLong clusterRequestsCounter;
-  final MetricMutableGaugeLong ritGauge;
-  final MetricMutableGaugeLong ritCountOverThresholdGauge;
-  final MetricMutableGaugeLong ritOldestAgeGauge;
+  MetricMutableCounterLong clusterRequestsCounter;
+  MetricMutableGaugeLong ritGauge;
+  MetricMutableGaugeLong ritCountOverThresholdGauge;
+  MetricMutableGaugeLong ritOldestAgeGauge;
 
   private final MasterMetricsWrapper masterWrapper;
+  private MetricMutableHistogram splitTimeHisto;
+  private MetricMutableHistogram splitSizeHisto;
 
   public MasterMetricsSourceImpl(MasterMetricsWrapper masterWrapper) {
     this(METRICS_NAME, METRICS_DESCRIPTION, METRICS_CONTEXT, METRICS_JMX_CONTEXT, masterWrapper);
@@ -51,12 +52,18 @@ public class MasterMetricsSourceImpl
                                  String metricsJmxContext,
                                  MasterMetricsWrapper masterWrapper) {
     super(metricsName, metricsDescription, metricsContext, metricsJmxContext);
-
     this.masterWrapper = masterWrapper;
-    clusterRequestsCounter = getLongCounter("cluster_requests", 0);
-    ritGauge = getLongGauge("ritCount", 0);
-    ritCountOverThresholdGauge = getLongGauge("ritCountOverThreshold", 0);
-    ritOldestAgeGauge = getLongGauge("ritOldestAge", 0);
+  }
+
+  @Override
+  public void init() {
+    super.init();
+    clusterRequestsCounter = metricsRegistry.newCounter(CLUSTER_REQUESTS_NAME, "", 0l);
+    ritGauge = metricsRegistry.newGauge(RIT_COUNT_NAME, "", 0l);
+    ritCountOverThresholdGauge = metricsRegistry.newGauge(RIT_COUNT_OVER_THRESHOLD_NAME, "", 0l);
+    ritOldestAgeGauge = metricsRegistry.newGauge(RIT_OLDEST_AGE_NAME, "", 0l);
+    splitTimeHisto = metricsRegistry.newHistogram(SPLIT_SIZE_NAME, SPLIT_SIZE_DESC);
+    splitSizeHisto = metricsRegistry.newHistogram(SPLIT_TIME_NAME, SPLIT_TIME_DESC);
   }
 
   public void incRequests(final int inc) {
@@ -72,7 +79,17 @@ public class MasterMetricsSourceImpl
   }
 
   public void setRITOldestAge(long ritCount) {
-    ritCountOverThresholdGauge.set(ritCount);
+    ritOldestAgeGauge.set(ritCount);
+  }
+
+  @Override
+  public void updateSplitTime(long time) {
+    splitTimeHisto.add(time);
+  }
+
+  @Override
+  public void updateSplitSize(long size) {
+    splitSizeHisto.add(size);
   }
 
   /**
@@ -91,7 +108,7 @@ public class MasterMetricsSourceImpl
     if (masterWrapper != null) {
       metricsRecordBuilder
           .addGauge(MASTER_ACTIVE_TIME_NAME,
-              MASTER_ACTIVE_TIME_DESC, masterWrapper.getMasterStartTime())
+              MASTER_ACTIVE_TIME_DESC, masterWrapper.getMasterActiveTime())
           .addGauge(MASTER_START_TIME_NAME,
               MASTER_START_TIME_DESC, masterWrapper.getMasterStartTime())
           .addGauge(AVERAGE_LOAD_NAME, AVERAGE_LOAD_DESC, masterWrapper.getAverageLoad())
@@ -110,4 +127,5 @@ public class MasterMetricsSourceImpl
 
     metricsRegistry.snapshot(metricsRecordBuilder, true);
   }
+
 }

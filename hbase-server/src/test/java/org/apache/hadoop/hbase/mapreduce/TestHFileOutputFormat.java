@@ -1,5 +1,4 @@
 /**
- * Copyright 2009 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -27,7 +26,6 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
-import java.lang.reflect.Constructor;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -44,11 +42,13 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.CompatibilitySingletonFactory;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.HadoopShims;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.PerformanceEvaluation;
@@ -75,7 +75,6 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.RecordWriter;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
-import org.apache.hadoop.mapreduce.TaskAttemptID;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -181,7 +180,7 @@ public class TestHFileOutputFormat  {
     try {
       Job job = new Job(conf);
       FileOutputFormat.setOutputPath(job, dir);
-      context = getTestTaskAttemptContext(job);
+      context = createTestTaskAttemptContext(job);
       HFileOutputFormat hof = new HFileOutputFormat();
       writer = hof.getRecordWriter(context);
       final byte [] b = Bytes.toBytes("b");
@@ -209,29 +208,10 @@ public class TestHFileOutputFormat  {
     }
   }
 
-  /**
-   * @return True if the available mapreduce is post-0.20.
-   */
-  private static boolean isPost020MapReduce() {
-    // Here is a coarse test for post 0.20 hadoop; TAC became an interface.
-    return TaskAttemptContext.class.isInterface();
-  }
-
-  private TaskAttemptContext getTestTaskAttemptContext(final Job job)
+  private TaskAttemptContext createTestTaskAttemptContext(final Job job)
   throws IOException, Exception {
-    TaskAttemptContext context;
-    if (isPost020MapReduce()) {
-      TaskAttemptID id =
-        TaskAttemptID.forName("attempt_200707121733_0001_m_000000_0");
-      Class<?> clazz =
-        Class.forName("org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl");
-      Constructor<?> c = clazz.
-          getConstructor(Configuration.class, TaskAttemptID.class);
-      context = (TaskAttemptContext)c.newInstance(job.getConfiguration(), id);
-    } else {
-      context = org.apache.hadoop.hbase.mapreduce.hadoopbackport.InputSampler.
-        getTaskAttemptContext(job);
-    }
+    HadoopShims hadoop = CompatibilitySingletonFactory.getInstance(HadoopShims.class);
+    TaskAttemptContext context = hadoop.createTestTaskAttemptContext(job, "attempt_200707121733_0001_m_000000_0");
     return context;
   }
 
@@ -251,7 +231,7 @@ public class TestHFileOutputFormat  {
       // build a record writer using HFileOutputFormat
       Job job = new Job(conf);
       FileOutputFormat.setOutputPath(job, dir);
-      context = getTestTaskAttemptContext(job);
+      context = createTestTaskAttemptContext(job);
       HFileOutputFormat hof = new HFileOutputFormat();
       writer = hof.getRecordWriter(context);
 
@@ -594,7 +574,7 @@ public class TestHFileOutputFormat  {
       setupRandomGeneratorMapper(job);
       HFileOutputFormat.configureIncrementalLoad(job, table);
       FileOutputFormat.setOutputPath(job, dir);
-      context = getTestTaskAttemptContext(job);
+      context = createTestTaskAttemptContext(job);
       HFileOutputFormat hof = new HFileOutputFormat();
       writer = hof.getRecordWriter(context);
 
@@ -691,12 +671,85 @@ public class TestHFileOutputFormat  {
     }
   }
 
+  /**
+   * This test is to test the scenario happened in HBASE-6901.
+   * All files are bulk loaded and excluded from minor compaction.
+   * Without the fix of HBASE-6901, an ArrayIndexOutOfBoundsException
+   * will be thrown.
+   */
+  @Test
+  public void testExcludeAllFromMinorCompaction() throws Exception {
+    Configuration conf = util.getConfiguration();
+    conf.setInt("hbase.hstore.compaction.min", 2);
+    generateRandomStartKeys(5);
+
+    try {
+      util.startMiniCluster();
+      final FileSystem fs = util.getDFSCluster().getFileSystem();
+      HBaseAdmin admin = new HBaseAdmin(conf);
+      HTable table = util.createTable(TABLE_NAME, FAMILIES);
+      assertEquals("Should start with empty table", 0, util.countRows(table));
+
+      // deep inspection: get the StoreFile dir
+      final Path storePath = HStore.getStoreHomedir(
+          HTableDescriptor.getTableDir(FSUtils.getRootDir(conf), TABLE_NAME),
+          admin.getTableRegions(TABLE_NAME).get(0).getEncodedName(),
+          FAMILIES[0]);
+      assertEquals(0, fs.listStatus(storePath).length);
+
+      // Generate two bulk load files
+      conf.setBoolean("hbase.mapreduce.hfileoutputformat.compaction.exclude",
+          true);
+      util.startMiniMapReduceCluster();
+
+      for (int i = 0; i < 2; i++) {
+        Path testDir = util.getDataTestDir("testExcludeAllFromMinorCompaction_" + i);
+        runIncrementalPELoad(conf, table, testDir);
+        // Perform the actual load
+        new LoadIncrementalHFiles(conf).doBulkLoad(testDir, table);
+      }
+
+      // Ensure data shows up
+      int expectedRows = 2 * NMapInputFormat.getNumMapTasks(conf) * ROWSPERSPLIT;
+      assertEquals("LoadIncrementalHFiles should put expected data in table",
+          expectedRows, util.countRows(table));
+
+      // should have a second StoreFile now
+      assertEquals(2, fs.listStatus(storePath).length);
+
+      // minor compactions shouldn't get rid of the file
+      admin.compact(TABLE_NAME);
+      try {
+        quickPoll(new Callable<Boolean>() {
+          public Boolean call() throws Exception {
+            return fs.listStatus(storePath).length == 1;
+          }
+        }, 5000);
+        throw new IOException("SF# = " + fs.listStatus(storePath).length);
+      } catch (AssertionError ae) {
+        // this is expected behavior
+      }
+
+      // a major compaction should work though
+      admin.majorCompact(TABLE_NAME);
+      quickPoll(new Callable<Boolean>() {
+        public Boolean call() throws Exception {
+          return fs.listStatus(storePath).length == 1;
+        }
+      }, 5000);
+
+    } finally {
+      util.shutdownMiniMapReduceCluster();
+      util.shutdownMiniCluster();
+    }
+  }
+
   @Test
   public void testExcludeMinorCompaction() throws Exception {
     Configuration conf = util.getConfiguration();
     conf.setInt("hbase.hstore.compaction.min", 2);
     Path testDir = util.getDataTestDir("testExcludeMinorCompaction");
-    byte[][] startKeys = generateRandomStartKeys(5);
+    generateRandomStartKeys(5);
 
     try {
       util.startMiniCluster();
@@ -806,8 +859,5 @@ public class TestHFileOutputFormat  {
     }
   }
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
 

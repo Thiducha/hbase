@@ -1,5 +1,4 @@
 <%doc>
-Copyright 2011 The Apache Software Foundation
 
 Licensed to the Apache Software Foundation (ASF) under one
 or more contributor license agreements.  See the NOTICE file
@@ -76,9 +75,9 @@ org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionLoad;
             <ul class="nav">
                 <li class="active"><a href="/">Home</a></li>
                 <li><a href="/logs/">Local logs</a></li>
-                <li><a href="/stacks">Thread Dump</a></li>
                 <li><a href="/logLevel">Log Level</a></li>
                 <li><a href="/dump">Debug dump</a></li>
+                <li><a href="/jmx">Metrics Dump</a></li>
                 <%if HBaseConfiguration.isShowConfInServlet()%>
                 <li><a href="/conf">HBase Configuration</a></li>
                 </%if>

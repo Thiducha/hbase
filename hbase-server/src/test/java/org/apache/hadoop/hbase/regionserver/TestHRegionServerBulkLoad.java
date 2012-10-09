@@ -150,7 +150,7 @@ public class TestHRegionServerBulkLoad {
               + Bytes.toStringBinary(row));
           byte[] regionName = location.getRegionInfo().getRegionName();
           BulkLoadHFileRequest request =
-            RequestConverter.buildBulkLoadHFileRequest(famPaths, regionName);
+            RequestConverter.buildBulkLoadHFileRequest(famPaths, regionName, true);
           server.bulkLoadHFile(null, request);
           return null;
         }
@@ -324,8 +324,5 @@ public class TestHRegionServerBulkLoad {
     UTIL = new HBaseTestingUtility(c);
   }
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
 

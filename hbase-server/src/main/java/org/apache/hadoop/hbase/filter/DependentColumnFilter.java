@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -69,7 +68,7 @@ public class DependentColumnFilter extends CompareFilter {
    */
   public DependentColumnFilter(final byte [] family, final byte[] qualifier,
 		  final boolean dropDependentColumn, final CompareOp valueCompareOp,
-	      final WritableByteArrayComparable valueComparator) {
+	      final ByteArrayComparable valueComparator) {
     // set up the comparator   
     super(valueCompareOp, valueComparator);
     this.columnFamily = family;
@@ -205,7 +204,7 @@ public class DependentColumnFilter extends CompareFilter {
       byte [] qualifier = ParseFilter.removeQuotesFromByteArray(filterArguments.get(1));
       boolean dropDependentColumn = ParseFilter.convertByteArrayToBoolean(filterArguments.get(2));
       CompareOp compareOp = ParseFilter.createCompareOp(filterArguments.get(3));
-      WritableByteArrayComparable comparator = ParseFilter.createComparator(
+      ByteArrayComparable comparator = ParseFilter.createComparator(
         ParseFilter.removeQuotesFromByteArray(filterArguments.get(4)));
       return new DependentColumnFilter(family, qualifier, dropDependentColumn,
                                        compareOp, comparator);
@@ -247,7 +246,7 @@ public class DependentColumnFilter extends CompareFilter {
     }
     final CompareOp valueCompareOp =
       CompareOp.valueOf(proto.getCompareFilter().getCompareOp().name());
-    WritableByteArrayComparable valueComparator = null;
+    ByteArrayComparable valueComparator = null;
     try {
       if (proto.getCompareFilter().hasComparator()) {
         valueComparator = ProtobufUtil.toComparator(proto.getCompareFilter().getComparator());

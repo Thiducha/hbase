@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -36,9 +35,12 @@ import org.apache.hadoop.classification.InterfaceStability;
  *   <li>an array or {@code java.util.List} of one of the above</li>
  * </ul>
  * </p>
+ * @deprecated since 0.96.  Use {@link org.apache.hadoop.hbase.coprocessor.CoprocessorService}
+ * instead.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
+@Deprecated
 public interface CoprocessorProtocol extends VersionedProtocol {
   public static final long VERSION = 1L;
 }

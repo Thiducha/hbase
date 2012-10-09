@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -281,6 +280,12 @@ public class SplitTransaction {
       throw new IOException(exceptionToThrow);
     }
 
+        
+    if (hstoreFilesToSplit.size() == 0) {
+      String errorMsg = "No store files to split for the region "+this.parent.getRegionInfo();
+      LOG.error(errorMsg);
+      throw new IOException(errorMsg);
+    }
     if (!testing) {
       services.removeFromOnlineRegions(this.parent.getRegionInfo().getEncodedName(), null);
     }

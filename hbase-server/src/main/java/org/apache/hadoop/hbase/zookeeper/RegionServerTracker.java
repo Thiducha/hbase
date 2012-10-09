@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -96,7 +95,8 @@ public class RegionServerTracker extends ZooKeeperListener {
         serverName + "]");
       ServerName sn = ServerName.parseServerName(serverName);
       if (!serverManager.isServerOnline(sn)) {
-        LOG.info(serverName.toString() + " is not online");
+        LOG.warn(serverName.toString() + " is not online or isn't known to the master."+
+         "The latter could be caused by a DNS misconfiguration.");
         return;
       }
       remove(sn);

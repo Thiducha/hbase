@@ -17,11 +17,14 @@
  */
 package org.apache.hadoop.hbase.master.cleaner;
 
+import java.util.List;
+
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.Stoppable;
+import org.apache.hadoop.hbase.io.HFileLink;
 import org.apache.hadoop.hbase.regionserver.StoreFile;
 /**
  * This Chore, every time it runs, will clear the HFiles in the hfile archive
@@ -46,6 +49,16 @@ public class HFileCleaner extends CleanerChore<BaseHFileCleanerDelegate> {
 
   @Override
   protected boolean validate(Path file) {
+    if (HFileLink.isBackReferencesDir(file) || HFileLink.isBackReferencesDir(file.getParent())) {
+      return true;
+    }
     return StoreFile.validateStoreFileName(file.getName());
+  }
+
+  /**
+   * Exposed for TESTING!
+   */
+  public List<BaseHFileCleanerDelegate> getDelegatesForTesting() {
+    return this.cleanersChain;
   }
 }

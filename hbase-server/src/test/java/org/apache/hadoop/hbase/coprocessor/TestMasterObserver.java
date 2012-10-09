@@ -1,5 +1,4 @@
 /*
- * Copyright 2011 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -31,6 +30,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.concurrent.CountDownLatch;
+
+import junit.framework.Assert;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -973,6 +974,8 @@ public class TestMasterObserver {
       // move half the open regions from RS 0 to RS 1
       HRegionServer rs = cluster.getRegionServer(0);
       byte[] destRS = Bytes.toBytes(cluster.getRegionServer(1).getServerName().toString());
+      //Make sure no regions are in transition now
+      waitForRITtoBeZero(master);
       List<HRegionInfo> openRegions = ProtobufUtil.getOnlineRegions(rs);
       int moveCnt = openRegions.size()/2;
       for (int i=0; i<moveCnt; i++) {
@@ -982,26 +985,27 @@ public class TestMasterObserver {
             openRegions.get(i).getEncodedNameAsBytes(), destRS));
         }
       }
-  
-      // wait for assignments to finish
-      transRegions = mgr.getRegionStates().getRegionsInTransition().values();
-      for (RegionState state : transRegions) {
-        mgr.getRegionStates().waitOnRegionToClearRegionsInTransition(state.getRegion());
-      }
-  
+      //Make sure no regions are in transition now
+      waitForRITtoBeZero(master);
       // now trigger a balance
       master.balanceSwitch(true);
       boolean balanceRun = master.balance();
       assertTrue("Coprocessor should be called on region rebalancing",
           cp.wasBalanceCalled());
-      table.close();
     } finally {
       UTIL.deleteTable(TEST_TABLE);
     }
   }
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
+  private void waitForRITtoBeZero(HMaster master) throws Exception {
+    // wait for assignments to finish
+    AssignmentManager mgr = master.getAssignmentManager();
+    Collection<RegionState> transRegions =
+      mgr.getRegionStates().getRegionsInTransition().values();
+    for (RegionState state : transRegions) {
+      mgr.getRegionStates().waitOnRegionToClearRegionsInTransition(state.getRegion());
+    }
+  }
+
 }
 

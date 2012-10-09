@@ -1,5 +1,4 @@
 /*
- * Copyright 2011 The Apache Software Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +33,7 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp;
-import org.apache.hadoop.hbase.filter.WritableByteArrayComparable;
+import org.apache.hadoop.hbase.filter.ByteArrayComparable;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.InternalScanner;
 import org.apache.hadoop.hbase.regionserver.KeyValueScanner;
@@ -214,7 +213,7 @@ public abstract class BaseRegionObserver implements RegionObserver {
   @Override
   public boolean preCheckAndPut(final ObserverContext<RegionCoprocessorEnvironment> e,
       final byte [] row, final byte [] family, final byte [] qualifier,
-      final CompareOp compareOp, final WritableByteArrayComparable comparator,
+      final CompareOp compareOp, final ByteArrayComparable comparator,
       final Put put, final boolean result) throws IOException {
     return result;
   }
@@ -222,7 +221,7 @@ public abstract class BaseRegionObserver implements RegionObserver {
   @Override
   public boolean postCheckAndPut(final ObserverContext<RegionCoprocessorEnvironment> e,
       final byte [] row, final byte [] family, final byte [] qualifier,
-      final CompareOp compareOp, final WritableByteArrayComparable comparator,
+      final CompareOp compareOp, final ByteArrayComparable comparator,
       final Put put, final boolean result) throws IOException {
     return result;
   }
@@ -230,7 +229,7 @@ public abstract class BaseRegionObserver implements RegionObserver {
   @Override
   public boolean preCheckAndDelete(final ObserverContext<RegionCoprocessorEnvironment> e,
       final byte [] row, final byte [] family, final byte [] qualifier,
-      final CompareOp compareOp, final WritableByteArrayComparable comparator,
+      final CompareOp compareOp, final ByteArrayComparable comparator,
       final Delete delete, final boolean result) throws IOException {
     return result;
   }
@@ -238,7 +237,7 @@ public abstract class BaseRegionObserver implements RegionObserver {
   @Override
   public boolean postCheckAndDelete(final ObserverContext<RegionCoprocessorEnvironment> e,
       final byte [] row, final byte [] family, final byte [] qualifier,
-      final CompareOp compareOp, final WritableByteArrayComparable comparator,
+      final CompareOp compareOp, final ByteArrayComparable comparator,
       final Delete delete, final boolean result) throws IOException {
     return result;
   }

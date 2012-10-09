@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -56,7 +55,7 @@ public class QualifierFilter extends CompareFilter {
    * @param qualifierComparator the comparator for column qualifier matching
    */
   public QualifierFilter(final CompareOp op,
-      final WritableByteArrayComparable qualifierComparator) {
+      final ByteArrayComparable qualifierComparator) {
     super(op, qualifierComparator);
   }
 
@@ -75,7 +74,7 @@ public class QualifierFilter extends CompareFilter {
   public static Filter createFilterFromArguments(ArrayList<byte []> filterArguments) {
     ArrayList arguments = CompareFilter.extractArguments(filterArguments);
     CompareOp compareOp = (CompareOp)arguments.get(0);
-    WritableByteArrayComparable comparator = (WritableByteArrayComparable)arguments.get(1);
+    ByteArrayComparable comparator = (ByteArrayComparable)arguments.get(1);
     return new QualifierFilter(compareOp, comparator);
   }
 
@@ -105,7 +104,7 @@ public class QualifierFilter extends CompareFilter {
     }
     final CompareOp valueCompareOp =
       CompareOp.valueOf(proto.getCompareFilter().getCompareOp().name());
-    WritableByteArrayComparable valueComparator = null;
+    ByteArrayComparable valueComparator = null;
     try {
       if (proto.getCompareFilter().hasComparator()) {
         valueComparator = ProtobufUtil.toComparator(proto.getCompareFilter().getComparator());

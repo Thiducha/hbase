@@ -66,10 +66,11 @@ import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.coprocessor.Exec;
 import org.apache.hadoop.hbase.client.coprocessor.ExecResult;
 import org.apache.hadoop.hbase.filter.Filter;
-import org.apache.hadoop.hbase.filter.WritableByteArrayComparable;
+import org.apache.hadoop.hbase.filter.ByteArrayComparable;
 import org.apache.hadoop.hbase.io.HbaseObjectWritable;
 import org.apache.hadoop.hbase.io.TimeRange;
 import org.apache.hadoop.hbase.ipc.CoprocessorProtocol;
+import org.apache.hadoop.hbase.protobuf.generated.AccessControlProtos;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CloseRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CloseRegionResponse;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetOnlineRegionRequest;
@@ -93,6 +94,9 @@ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.BulkLoadHFileRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.BulkLoadHFileResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Column;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceCall;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceRequest;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ExecCoprocessorRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ExecCoprocessorResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.GetRequest;
@@ -112,7 +116,6 @@ import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionInfo;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionLoad;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.CreateTableRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDescriptorsResponse;
-import org.apache.hadoop.hbase.protobuf.generated.AccessControlProtos;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.regionserver.wal.HLogKey;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
@@ -120,6 +123,7 @@ import org.apache.hadoop.hbase.security.access.Permission;
 import org.apache.hadoop.hbase.security.access.TablePermission;
 import org.apache.hadoop.hbase.security.access.UserPermission;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.Methods;
 import org.apache.hadoop.hbase.util.Pair;
 
 import com.google.common.collect.ArrayListMultimap;
@@ -127,7 +131,11 @@ import com.google.common.collect.ListMultimap;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
+import com.google.protobuf.RpcChannel;
+import com.google.protobuf.Service;
 import com.google.protobuf.ServiceException;
+
+import static org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionSpecifier.RegionSpecifierType.*;
 
 /**
  * Protobufs utility.
@@ -936,12 +944,12 @@ public final class ProtobufUtil {
   }
 
   /**
-   * Convert a WritableByteArrayComparable to a protocol buffer Comparator
+   * Convert a ByteArrayComparable to a protocol buffer Comparator
    *
-   * @param comparator the WritableByteArrayComparable to convert
+   * @param comparator the ByteArrayComparable to convert
    * @return the converted protocol buffer Comparator
    */
-  public static ComparatorProtos.Comparator toComparator(WritableByteArrayComparable comparator) {
+  public static ComparatorProtos.Comparator toComparator(ByteArrayComparable comparator) {
     ComparatorProtos.Comparator.Builder builder = ComparatorProtos.Comparator.newBuilder();
     builder.setName(comparator.getClass().getName());
     builder.setSerializedComparator(ByteString.copyFrom(comparator.toByteArray()));
@@ -949,24 +957,24 @@ public final class ProtobufUtil {
   }
 
   /**
-   * Convert a protocol buffer Comparator to a WritableByteArrayComparable
+   * Convert a protocol buffer Comparator to a ByteArrayComparable
    *
    * @param proto the protocol buffer Comparator to convert
-   * @return the converted WritableByteArrayComparable
+   * @return the converted ByteArrayComparable
    */
-  public static WritableByteArrayComparable toComparator(ComparatorProtos.Comparator proto)
+  public static ByteArrayComparable toComparator(ComparatorProtos.Comparator proto)
   throws IOException {
     String type = proto.getName();
     String funcName = "parseFrom";
     byte [] value = proto.getSerializedComparator().toByteArray();
     try {
-      Class<? extends WritableByteArrayComparable> c =
-        (Class<? extends WritableByteArrayComparable>)(Class.forName(type));
+      Class<? extends ByteArrayComparable> c =
+        (Class<? extends ByteArrayComparable>)(Class.forName(type));
       Method parseFrom = c.getMethod(funcName, byte[].class);
       if (parseFrom == null) {
         throw new IOException("Unable to locate function: " + funcName + " in type: " + type);
       }
-      return (WritableByteArrayComparable)parseFrom.invoke(null, value);
+      return (ByteArrayComparable)parseFrom.invoke(null, value);
     } catch (Exception e) {
       throw new IOException(e);
     }
@@ -1265,14 +1273,15 @@ public final class ProtobufUtil {
    * @param client
    * @param familyPaths
    * @param regionName
+   * @param assignSeqNum
    * @return true if all are loaded
    * @throws IOException
    */
   public static boolean bulkLoadHFile(final ClientProtocol client,
       final List<Pair<byte[], String>> familyPaths,
-      final byte[] regionName) throws IOException {
+      final byte[] regionName, boolean assignSeqNum) throws IOException {
     BulkLoadHFileRequest request =
-      RequestConverter.buildBulkLoadHFileRequest(familyPaths, regionName);
+      RequestConverter.buildBulkLoadHFileRequest(familyPaths, regionName, assignSeqNum);
     try {
       BulkLoadHFileResponse response =
         client.bulkLoadHFile(null, request);
@@ -1303,6 +1312,26 @@ public final class ProtobufUtil {
     } catch (ServiceException se) {
       throw getRemoteException(se);
     }
+  }
+
+  public static CoprocessorServiceResponse execService(final ClientProtocol client,
+      final CoprocessorServiceCall call, final byte[] regionName) throws IOException {
+    CoprocessorServiceRequest request = CoprocessorServiceRequest.newBuilder()
+        .setCall(call).setRegion(
+            RequestConverter.buildRegionSpecifier(REGION_NAME, regionName)).build();
+    try {
+      CoprocessorServiceResponse response =
+          client.execService(null, request);
+      return response;
+    } catch (ServiceException se) {
+      throw getRemoteException(se);
+    }
+  }
+
+  public static <T extends Service> T newServiceStub(Class<T> service, RpcChannel channel)
+      throws Exception {
+    return (T)Methods.call(service, null, "newStub",
+        new Class[]{ RpcChannel.class }, new Object[]{ channel });
   }
 
 // End helpers for Client
@@ -1608,7 +1637,7 @@ public final class ProtobufUtil {
   /**
    * Convert a client Permission to a Permission proto
    *
-   * @param action the client Permission
+   * @param perm the client Permission
    * @return the protobuf Permission
    */
   public static AccessControlProtos.Permission toPermission(Permission perm) {
@@ -1649,7 +1678,7 @@ public final class ProtobufUtil {
   /**
    * Converts a Permission.Action proto to a client Permission.Action object.
    *
-   * @param proto the protobuf Action
+   * @param action the protobuf Action
    * @return the converted Action
    */
   public static Permission.Action toPermissionAction(
@@ -1787,5 +1816,22 @@ public final class ProtobufUtil {
     }
 
     return perms;
+  }
+
+  /**
+   * Unwraps an exception from a protobuf service into the underlying (expected) IOException.
+   * This method will <strong>always</strong> throw an exception.
+   * @param se the {@code ServiceException} instance to convert into an {@code IOException}
+   */
+  public static void toIOException(ServiceException se) throws IOException {
+    if (se == null) {
+      throw new NullPointerException("Null service exception passed!");
+    }
+
+    Throwable cause = se.getCause();
+    if (cause != null && cause instanceof IOException) {
+      throw (IOException)cause;
+    }
+    throw new IOException(se);
   }
 }

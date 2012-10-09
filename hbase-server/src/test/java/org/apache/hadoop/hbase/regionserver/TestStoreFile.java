@@ -1,5 +1,4 @@
 /**
- * Copyright 2007 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -36,9 +35,11 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HBaseTestCase;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
+import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.SmallTests;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.io.HFileLink;
 import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
 import org.apache.hadoop.hbase.io.hfile.BlockCache;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
@@ -53,6 +54,7 @@ import org.apache.hadoop.hbase.regionserver.metrics.SchemaMetrics;
 import org.apache.hadoop.hbase.util.BloomFilterFactory;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.ChecksumType;
+import org.apache.hadoop.hbase.util.FSUtils;
 import org.junit.experimental.categories.Category;
 import org.mockito.Mockito;
 
@@ -78,13 +80,14 @@ public class TestStoreFile extends HBaseTestCase {
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    startingMetrics = SchemaMetrics.getMetricsSnapshot();
+    this.startingMetrics = SchemaMetrics.getMetricsSnapshot();
   }
 
   @Override
   public void tearDown() throws Exception {
     super.tearDown();
-    SchemaMetrics.validateMetricChanges(startingMetrics);
+    LOG.info("Verifying metrics for " + getName() + ": " + this.startingMetrics);
+    SchemaMetrics.validateMetricChanges(this.startingMetrics);
   }
 
   /**
@@ -170,6 +173,41 @@ public class TestStoreFile extends HBaseTestCase {
       }
     }
     assertTrue(Bytes.equals(kv.getRow(), finalRow));
+  }
+
+  public void testHFileLink() throws IOException {
+    final String columnFamily = "f";
+    HRegionInfo hri = new HRegionInfo(Bytes.toBytes("table-link"));
+    Path storedir = new Path(new Path(FSUtils.getRootDir(conf),
+      new Path(hri.getTableNameAsString(), hri.getEncodedName())), columnFamily);
+
+    // Make a store file and write data to it.
+    StoreFile.Writer writer = new StoreFile.WriterBuilder(conf, cacheConf,
+         this.fs, 8 * 1024)
+            .withOutputDir(storedir)
+            .build();
+    Path storeFilePath = writer.getPath();
+    writeStoreFile(writer);
+    writer.close();
+
+    Path dstPath = new Path(FSUtils.getRootDir(conf), new Path("test-region", columnFamily));
+    HFileLink.create(conf, this.fs, dstPath, hri, storeFilePath.getName());
+    Path linkFilePath = new Path(dstPath,
+                  HFileLink.createHFileLinkName(hri, storeFilePath.getName()));
+
+    // Try to open store file from link
+    StoreFile hsf = new StoreFile(this.fs, linkFilePath, conf, cacheConf,
+        StoreFile.BloomType.NONE, NoOpDataBlockEncoder.INSTANCE);
+    assertTrue(hsf.isLink());
+
+    // Now confirm that I can read from the link
+    int count = 1;
+    HFileScanner s = hsf.createReader().getScanner(false, false);
+    s.seekTo();
+    while (s.next()) {
+      count++;
+    }
+    assertEquals((LAST_CHAR - FIRST_CHAR + 1) * (LAST_CHAR - FIRST_CHAR + 1), count);
   }
 
   private void checkHalfHFile(final StoreFile f)
@@ -609,8 +647,8 @@ public class TestStoreFile extends HBaseTestCase {
     fs.delete(f, true);
   }
 
-  public void testFlushTimeComparator() {
-    assertOrdering(StoreFile.Comparators.FLUSH_TIME,
+  public void testSeqIdComparator() {
+    assertOrdering(StoreFile.Comparators.SEQ_ID,
         mockStoreFile(true, 1000, -1, "/foo/123"),
         mockStoreFile(true, 1000, -1, "/foo/126"),
         mockStoreFile(true, 2000, -1, "/foo/126"),
@@ -641,13 +679,7 @@ public class TestStoreFile extends HBaseTestCase {
     StoreFile mock = Mockito.mock(StoreFile.class);
     Mockito.doReturn(bulkLoad).when(mock).isBulkLoadResult();
     Mockito.doReturn(bulkTimestamp).when(mock).getBulkLoadTimestamp();
-    if (bulkLoad) {
-      // Bulk load files will throw if you ask for their sequence ID
-      Mockito.doThrow(new IllegalAccessError("bulk load"))
-        .when(mock).getMaxSequenceId();
-    } else {
-      Mockito.doReturn(seqId).when(mock).getMaxSequenceId();
-    }
+    Mockito.doReturn(seqId).when(mock).getMaxSequenceId();
     Mockito.doReturn(new Path(path)).when(mock).getPath();
     String name = "mock storefile, bulkLoad=" + bulkLoad +
       " bulkTimestamp=" + bulkTimestamp +
@@ -918,8 +950,5 @@ public class TestStoreFile extends HBaseTestCase {
     assertEquals(dataBlockEncoderAlgo.getNameInBytes(), value);
   }
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
 

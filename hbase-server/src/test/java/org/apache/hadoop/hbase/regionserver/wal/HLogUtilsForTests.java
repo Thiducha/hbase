@@ -1,5 +1,4 @@
 /**
- * Copyright 2011 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -37,10 +36,10 @@ public class HLogUtilsForTests {
    * @return
    */
   public static int getNumLogFiles(HLog log) {
-    return log.getNumLogFiles();
+    return ((FSHLog) log).getNumLogFiles();
   }
 
   public static int getNumEntries(HLog log) {
-    return log.getNumEntries();
+    return ((FSHLog) log).getNumEntries();
   }
 }

@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -67,7 +66,7 @@ import java.util.regex.Pattern;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Stable
-public class RegexStringComparator extends WritableByteArrayComparable {
+public class RegexStringComparator extends ByteArrayComparable {
 
   private static final Log LOG = LogFactory.getLog(RegexStringComparator.class);
 
@@ -162,7 +161,7 @@ public class RegexStringComparator extends WritableByteArrayComparable {
    * @return true if and only if the fields of the comparator that are serialized
    * are equal to the corresponding fields in other.  Used for testing.
    */
-  boolean areSerializedFieldsEqual(WritableByteArrayComparable other) {
+  boolean areSerializedFieldsEqual(ByteArrayComparable other) {
     if (other == this) return true;
     if (!(other instanceof RegexStringComparator)) return false;
 

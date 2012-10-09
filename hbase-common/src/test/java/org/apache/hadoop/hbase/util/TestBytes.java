@@ -26,7 +26,11 @@ import java.math.BigDecimal;
 import java.util.Arrays;
 
 import junit.framework.TestCase;
+import org.junit.experimental.categories.Category;
+import org.apache.hadoop.hbase.SmallTests;
 
+
+@Category(SmallTests.class)
 public class TestBytes extends TestCase {
   public void testNullHashCode() {
     byte [] b = null;
@@ -282,6 +286,21 @@ public class TestBytes extends TestCase {
     assertEquals("Hello", Bytes.readStringFixedSize(dis, 5));
     assertEquals("World", Bytes.readStringFixedSize(dis, 18));
     assertEquals("", Bytes.readStringFixedSize(dis, 9));
+  }
+  
+  public void testCopy() throws Exception {
+    byte [] bytes = Bytes.toBytes("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    byte [] copy =  Bytes.copy(bytes);
+    assertFalse(bytes == copy);
+    assertTrue(Bytes.equals(bytes, copy));
+  }
+
+  public void testToBytesBinaryTrailingBackslashes() throws Exception {
+    try {
+      Bytes.toBytesBinary("abc\\x00\\x01\\");
+    } catch (StringIndexOutOfBoundsException ex) {
+      fail("Illegal string access: " + ex.getMessage());
+    }
   }
 }
 

@@ -1,5 +1,4 @@
 /**
- * Copyright 2011 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -786,7 +785,7 @@ public class ParseFilter {
  * @param comparator the comparator in the form comparatorType:comparatorValue
  * @return the parsed comparator
  */
-  public static WritableByteArrayComparable createComparator (byte [] comparator) {
+  public static ByteArrayComparable createComparator (byte [] comparator) {
     if (comparator == null)
       throw new IllegalArgumentException("Incorrect Comparator");
     byte [][] parsedComparator = ParseFilter.parseComparator(comparator);

@@ -1,5 +1,4 @@
 /**
- * Copyright 2007 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -1087,7 +1086,7 @@ public class HColumnDescriptor implements WritableComparable<HColumnDescriptor> 
 
   /**
    * @return This instance serialized with pb with pb magic prefix
-   * @see {@link #parseFrom(byte[])}
+   * @see #parseFrom(byte[])
    */
   public byte [] toByteArray() {
     return ProtobufUtil.prependPBMagic(convert().toByteArray());
@@ -1097,7 +1096,7 @@ public class HColumnDescriptor implements WritableComparable<HColumnDescriptor> 
    * @param bytes A pb serialized {@link HColumnDescriptor} instance with pb magic prefix
    * @return An instance of {@link HColumnDescriptor} made from <code>bytes</code>
    * @throws DeserializationException
-   * @see {@link #toByteArray()}
+   * @see #toByteArray()
    */
   public static HColumnDescriptor parseFrom(final byte [] bytes) throws DeserializationException {
     if (!ProtobufUtil.isPBMagicPrefix(bytes)) throw new DeserializationException("No magic");

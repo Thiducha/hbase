@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -32,6 +31,7 @@ import javax.management.ObjectName;
 /**
  * Exports HBase system information as an MBean for JMX observation.
  */
+@Deprecated
 @InterfaceAudience.Private
 public class HBaseInfo {
   protected static class HBaseInfoMBean extends MetricsMBeanBase {

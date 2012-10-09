@@ -1,5 +1,4 @@
 /*
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -149,6 +148,13 @@ public abstract class FilterBase extends Filter {
    */
   public String toString() {
     return this.getClass().getSimpleName();
+  }
+
+  /**
+   * Return length 0 byte array for Filters that don't require special serialization
+   */
+  public byte [] toByteArray() {
+    return new byte[0];
   }
 
   /**

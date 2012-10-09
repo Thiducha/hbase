@@ -1,5 +1,4 @@
 /*
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -195,6 +194,9 @@ public class TestHalfStoreFileReader {
       foundKeyValue = doTestOfSeekBefore(p, fs, bottom, items.get(1), cacheConf);
       assertEquals(items.get(0), foundKeyValue);
 
+      // Try to seek before the splitKey in the top file
+      foundKeyValue = doTestOfSeekBefore(p, fs, top, midKV, cacheConf);
+      assertNull(foundKeyValue);
     }
 
   private KeyValue doTestOfSeekBefore(Path p, FileSystem fs, Reference bottom, KeyValue seekBefore,
@@ -238,8 +240,5 @@ public class TestHalfStoreFileReader {
 
 
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
 

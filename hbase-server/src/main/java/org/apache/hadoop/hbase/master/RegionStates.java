@@ -133,6 +133,13 @@ public class RegionStates {
   }
 
   /**
+   * @return the server the specified region assigned to; null if not assigned.
+   */
+  public synchronized ServerName getAssignedServer(final HRegionInfo hri) {
+    return regionAssignments.get(hri);
+  }
+
+  /**
    * Wait for the state map to be updated by assignment manager.
    */
   public synchronized void waitForUpdate(
@@ -455,7 +462,7 @@ public class RegionStates {
     Map<String, Map<ServerName, List<HRegionInfo>>> result =
       new HashMap<String, Map<ServerName,List<HRegionInfo>>>();
     synchronized (this) {
-      if (!server.getConfiguration().getBoolean("hbase.master.loadbalance.bytable", true)) {
+      if (!server.getConfiguration().getBoolean("hbase.master.loadbalance.bytable", false)) {
         Map<ServerName, List<HRegionInfo>> svrToRegions =
           new HashMap<ServerName, List<HRegionInfo>>(serverHoldings.size());
         for (Map.Entry<ServerName, Set<HRegionInfo>> e: serverHoldings.entrySet()) {
@@ -519,7 +526,11 @@ public class RegionStates {
     try {
       Pair<HRegionInfo, ServerName> p =
         MetaReader.getRegion(server.getCatalogTracker(), regionName);
-      return p == null ? null : p.getFirst();
+      HRegionInfo hri = p == null ? null : p.getFirst();
+      if (hri != null) {
+        createRegionState(hri);
+      }
+      return hri;
     } catch (IOException e) {
       server.abort("Aborting because error occoured while reading " +
         Bytes.toStringBinary(regionName) + " from .META.", e);

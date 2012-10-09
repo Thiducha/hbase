@@ -1,5 +1,4 @@
 /**
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -236,12 +235,20 @@ public class TestAcidGuarantees implements Tool {
     }
   }
 
-
   public void runTestAtomicity(long millisToRun,
       int numWriters,
       int numGetters,
       int numScanners,
       int numUniqueRows) throws Exception {
+    runTestAtomicity(millisToRun, numWriters, numGetters, numScanners, numUniqueRows, false);
+  }
+
+  public void runTestAtomicity(long millisToRun,
+      int numWriters,
+      int numGetters,
+      int numScanners,
+      int numUniqueRows,
+      final boolean systemTest) throws Exception {
     createTableIfMissing();
     TestContext ctx = new TestContext(util.getConfiguration());
     
@@ -262,6 +269,15 @@ public class TestAcidGuarantees implements Tool {
       HBaseAdmin admin = new HBaseAdmin(util.getConfiguration());
       public void doAnAction() throws Exception {
         admin.flush(TABLE_NAME);
+        // Flushing has been a source of ACID violations previously (see HBASE-2856), so ideally,
+        // we would flush as often as possible.  On a running cluster, this isn't practical:
+        // (1) we will cause a lot of load due to all the flushing and compacting
+        // (2) we cannot change the flushing/compacting related Configuration options to try to
+        // alleviate this
+        // (3) it is an unrealistic workload, since no one would actually flush that often.
+        // Therefore, let's flush every minute to have more flushes than usual, but not overload
+        // the running cluster.
+        if (systemTest) Thread.sleep(60000);
       }
     });
 
@@ -351,7 +367,7 @@ public class TestAcidGuarantees implements Tool {
     int numGetters = c.getInt("numGetters", 2);
     int numScanners = c.getInt("numScanners", 2);
     int numUniqueRows = c.getInt("numUniqueRows", 3);
-    runTestAtomicity(millis, numWriters, numGetters, numScanners, numUniqueRows);
+    runTestAtomicity(millis, numWriters, numGetters, numScanners, numUniqueRows, true);
     return 0;
   }
 
@@ -369,8 +385,5 @@ public class TestAcidGuarantees implements Tool {
   }
 
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }
 

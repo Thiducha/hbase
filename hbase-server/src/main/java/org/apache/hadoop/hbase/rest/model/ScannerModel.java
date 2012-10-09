@@ -1,5 +1,4 @@
 /*
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -87,7 +86,7 @@ public class ScannerModel implements ProtobufMessageHandler, Serializable {
   static class FilterModel {
     
     @XmlRootElement
-    static class WritableByteArrayComparableModel {
+    static class ByteArrayComparableModel {
       @XmlAttribute public String type;
       @XmlAttribute public String value;
       @XmlAttribute public String op;
@@ -101,10 +100,10 @@ public class ScannerModel implements ProtobufMessageHandler, Serializable {
         SubstringComparator    
       }
 
-      public WritableByteArrayComparableModel() { }
+      public ByteArrayComparableModel() { }
 
-      public WritableByteArrayComparableModel(
-          WritableByteArrayComparable comparator) {
+      public ByteArrayComparableModel(
+          ByteArrayComparable comparator) {
         String typeName = comparator.getClass().getSimpleName();
         ComparatorType type = ComparatorType.valueOf(typeName);
         this.type = typeName;
@@ -128,8 +127,8 @@ public class ScannerModel implements ProtobufMessageHandler, Serializable {
         }
       }
 
-      public WritableByteArrayComparable build() {
-        WritableByteArrayComparable comparator;
+      public ByteArrayComparable build() {
+        ByteArrayComparable comparator;
         switch (ComparatorType.valueOf(type)) {
           case BinaryComparator:
             comparator = new BinaryComparator(Base64.decode(value));
@@ -162,7 +161,7 @@ public class ScannerModel implements ProtobufMessageHandler, Serializable {
     // These are null by default and will only be serialized if set (non null).
     @XmlAttribute public String type;
     @XmlAttribute public String op;
-    @XmlElement WritableByteArrayComparableModel comparator;
+    @XmlElement ByteArrayComparableModel comparator;
     @XmlAttribute public String value;
     @XmlElement public List<FilterModel> filters;
     @XmlAttribute public Integer limit;
@@ -236,7 +235,7 @@ public class ScannerModel implements ProtobufMessageHandler, Serializable {
             this.qualifier = Base64.encodeBytes(qualifier);
           }
           this.op = dcf.getOperator().toString();
-          this.comparator = new WritableByteArrayComparableModel(dcf.getComparator());
+          this.comparator = new ByteArrayComparableModel(dcf.getComparator());
           this.dropDependentColumn = dcf.dropDependentColumn();
         } break;
         case FilterList:
@@ -271,7 +270,7 @@ public class ScannerModel implements ProtobufMessageHandler, Serializable {
         case ValueFilter:
           this.op = ((CompareFilter)filter).getOperator().toString();
           this.comparator = 
-            new WritableByteArrayComparableModel(
+            new ByteArrayComparableModel(
               ((CompareFilter)filter).getComparator());
           break;
         case RandomRowFilter:
@@ -287,7 +286,7 @@ public class ScannerModel implements ProtobufMessageHandler, Serializable {
           }
           this.op = scvf.getOperator().toString();
           this.comparator = 
-            new WritableByteArrayComparableModel(scvf.getComparator());
+            new ByteArrayComparableModel(scvf.getComparator());
           if (scvf.getFilterIfMissing()) {
             this.ifMissing = true;
           }
@@ -692,7 +691,6 @@ public class ScannerModel implements ProtobufMessageHandler, Serializable {
     for (byte[] column: columns) {
       builder.addColumns(ByteString.copyFrom(column));
     }
-    builder.setBatch(batch);
     if (startTime != 0) {
       builder.setStartTime(startTime);
     }

@@ -247,6 +247,7 @@ message UnlockRowResponse {
 message BulkLoadHFileRequest {
   required RegionSpecifier region = 1;
   repeated FamilyPath familyPath = 2;
+  optional bool assignSeqNum = 3;
 
   message FamilyPath {
     required bytes family = 1;
@@ -293,6 +294,23 @@ message ExecCoprocessorRequest {
 
 message ExecCoprocessorResponse {
   required NameBytesPair value = 1;
+}
+
+message CoprocessorServiceCall {
+  required bytes row = 1;
+  required string serviceName = 2;
+  required string methodName = 3;
+  required bytes request = 4;
+}
+
+message CoprocessorServiceRequest {
+  required RegionSpecifier region = 1;
+  required CoprocessorServiceCall call = 2;
+}
+
+message CoprocessorServiceResponse {
+  required RegionSpecifier region = 1;
+  required NameBytesPair value = 2;
 }
 
 /**
@@ -357,6 +375,9 @@ service ClientService {
 
   rpc execCoprocessor(ExecCoprocessorRequest)
     returns(ExecCoprocessorResponse);
+
+  rpc execService(CoprocessorServiceRequest)
+    returns(CoprocessorServiceResponse);
 
   rpc multi(MultiRequest)
     returns(MultiResponse);

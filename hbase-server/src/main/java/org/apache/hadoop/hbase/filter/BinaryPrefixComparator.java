@@ -1,5 +1,4 @@
 /*
- * Copyright 2010 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -35,7 +34,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Stable
-public class BinaryPrefixComparator extends WritableByteArrayComparable {
+public class BinaryPrefixComparator extends ByteArrayComparable {
 
   /**
    * Constructor
@@ -83,7 +82,7 @@ public class BinaryPrefixComparator extends WritableByteArrayComparable {
    * @return true if and only if the fields of the comparator that are serialized
    * are equal to the corresponding fields in other.  Used for testing.
    */
-  boolean areSerializedFieldsEqual(WritableByteArrayComparable other) {
+  boolean areSerializedFieldsEqual(ByteArrayComparable other) {
     if (other == this) return true;
     if (!(other instanceof BinaryPrefixComparator)) return false;
 

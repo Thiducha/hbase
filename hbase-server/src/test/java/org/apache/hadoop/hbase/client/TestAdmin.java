@@ -1,5 +1,4 @@
 /**
- * Copyright 2011 The Apache Software Foundation
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -54,7 +53,7 @@ import org.apache.hadoop.hbase.regionserver.wal.HLogUtilsForTests;
 import org.apache.hadoop.hbase.InvalidFamilyOperationException;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Pair;
-import org.apache.hadoop.hbase.zookeeper.ZKTable;
+import org.apache.hadoop.hbase.zookeeper.ZKTableReadOnly;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
 import org.junit.*;
 import org.junit.experimental.categories.Category;
@@ -241,9 +240,7 @@ public class TestAdmin {
     boolean ok = false;
     try {
       ht.get(get);
-    } catch (NotServingRegionException e) {
-      ok = true;
-    } catch (RetriesExhaustedException e) {
+    } catch (DoNotRetryIOException e) {
       ok = true;
     }
     assertTrue(ok);
@@ -289,23 +286,22 @@ public class TestAdmin {
     try {
       ht1.get(get);
       ht2.get(get);
-    } catch (NotServingRegionException e) {
-      ok = true;
-    } catch (RetriesExhaustedException e) {
+    } catch (DoNotRetryIOException e) {
       ok = true;
     }
+
     assertTrue(ok);
     this.admin.enableTables("testDisableAndEnableTable.*");
 
     // Test that tables are enabled
     try {
       ht1.get(get);
-    } catch (RetriesExhaustedException e) {
+    } catch (IOException e) {
       ok = false;
     }
     try {
       ht2.get(get);
-    } catch (RetriesExhaustedException e) {
+    } catch (IOException e) {
       ok = false;
     }
     assertTrue(ok);
@@ -1009,15 +1005,16 @@ public class TestAdmin {
     ZooKeeperWatcher zkw = HBaseTestingUtility.getZooKeeperWatcher(TEST_UTIL);
     byte [] tableName = Bytes.toBytes("testMasterAdmin");
     TEST_UTIL.createTable(tableName, HConstants.CATALOG_FAMILY).close();
-    while (!ZKTable.isEnabledTable(zkw, "testMasterAdmin")) {
+    while (!ZKTableReadOnly.isEnabledTable(zkw, "testMasterAdmin")) {
       Thread.sleep(10);
     }
     this.admin.disableTable(tableName);
     try {
       new HTable(TEST_UTIL.getConfiguration(), tableName);
-    } catch (org.apache.hadoop.hbase.client.RegionOfflineException e) {
-      // Expected
+    } catch (DoNotRetryIOException e) {
+      //expected
     }
+
     this.admin.addColumn(tableName, new HColumnDescriptor("col2"));
     this.admin.enableTable(tableName);
     try {
@@ -1635,7 +1632,4 @@ public class TestAdmin {
     }
   }
 
-  @org.junit.Rule
-  public org.apache.hadoop.hbase.ResourceCheckerJUnitRule cu =
-    new org.apache.hadoop.hbase.ResourceCheckerJUnitRule();
 }

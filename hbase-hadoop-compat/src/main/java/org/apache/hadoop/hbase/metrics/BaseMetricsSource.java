@@ -24,12 +24,17 @@ package org.apache.hadoop.hbase.metrics;
 public interface BaseMetricsSource {
 
   /**
+   * Clear out the metrics and re-prepare the source.
+   */
+  void init();
+
+  /**
    * Set a gauge to a specific value.
    *
    * @param gaugeName the name of the gauge
    * @param value     the value
    */
-  public void setGauge(String gaugeName, long value);
+  void setGauge(String gaugeName, long value);
 
   /**
    * Add some amount to a gauge.
@@ -37,7 +42,7 @@ public interface BaseMetricsSource {
    * @param gaugeName the name of the gauge
    * @param delta     the amount to change the gauge by.
    */
-  public void incGauge(String gaugeName, long delta);
+  void incGauge(String gaugeName, long delta);
 
   /**
    * Subtract some amount from a gauge.
@@ -45,14 +50,14 @@ public interface BaseMetricsSource {
    * @param gaugeName the name of the gauge
    * @param delta     the amount to change the gauge by.
    */
-  public void decGauge(String gaugeName, long delta);
+  void decGauge(String gaugeName, long delta);
 
   /**
    * Remove a gauge and no longer announce it.
    *
    * @param key Name of the gauge to remove.
    */
-  public void removeGauge(String key);
+  void removeGauge(String key);
 
   /**
    * Add some amount to a counter.
@@ -60,13 +65,31 @@ public interface BaseMetricsSource {
    * @param counterName the name of the counter
    * @param delta       the amount to change the counter by.
    */
-  public void incCounters(String counterName, long delta);
+  void incCounters(String counterName, long delta);
+
+  /**
+   * Add some value to a histogram.
+   *
+   * @param name the name of the histogram
+   * @param value the value to add to the histogram
+   */
+  void updateHistogram(String name, long value);
+
+
+  /**
+   * Add some value to a Quantile (An accurate histogram).
+   *
+   * @param name the name of the quantile
+   * @param value the value to add to the quantile
+   */
+  void updateQuantile(String name, long value);
+
 
   /**
    * Remove a counter and stop announcing it to metrics2.
    *
    * @param key
    */
-  public void removeCounter(String key);
+  void removeCounter(String key);
 
 }
