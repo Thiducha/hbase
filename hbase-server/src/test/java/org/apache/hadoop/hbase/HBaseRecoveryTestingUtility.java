@@ -29,12 +29,10 @@ import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HConnection;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.coprocessor.CoprocessorHost;
-import org.apache.hadoop.hbase.coprocessor.SampleRegionWALObserver;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
-import org.apache.hadoop.hbase.regionserver.wal.*;
+import org.apache.hadoop.hbase.regionserver.wal.HLogFactory;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.JVMClusterUtil;
@@ -46,6 +44,7 @@ import org.apache.hadoop.hdfs.server.datanode.DataNode;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.junit.Assert;
+import sun.management.ManagementFactory;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -65,10 +64,13 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
   private HTable testTable;
 
   static {
-    Logger.getLogger(DFSClient.class).setLevel(Level.DEBUG);
+    Logger.getLogger(DFSClient.class).setLevel(Level.WARN);
     // Beware: for HBaseClient the log path does not match the class path. The class is in
     // 'org.apache.hadoop.hbase.ipc'  but logs in 'org.apache.hadoop.ipc.HBaseClient'
-    Logger.getLogger("org.apache.hadoop.ipc.HBaseClient").setLevel(Level.DEBUG);
+    Logger.getLogger("org.apache.hadoop.ipc.HBaseClient").setLevel(Level.WARN);
+    Logger.getLogger("org.apache.hadoop.hbase").setLevel(Level.WARN);
+    Logger.getLogger(org.apache.hadoop.metrics2.util.MBeans.class).setLevel(Level.ERROR);
+    Logger.getLogger(org.apache.hadoop.metrics2.impl.MetricsSystemImpl.class).setLevel(Level.ERROR);
   }
 
   public int[] getRSNoRootAndNoMeta() {
@@ -212,7 +214,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     int infoPort = getInfoPort(getDFSCluster().getDataNodes().get(dn));
 
     LOG.info("START stopDirtyDataNodeTakePorts " + dn + " " +
-        getHostName( getDFSCluster().getDataNodes().get(dn)) + ":" +
+        getHostName(getDFSCluster().getDataNodes().get(dn)) + ":" +
         getDFSCluster().getDataNodes().get(dn).getRpcPort());
 
     stopDirtyDataNode(dn);
@@ -248,19 +250,19 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
 
   private int getInfoPort(DataNode dn) throws InvocationTargetException, IllegalAccessException {
     try {
-      Method m = DataNode.class.getDeclaredMethod("getXferPort") ;       // hdfs 2
+      Method m = DataNode.class.getDeclaredMethod("getXferPort");       // hdfs 2
       m.setAccessible(true);
-      return (Integer)(m.invoke(dn));
+      return (Integer) (m.invoke(dn));
     } catch (NoSuchMethodException e) {
       try {
         Method m = DataNode.class.getMethod("getSelfAddr");     // hdfs 1
-        InetSocketAddress sa = (InetSocketAddress)m.invoke(dn);
-        if (sa == null){
+        InetSocketAddress sa = (InetSocketAddress) m.invoke(dn);
+        if (sa == null) {
           return -1;
         }
         return sa.getPort();
       } catch (NoSuchMethodException e1) {
-        throw new RuntimeException("Not found: "+e.getMessage() + " nor "+e.getMessage());
+        throw new RuntimeException("Not found: " + e.getMessage() + " nor " + e.getMessage());
       }
     }
   }
@@ -399,6 +401,10 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
       Get g = new Get(allPut);
       Assert.assertArrayEquals(testTable.get(g).getRow(), allPut);
     }
+  }
+
+  public int getNbPuts() {
+    return allPuts.size();
   }
 
   public void stopCleanCluster() throws Exception {
@@ -713,5 +719,20 @@ stopDirtyDataNodeTakePorts(i);            */
 
     // We want hdfs to retries multiple times, if not the new block allocation could fail
     conf.setInt("dfs.client.block.write.retries", 10);
+  }
+
+  public void killMyProcess() throws IOException {
+    String s = ManagementFactory.getRuntimeMXBean().getName();
+    String[] l = s.split("@");
+    int processId = Integer.parseInt(l[0]);
+
+    System.out.flush();
+    System.err.flush();
+
+    Runtime rt = Runtime.getRuntime();
+    if (System.getProperty("os.name").toLowerCase().indexOf("windows") > -1)
+      rt.exec("taskkill " + processId);
+    else
+      rt.exec("kill -9 " + processId);
   }
 }
