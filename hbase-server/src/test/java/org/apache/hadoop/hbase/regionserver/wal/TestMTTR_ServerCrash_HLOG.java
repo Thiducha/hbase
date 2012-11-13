@@ -10,7 +10,7 @@ import org.junit.experimental.categories.Category;
  */
 @Category(LargeTests.class)
 public class TestMTTR_ServerCrash_HLOG {
-  private final static HBaseRecoveryTestingUtility r = new HBaseRecoveryTestingUtility();
+  private final static HBaseRecoveryTestingUtility rtu = new HBaseRecoveryTestingUtility();
 
   private static class WriterThread extends Thread {
     volatile boolean stop = false;
@@ -18,7 +18,7 @@ public class TestMTTR_ServerCrash_HLOG {
     public void run() {
       while (!stop) {
         try {
-          HBaseRecoveryTestingUtility.TestPuts tp = r.new TestPuts(100);
+          HBaseRecoveryTestingUtility.TestPuts tp = rtu.new TestPuts(100);
           tp.checkPuts();
         } catch (Exception e) {
           throw new RuntimeException(e);
@@ -29,9 +29,10 @@ public class TestMTTR_ServerCrash_HLOG {
 
   @Test
   public void test1() throws Exception {
-    r.startClusterSynchronous(3, 3);
+    rtu.startClusterSynchronous(3, 3);
+    rtu.createTableWithRegionsOnRS(3, 3);
 
-    HBaseRecoveryTestingUtility.TestPuts tp = r.new TestPuts(100);
+    HBaseRecoveryTestingUtility.TestPuts tp = rtu.new TestPuts(100);
     //tp.checkPuts();
 
     final long start = System.currentTimeMillis();
@@ -42,13 +43,13 @@ public class TestMTTR_ServerCrash_HLOG {
     wt.stop = true;
     Thread.sleep(1000);
 
-    //r.testAllPuts();
+    //rtu.testAllPuts();
 
     final long end = System.currentTimeMillis();
 
-    System.out.println("************* Time=" + (end - start) + " lines=" + r.getNbPuts());
+    System.out.println("************* Time=" + (end - start) + " lines=" + rtu.getNbPuts());
     System.out.flush();
-    //r.killMyProcess();
-    r.stopCleanCluster();
+    //rtu.killMyProcess();
+    rtu.stopCleanCluster();
   }
 }
