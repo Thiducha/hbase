@@ -31,8 +31,8 @@ public class TestMTTR_ServerCrash_HLOG {
   public void test1() throws Exception {
     r.startClusterSynchronous(3, 3);
 
-    HBaseRecoveryTestingUtility.TestPuts tp = r.new TestPuts(100);
-    tp.checkPuts();
+    //HBaseRecoveryTestingUtility.TestPuts tp = r.new TestPuts(100);
+    //tp.checkPuts();
 
     final long start = System.currentTimeMillis();
 
