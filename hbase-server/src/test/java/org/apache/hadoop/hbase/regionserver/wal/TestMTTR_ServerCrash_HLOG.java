@@ -37,12 +37,12 @@ public class TestMTTR_ServerCrash_HLOG {
     final long start = System.currentTimeMillis();
 
     WriterThread wt = new WriterThread();
-    wt.start();
-    Thread.sleep(10000);
+    //wt.start();
+   // Thread.sleep(10000);
     wt.stop = true;
     Thread.sleep(1000);
 
-    r.testAllPuts();
+    //r.testAllPuts();
 
     final long end = System.currentTimeMillis();
 
