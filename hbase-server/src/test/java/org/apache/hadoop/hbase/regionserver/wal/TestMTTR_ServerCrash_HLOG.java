@@ -43,7 +43,7 @@ public class TestMTTR_ServerCrash_HLOG {
     rtu.startNewDatanode();
 
     System.out.println("************* kill first DN");
-    rtu.stopCleanDataNode(0);
+    rtu.stopCleanDataNode(1);
 
     final long start = System.currentTimeMillis();
     System.out.println("************* new put again");
