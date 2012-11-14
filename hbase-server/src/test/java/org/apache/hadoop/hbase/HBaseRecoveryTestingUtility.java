@@ -64,10 +64,10 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
   private HTable testTable;
 
   static {
-    Logger.getLogger(DFSClient.class).setLevel(Level.WARN);
+    Logger.getLogger(DFSClient.class).setLevel(Level.DEBUG);
     // Beware: for HBaseClient the log path does not match the class path. The class is in
     // 'org.apache.hadoop.hbase.ipc'  but logs in 'org.apache.hadoop.ipc.HBaseClient'
-    Logger.getLogger("org.apache.hadoop.ipc.HBaseClient").setLevel(Level.WARN);
+    Logger.getLogger("org.apache.hadoop.ipc.HBaseClient").setLevel(Level.INFO);
     Logger.getLogger("org.apache.hadoop.hbase").setLevel(Level.WARN);
     Logger.getLogger(org.apache.hadoop.metrics2.util.MBeans.class).setLevel(Level.ERROR);
     Logger.getLogger(org.apache.hadoop.metrics2.impl.MetricsSystemImpl.class).setLevel(Level.ERROR);
@@ -366,9 +366,13 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
   }
 
   public void createTable(int nRegions, int minRS, int maxRS) throws IOException {
-    LOG.info("START createTable " + Bytes.toString(rb));
-    testTable = super.createTable(rb, new byte[][]{rb}, 1, "0000000000".getBytes(),
-        "9999999999".getBytes(), nRegions);
+    LOG.info("START createTable " + Bytes.toString(rb) + " nRegions=" + nRegions);
+    if (nRegions > 2) {
+      testTable = super.createTable(rb, new byte[][]{rb}, 1, "0000000000".getBytes(),
+          "9999999999".getBytes(), nRegions);
+    } else {
+      testTable = super.createTable(rb, new byte[][]{rb});
+    }
     moveTableTo(Bytes.toString(testTable.getTableName()), minRS, maxRS);
     LOG.info("DONE createTable " + Bytes.toString(rb));
   }

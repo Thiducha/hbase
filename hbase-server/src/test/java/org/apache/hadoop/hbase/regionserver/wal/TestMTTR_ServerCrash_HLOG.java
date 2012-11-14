@@ -14,40 +14,47 @@ public class TestMTTR_ServerCrash_HLOG {
 
   private static class WriterThread extends Thread {
     volatile boolean stop = false;
+    volatile long time;
 
     public void run() {
-      while (!stop) {
-        try {
-          HBaseRecoveryTestingUtility.TestPuts tp = rtu.new TestPuts(100);
-          tp.checkPuts();
-        } catch (Exception e) {
-          throw new RuntimeException(e);
-        }
+      final long start = System.currentTimeMillis();
+      try {
+        HBaseRecoveryTestingUtility.TestPuts tp = rtu.new TestPuts(100000);
+        tp.checkPuts();
+      } catch (Exception e) {
+        throw new RuntimeException(e);
       }
+      final long end = System.currentTimeMillis();
+      time = end - start;
+      stop = true;
     }
   }
 
   @Test
   public void test1() throws Exception {
-    rtu.startClusterSynchronous(3, 3);
-    rtu.createTableWithRegionsOnRS(3, 3);
+    rtu.startClusterSynchronous(1, 2);
+    rtu.createTableWithRegionsOnRS(1, 0);
 
-    HBaseRecoveryTestingUtility.TestPuts tp = rtu.new TestPuts(100);
-    //tp.checkPuts();
+    HBaseRecoveryTestingUtility.TestPuts tp = rtu.new TestPuts(1);
+    System.out.println("************* start first put");
+    tp.checkPuts();
+
+    System.out.println("************* start new DN");
+    rtu.startNewDatanode();
+
+    System.out.println("************* kill first DN");
+    rtu.stopCleanDataNode(0);
 
     final long start = System.currentTimeMillis();
-
-    WriterThread wt = new WriterThread();
-    //wt.start();
-   // Thread.sleep(10000);
-    wt.stop = true;
-    Thread.sleep(1000);
-
-    //rtu.testAllPuts();
-
+    System.out.println("************* new put again");
+    tp = rtu.new TestPuts(1);
+    tp.checkPuts();
     final long end = System.currentTimeMillis();
+    long time = end - start;
 
-    System.out.println("************* Time=" + (end - start) + " lines=" + rtu.getNbPuts());
+    System.out.println("*****");
+    System.out.println("***************************************** Time=" + time + " lines=" + rtu.getNbPuts());
+    System.out.println("*****");
     System.out.flush();
     //rtu.killMyProcess();
     rtu.stopCleanCluster();
