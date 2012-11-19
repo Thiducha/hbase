@@ -395,5 +395,339 @@ public interface HLog {
    * 
    * @return lowReplicationRollEnabled
    */
-  public boolean isLowReplicationRollEnabled();
+  public boolean isLowReplicationRollEnabled() {
+    return lowReplicationRollEnabled;
+  }
+
+  @SuppressWarnings("unchecked")
+  public static Class<? extends HLogKey> getKeyClass(Configuration conf) {
+     return (Class<? extends HLogKey>)
+       conf.getClass("hbase.regionserver.hlog.keyclass", HLogKey.class);
+  }
+
+  public static HLogKey newKey(Configuration conf) throws IOException {
+    Class<? extends HLogKey> keyClass = getKeyClass(conf);
+    try {
+      return keyClass.newInstance();
+    } catch (InstantiationException e) {
+      throw new IOException("cannot create hlog key");
+    } catch (IllegalAccessException e) {
+      throw new IOException("cannot create hlog key");
+    }
+  }
+
+  /**
+   * Utility class that lets us keep track of the edit with it's key
+   * Only used when splitting logs
+   */
+  public static class Entry implements Writable {
+    private WALEdit edit;
+    private HLogKey key;
+
+    public Entry() {
+      edit = new WALEdit();
+      key = new HLogKey();
+    }
+
+    /**
+     * Constructor for both params
+     * @param edit log's edit
+     * @param key log's key
+     */
+    public Entry(HLogKey key, WALEdit edit) {
+      super();
+      this.key = key;
+      this.edit = edit;
+    }
+    /**
+     * Gets the edit
+     * @return edit
+     */
+    public WALEdit getEdit() {
+      return edit;
+    }
+    /**
+     * Gets the key
+     * @return key
+     */
+    public HLogKey getKey() {
+      return key;
+    }
+
+    /**
+     * Set compression context for this entry.
+     * @param compressionContext Compression context
+     */
+    public void setCompressionContext(CompressionContext compressionContext) {
+      edit.setCompressionContext(compressionContext);
+      key.setCompressionContext(compressionContext);
+    }
+
+    @Override
+    public String toString() {
+      return this.key + "=" + this.edit;
+    }
+
+    @Override
+    public void write(DataOutput dataOutput) throws IOException {
+      this.key.write(dataOutput);
+      this.edit.write(dataOutput);
+    }
+
+    @Override
+    public void readFields(DataInput dataInput) throws IOException {
+      this.key.readFields(dataInput);
+      this.edit.readFields(dataInput);
+    }
+  }
+
+  /**
+   * Construct the HLog directory name
+   *
+   * @param serverName Server name formatted as described in {@link ServerName}
+   * @return the relative HLog directory name, e.g. <code>.logs/1.example.org,60030,12345</code>
+   * if <code>serverName</code> passed is <code>1.example.org,60030,12345</code>
+   */
+  public static String getHLogDirectoryName(final String serverName) {
+    StringBuilder dirName = new StringBuilder(HConstants.HREGION_LOGDIR_NAME);
+    dirName.append("/");
+    dirName.append(serverName);
+    return dirName.toString();
+  }
+
+
+  /**
+   * @param path - the path to analyze. Expected format, if it's in hlog directory:
+   *  / [base directory for hbase] / hbase / .logs / ServerName / logfile
+   *             or
+   *  / [base directory for hbase] / hbase / .logs / ServerName-splitting / logfile
+   * @return null if it's not a log file. Returns the ServerName of the region server that created
+   *  this log file otherwise.
+   */
+  public static ServerName getServerNameFromHLogDirectoryName(Configuration conf, String path)
+      throws IOException {
+    if (path == null || path.length() <= HConstants.HREGION_LOGDIR_NAME.length()) {
+      return null;
+    }
+
+    if (conf == null) {
+      throw new IllegalArgumentException("parameter conf must be set");
+    }
+
+    final String rootDir = conf.get(HConstants.HBASE_DIR);
+    if (rootDir == null || rootDir.isEmpty()) {
+      throw new IllegalArgumentException(HConstants.HBASE_DIR + " key not found in conf.");
+    }
+
+    final StringBuilder startPathSB = new StringBuilder(rootDir);
+    if (!rootDir.endsWith("/")) startPathSB.append('/');
+    startPathSB.append(HConstants.HREGION_LOGDIR_NAME);
+    if (!HConstants.HREGION_LOGDIR_NAME.endsWith("/")) startPathSB.append('/');
+    final String startPath = startPathSB.toString();
+
+    String fullPath;
+    try {
+      fullPath = FileSystem.get(conf).makeQualified(new Path(path)).toString();
+    } catch (IllegalArgumentException e) {
+      LOG.info("Call to makeQualified failed on " + path + " " + e.getMessage());
+      return null;
+    }
+
+    if (!fullPath.startsWith(startPath)) {
+      return null;
+    }
+
+    final String serverNameAndFile = fullPath.substring(startPath.length());
+
+    final int minLength = "a,0,0".length();
+    if (serverNameAndFile.indexOf('/') < minLength) {
+      // Either it's a file (not a directory) or it's not a ServerName format
+      return null;
+    }
+
+    String serverName = serverNameAndFile.substring(0, serverNameAndFile.indexOf('/'));
+    final String splitting = "-splitting";
+    if (serverName.endsWith(splitting) && serverName.lastIndexOf('-') > minLength) {
+      serverName = serverName.substring(0, serverName.lastIndexOf('-'));
+    }
+
+    if (!ServerName.isFullServerName(serverName)) {
+      return null;
+    }
+
+    return ServerName.parseServerName(serverName);
+  }
+
+  /**
+   * Get the directory we are making logs in.
+   * 
+   * @return dir
+   */
+  protected Path getDir() {
+    return dir;
+  }
+  
+  /**
+   * @param filename name of the file to validate
+   * @return <tt>true</tt> if the filename matches an HLog, <tt>false</tt>
+   *         otherwise
+   */
+  public static boolean validateHLogFilename(String filename) {
+    return pattern.matcher(filename).matches();
+  }
+
+  static Path getHLogArchivePath(Path oldLogDir, Path p) {
+    return new Path(oldLogDir, p.getName());
+  }
+
+  static String formatRecoveredEditsFileName(final long seqid) {
+    return String.format("%019d", seqid);
+  }
+
+  /**
+   * Returns sorted set of edit files made by wal-log splitter, excluding files
+   * with '.temp' suffix.
+   * @param fs
+   * @param regiondir
+   * @return Files in passed <code>regiondir</code> as a sorted set.
+   * @throws IOException
+   */
+  public static NavigableSet<Path> getSplitEditFilesSorted(final FileSystem fs,
+      final Path regiondir)
+  throws IOException {
+    NavigableSet<Path> filesSorted = new TreeSet<Path>();
+    Path editsdir = getRegionDirRecoveredEditsDir(regiondir);
+    if (!fs.exists(editsdir)) return filesSorted;
+    FileStatus[] files = FSUtils.listStatus(fs, editsdir, new PathFilter() {
+      @Override
+      public boolean accept(Path p) {
+        boolean result = false;
+        try {
+          // Return files and only files that match the editfile names pattern.
+          // There can be other files in this directory other than edit files.
+          // In particular, on error, we'll move aside the bad edit file giving
+          // it a timestamp suffix.  See moveAsideBadEditsFile.
+          Matcher m = EDITFILES_NAME_PATTERN.matcher(p.getName());
+          result = fs.isFile(p) && m.matches();
+          // Skip the file whose name ends with RECOVERED_LOG_TMPFILE_SUFFIX,
+          // because it means splithlog thread is writting this file.
+          if (p.getName().endsWith(RECOVERED_LOG_TMPFILE_SUFFIX)) {
+            result = false;
+          }
+        } catch (IOException e) {
+          LOG.warn("Failed isFile check on " + p);
+        }
+        return result;
+      }
+    });
+    if (files == null) return filesSorted;
+    for (FileStatus status: files) {
+      filesSorted.add(status.getPath());
+    }
+    return filesSorted;
+  }
+
+  /**
+   * Move aside a bad edits file.
+   * @param fs
+   * @param edits Edits file to move aside.
+   * @return The name of the moved aside file.
+   * @throws IOException
+   */
+  public static Path moveAsideBadEditsFile(final FileSystem fs,
+      final Path edits)
+  throws IOException {
+    Path moveAsideName = new Path(edits.getParent(), edits.getName() + "." +
+      System.currentTimeMillis());
+    if (!fs.rename(edits, moveAsideName)) {
+      LOG.warn("Rename failed from " + edits + " to " + moveAsideName);
+    }
+    return moveAsideName;
+  }
+
+  /**
+   * @param regiondir This regions directory in the filesystem.
+   * @return The directory that holds recovered edits files for the region
+   * <code>regiondir</code>
+   */
+  public static Path getRegionDirRecoveredEditsDir(final Path regiondir) {
+    return new Path(regiondir, RECOVERED_EDITS_DIR);
+  }
+
+  public static final long FIXED_OVERHEAD = ClassSize.align(
+    ClassSize.OBJECT + (5 * ClassSize.REFERENCE) +
+    ClassSize.ATOMIC_INTEGER + Bytes.SIZEOF_INT + (3 * Bytes.SIZEOF_LONG));
+
+  private static void usage() {
+    System.err.println("Usage: HLog <ARGS>");
+    System.err.println("Arguments:");
+    System.err.println(" --dump  Dump textual representation of passed one or more files");
+    System.err.println("         For example: HLog --dump hdfs://example.com:9000/hbase/.logs/MACHINE/LOGFILE");
+    System.err.println(" --split Split the passed directory of WAL logs");
+    System.err.println("         For example: HLog --split hdfs://example.com:9000/hbase/.logs/DIR");
+  }
+
+  private static void split(final Configuration conf, final Path p)
+  throws IOException {
+    FileSystem fs = FileSystem.get(conf);
+    if (!fs.exists(p)) {
+      throw new FileNotFoundException(p.toString());
+    }
+    final Path baseDir = new Path(conf.get(HConstants.HBASE_DIR));
+    final Path oldLogDir = new Path(baseDir, HConstants.HREGION_OLDLOGDIR_NAME);
+    if (!fs.getFileStatus(p).isDir()) {
+      throw new IOException(p + " is not a directory");
+    }
+
+    HLogSplitter logSplitter = HLogSplitter.createLogSplitter(
+        conf, baseDir, p, oldLogDir, fs);
+    logSplitter.splitLog();
+  }
+
+  /**
+   * @return Coprocessor host.
+   */
+  public WALCoprocessorHost getCoprocessorHost() {
+    return coprocessorHost;
+  }
+
+  /** Provide access to currently deferred sequence num for tests */
+  boolean hasDeferredEntries() {
+    return lastDeferredTxid > syncedTillHere;
+  }
+
+  /**
+   * Pass one or more log file names and it will either dump out a text version
+   * on <code>stdout</code> or split the specified log files.
+   *
+   * @param args
+   * @throws IOException
+   */
+  public static void main(String[] args) throws IOException {
+    if (args.length < 2) {
+      usage();
+      System.exit(-1);
+    }
+    // either dump using the HLogPrettyPrinter or split, depending on args
+    if (args[0].compareTo("--dump") == 0) {
+      HLogPrettyPrinter.run(Arrays.copyOfRange(args, 1, args.length));
+    } else if (args[0].compareTo("--split") == 0) {
+      Configuration conf = HBaseConfiguration.create();
+      for (int i = 1; i < args.length; i++) {
+        try {
+          conf.set("fs.default.name", args[i]);
+          conf.set("fs.defaultFS", args[i]);
+          Path logPath = new Path(args[i]);
+          split(conf, logPath);
+        } catch (Throwable t) {
+          t.printStackTrace(System.err);
+          System.exit(-1);
+        }
+      }
+    } else {
+      usage();
+      System.exit(-1);
+    }
+  }
+>>>>>>> 7d7f481addfec9692e39a468151cdbd3666545a7
 }

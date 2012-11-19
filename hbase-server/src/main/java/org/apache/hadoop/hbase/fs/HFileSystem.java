@@ -29,6 +29,7 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.net.URI;
+import java.util.Arrays;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -263,7 +264,7 @@ public class HFileSystem extends FilterFileSystem {
             new InvocationHandler() {
               public Object invoke(Object proxy, Method method,
                                    Object[] args) throws Throwable {
-                try { 
+                try {
                   Object res = method.invoke(cp, args);
                   if (res != null && args != null && args.length == 3
                       && "getBlockLocations".equals(method.getName())
@@ -320,12 +321,13 @@ public class HFileSystem extends FilterFileSystem {
       ServerName sn = HLogUtil.getServerNameFromHLogDirectoryName(conf, src);
       if (sn == null) {
         // It's not an HLOG
+        LOG.debug(src + " is NOT an HLog file, so NOT reordering blocks");
         return;
       }
 
       // Ok, so it's an HLog
       String hostName = sn.getHostname();
-      LOG.debug(src + " is an HLog file, so reordering blocks, last hostname will be:" + hostName);
+      LOG.info(src + " is an HLog file, so reordering blocks, last hostname will be:" + hostName);
 
       // Just check for all blocks
       for (LocatedBlock lb : lbs.getLocatedBlocks()) {

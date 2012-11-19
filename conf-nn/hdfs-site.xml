@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+
+<configuration>
+
+<property>
+<name>dfs.http.address</name>
+<value>0.0.0.0:11080</value>
+<description>The name of the default file system.  Either the
+literal string "local" or a host:port for NDFS.
+</description>
+<final>true</final>
+</property>
+
+<property>
+<name>dfs.replication</name>
+<value>2</value>
+</property>
+
+<property>
+<name>dfs.support.append</name>
+<value>true</value>
+</property>
+
+<property>
+<name>dfs.datanode.max.xcievers</name>
+<value>4096</value>
+</property>
+
+</configuration>
+

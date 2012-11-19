@@ -745,7 +745,6 @@ public class TestHLog  {
         HConstants.HBASE_DIR) +
         "/.logs/localhost,32984,1343316388997/localhost%2C32984%2C1343316388997.1343316390417"
         ));
-    Assert.assertNotNull( HLogUtil.getServerNameFromHLogDirectoryName(conf, hl+"/qdf") );
   }
 
   /**
