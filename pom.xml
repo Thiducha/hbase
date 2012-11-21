@@ -51,7 +51,7 @@
   <modules>
     <module>hbase-server</module>
     <module>hbase-hadoop2-compat</module>
-    <module>hbase-hadoop1-compat</module>
+    <!--module>hbase-hadoop1-compat</module-->
     <module>hbase-hadoop-compat</module>
     <module>hbase-common</module>
     <module>hbase-it</module>
