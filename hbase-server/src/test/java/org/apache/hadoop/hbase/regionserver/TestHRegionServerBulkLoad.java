@@ -37,8 +37,8 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.ServerCallable;
+import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
-import org.apache.hadoop.hbase.io.hfile.Compression;
 import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CompactRegionRequest;
@@ -106,7 +106,7 @@ public class TestHRegionServerBulkLoad {
   /**
    * Thread that does full scans of the table looking for any partially
    * completed rows.
-   * 
+   *
    * Each iteration of this loads 10 hdfs files, which occupies 5 file open file
    * handles. So every 10 iterations (500 file handles) it does a region
    * compaction to reduce the number of open file handles.
@@ -124,7 +124,7 @@ public class TestHRegionServerBulkLoad {
 
     public void doAnAction() throws Exception {
       long iteration = numBulkLoads.getAndIncrement();
-      Path dir =  UTIL.getDataTestDir(String.format("bulkLoad_%08d",
+      Path dir =  UTIL.getDataTestDirOnTestFS(String.format("bulkLoad_%08d",
           iteration));
 
       // create HFiles for different column families
@@ -169,7 +169,7 @@ public class TestHRegionServerBulkLoad {
               location.getHostname(), location.getPort());
             CompactRegionRequest request =
               RequestConverter.buildCompactRegionRequest(
-                location.getRegionInfo().getRegionName(), true);
+                location.getRegionInfo().getRegionName(), true, null);
             server.compactRegion(null, request);
             numCompactions.incrementAndGet();
             return null;

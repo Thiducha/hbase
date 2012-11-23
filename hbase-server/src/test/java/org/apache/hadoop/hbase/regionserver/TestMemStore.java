@@ -35,7 +35,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.regionserver.HStore.ScanInfo;
-import org.apache.hadoop.hbase.regionserver.metrics.SchemaMetrics;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import com.google.common.base.Joiner;
@@ -61,7 +60,6 @@ public class TestMemStore extends TestCase {
     super.setUp();
     this.mvcc = new MultiVersionConsistencyControl();
     this.memstore = new MemStore();
-    SchemaMetrics.setUseTableNameInTest(false);
   }
 
   public void testPutSameKey() {
@@ -491,7 +489,7 @@ public class TestMemStore extends TestCase {
         m.kvset.size(), m.kvset.size() == 3);
   }
 
-  public void testBinary() throws IOException {
+  public void testBinary() {
     MemStore mc = new MemStore(new Configuration(), KeyValue.ROOT_COMPARATOR);
     final int start = 43;
     final int end = 46;
@@ -501,12 +499,12 @@ public class TestMemStore extends TestCase {
         Bytes.toBytes(".META.,table," + Bytes.toString(kk) + ",1," + k);
       KeyValue key = new KeyValue(row, CONTENTS, BASIC,
         System.currentTimeMillis(),
-        (CONTENTSTR + k).getBytes(HConstants.UTF8_ENCODING));
+        Bytes.toBytes(CONTENTSTR + k));
       mc.add(key);
       System.out.println(key);
 //      key = new KeyValue(row, Bytes.toBytes(ANCHORNUM + k),
 //        System.currentTimeMillis(),
-//        (ANCHORSTR + k).getBytes(HConstants.UTF8_ENCODING));
+//        Bytes.toBytes(ANCHORSTR + k));
 //      mc.add(key);
 //      System.out.println(key);
     }

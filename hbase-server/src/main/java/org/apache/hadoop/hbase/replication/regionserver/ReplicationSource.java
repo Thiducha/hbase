@@ -56,12 +56,8 @@ import org.apache.hadoop.hbase.regionserver.wal.HLogFactory;
 import org.apache.hadoop.hbase.regionserver.wal.HLogKey;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
 import org.apache.hadoop.hbase.replication.ReplicationZookeeper;
-import org.apache.hadoop.hbase.replication.regionserver.metrics.ReplicationSourceMetrics;
-import org.apache.hadoop.hbase.regionserver.wal.HLog;
-import org.apache.hadoop.hbase.regionserver.wal.HLogUtil;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Threads;
-import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
 import org.apache.hadoop.ipc.RemoteException;
 import org.apache.zookeeper.KeeperException;
 
@@ -141,7 +137,7 @@ public class ReplicationSource extends Thread
   // Indicates if this particular source is running
   private volatile boolean running = true;
   // Metrics for this source
-  private ReplicationSourceMetrics metrics;
+  private MetricsSource metrics;
 
   /**
    * Instantiation method used by region servers
@@ -188,7 +184,7 @@ public class ReplicationSource extends Thread
     this.sleepForRetries =
         this.conf.getLong("replication.source.sleepforretries", 1000);
     this.fs = fs;
-    this.metrics = new ReplicationSourceMetrics(peerClusterZnode);
+    this.metrics = new MetricsSource(peerClusterZnode);
 
     try {
       this.clusterId = zkHelper.getUUIDForCluster(zkHelper.getZookeeperWatcher());
@@ -286,12 +282,31 @@ public class ReplicationSource extends Thread
         }
         continue;
       }
+      Path oldPath = getCurrentPath(); //note that in the current scenario,
+                                       //oldPath will be null when a log roll
+                                       //happens.
       // Get a new path
-      if (!getNextPath()) {
+      boolean hasCurrentPath = getNextPath();
+      if (getCurrentPath() != null && oldPath == null) {
+        sleepMultiplier = 1; //reset the sleepMultiplier on a path change
+      }
+      if (!hasCurrentPath) {
         if (sleepForRetries("No log to process", sleepMultiplier)) {
           sleepMultiplier++;
         }
         continue;
+      }
+      boolean currentWALisBeingWrittenTo = false;
+      //For WAL files we own (rather than recovered), take a snapshot of whether the
+      //current WAL file (this.currentPath) is in use (for writing) NOW!
+      //Since the new WAL paths are enqueued only after the prev WAL file
+      //is 'closed', presence of an element in the queue means that
+      //the previous WAL file was closed, else the file is in use (currentPath)
+      //We take the snapshot now so that we are protected against races
+      //where a new file gets enqueued while the current file is being processed
+      //(and where we just finished reading the current file).
+      if (!this.queueRecovered && queue.size() == 0) {
+        currentWALisBeingWrittenTo = true;
       }
       // Open a reader on it
       if (!openReader(sleepMultiplier)) {
@@ -311,7 +326,7 @@ public class ReplicationSource extends Thread
       boolean gotIOE = false;
       currentNbEntries = 0;
       try {
-        if(readAllEntriesToReplicateOrNextFile()) {
+        if (readAllEntriesToReplicateOrNextFile(currentWALisBeingWrittenTo)) {
           continue;
         }
       } catch (IOException ioe) {
@@ -360,7 +375,7 @@ public class ReplicationSource extends Thread
       if (this.isActive() && (gotIOE || currentNbEntries == 0)) {
         if (this.lastLoggedPosition != this.position) {
           this.manager.logPositionAndCleanOldLogs(this.currentPath,
-              this.peerClusterZnode, this.position, queueRecovered);
+              this.peerClusterZnode, this.position, queueRecovered, currentWALisBeingWrittenTo);
           this.lastLoggedPosition = this.position;
         }
         if (sleepForRetries("Nothing to replicate", sleepMultiplier)) {
@@ -369,7 +384,7 @@ public class ReplicationSource extends Thread
         continue;
       }
       sleepMultiplier = 1;
-      shipEdits();
+      shipEdits(currentWALisBeingWrittenTo);
 
     }
     if (this.conn != null) {
@@ -386,11 +401,13 @@ public class ReplicationSource extends Thread
   /**
    * Read all the entries from the current log files and retain those
    * that need to be replicated. Else, process the end of the current file.
+   * @param currentWALisBeingWrittenTo is the current WAL being written to
    * @return true if we got nothing and went to the next file, false if we got
    * entries
    * @throws IOException
    */
-  protected boolean readAllEntriesToReplicateOrNextFile() throws IOException{
+  protected boolean readAllEntriesToReplicateOrNextFile(boolean currentWALisBeingWrittenTo)
+      throws IOException{
     long seenEntries = 0;
     if (this.position != 0) {
       this.reader.seek(this.position);
@@ -440,6 +457,9 @@ public class ReplicationSource extends Thread
     LOG.debug("currentNbOperations:" + currentNbOperations +
         " and seenEntries:" + seenEntries +
         " and size: " + (this.reader.getPosition() - startPosition));
+    if (currentWALisBeingWrittenTo) {
+      return false;
+    }
     // If we didn't get anything and the queue has an object, it means we
     // hit the end of the file for sure
     return seenEntries == 0 && processEndOfFile();
@@ -613,8 +633,10 @@ public class ReplicationSource extends Thread
 
   /**
    * Do the shipping logic
+   * @param currentWALisBeingWrittenTo was the current WAL being (seemingly) 
+   * written to when this method was called
    */
-  protected void shipEdits() {
+  protected void shipEdits(boolean currentWALisBeingWrittenTo) {
     int sleepMultiplier = 1;
     if (this.currentNbEntries == 0) {
       LOG.warn("Was given 0 edits to ship");
@@ -634,7 +656,7 @@ public class ReplicationSource extends Thread
           Arrays.copyOf(this.entriesArray, currentNbEntries));
         if (this.lastLoggedPosition != this.position) {
           this.manager.logPositionAndCleanOldLogs(this.currentPath,
-              this.peerClusterZnode, this.position, queueRecovered);
+              this.peerClusterZnode, this.position, queueRecovered, currentWALisBeingWrittenTo);
           this.lastLoggedPosition = this.position;
         }
         this.totalReplicatedEdits += currentNbEntries;
@@ -655,7 +677,7 @@ public class ReplicationSource extends Thread
             // This exception means we waited for more than 60s and nothing
             // happened, the cluster is alive and calling it right away
             // even for a test just makes things worse.
-            sleepForRetries("Encountered a SocketTimeoutException. Since the" +
+            sleepForRetries("Encountered a SocketTimeoutException. Since the " +
               "call to the remote cluster timed out, which is usually " +
               "caused by a machine failure or a massive slowdown",
               this.socketTimeoutMultiplier);

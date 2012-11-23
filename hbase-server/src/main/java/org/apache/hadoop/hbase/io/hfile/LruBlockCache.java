@@ -44,7 +44,6 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.io.HeapSize;
 import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
-import org.apache.hadoop.hbase.regionserver.metrics.SchemaMetrics;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.ClassSize;
 import org.apache.hadoop.hbase.util.FSUtils;
@@ -97,9 +96,11 @@ public class LruBlockCache implements BlockCache, HeapSize {
 
   static final Log LOG = LogFactory.getLog(LruBlockCache.class);
 
+  static final String LRU_MIN_FACTOR_CONFIG_NAME = "hbase.lru.blockcache.min.factor";
+  static final String LRU_ACCEPTABLE_FACTOR_CONFIG_NAME = "hbase.lru.blockcache.acceptable.factor";
+
   /** Default Configuration Parameters*/
-  static final String LRU_MIN_FACTOR = "hbase.lru.blockcache.min.factor";
-  
+
   /** Backing Concurrent Map Configuration */
   static final float DEFAULT_LOAD_FACTOR = 0.75f;
   static final int DEFAULT_CONCURRENCY_LEVEL = 16;
@@ -202,8 +203,8 @@ public class LruBlockCache implements BlockCache, HeapSize {
         (int)Math.ceil(1.2*maxSize/blockSize),
         DEFAULT_LOAD_FACTOR, 
         DEFAULT_CONCURRENCY_LEVEL,
-        conf.getFloat(LRU_MIN_FACTOR, DEFAULT_MIN_FACTOR), 
-        DEFAULT_ACCEPTABLE_FACTOR,
+        conf.getFloat(LRU_MIN_FACTOR_CONFIG_NAME, DEFAULT_MIN_FACTOR), 
+        conf.getFloat(LRU_ACCEPTABLE_FACTOR_CONFIG_NAME, DEFAULT_ACCEPTABLE_FACTOR), 
         DEFAULT_SINGLE_FACTOR, 
         DEFAULT_MULTI_FACTOR,
         DEFAULT_MEMORY_FACTOR);
@@ -324,12 +325,6 @@ public class LruBlockCache implements BlockCache, HeapSize {
     if (evict) {
       heapsize *= -1;
     }
-    Cacheable cachedBlock = cb.getBuffer();
-    SchemaMetrics schemaMetrics = cachedBlock.getSchemaMetrics();
-    if (schemaMetrics != null) {
-      schemaMetrics.updateOnCachePutOrEvict(
-          cachedBlock.getBlockType().getCategory(), heapsize, evict);
-    }
     return size.addAndGet(heapsize);
   }
 
@@ -337,13 +332,16 @@ public class LruBlockCache implements BlockCache, HeapSize {
    * Get the buffer of the block with the specified name.
    * @param cacheKey block's cache key
    * @param caching true if the caller caches blocks on cache misses
+   * @param repeat Whether this is a repeat lookup for the same block
+   *        (used to avoid double counting cache misses when doing double-check locking)
+   *        {@see HFileReaderV2#readBlock(long, long, boolean, boolean, boolean, BlockType)}
    * @return buffer of specified cache key, or null if not in cache
    */
   @Override
-  public Cacheable getBlock(BlockCacheKey cacheKey, boolean caching) {
+  public Cacheable getBlock(BlockCacheKey cacheKey, boolean caching, boolean repeat) {
     CachedBlock cb = map.get(cacheKey);
     if(cb == null) {
-      stats.miss(caching);
+      if (!repeat) stats.miss(caching);
       return null;
     }
     stats.hit(caching);

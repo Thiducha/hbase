@@ -40,6 +40,11 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import javax.management.ObjectName;
 
+import com.google.common.collect.Maps;
+import com.google.protobuf.Descriptors;
+import com.google.protobuf.Message;
+import com.google.protobuf.RpcCallback;
+import com.google.protobuf.Service;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -47,6 +52,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.Abortable;
 import org.apache.hadoop.hbase.Chore;
+import org.apache.hadoop.hbase.ClusterId;
 import org.apache.hadoop.hbase.ClusterStatus;
 import org.apache.hadoop.hbase.DeserializationException;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -81,6 +87,7 @@ import org.apache.hadoop.hbase.ipc.HBaseRPC;
 import org.apache.hadoop.hbase.ipc.HBaseServer;
 import org.apache.hadoop.hbase.ipc.ProtocolSignature;
 import org.apache.hadoop.hbase.ipc.RpcServer;
+import org.apache.hadoop.hbase.ipc.ServerRpcController;
 import org.apache.hadoop.hbase.master.balancer.BalancerChore;
 import org.apache.hadoop.hbase.master.balancer.ClusterStatusChore;
 import org.apache.hadoop.hbase.master.balancer.LoadBalancerFactory;
@@ -96,13 +103,13 @@ import org.apache.hadoop.hbase.master.handler.TableAddFamilyHandler;
 import org.apache.hadoop.hbase.master.handler.TableDeleteFamilyHandler;
 import org.apache.hadoop.hbase.master.handler.TableEventHandler;
 import org.apache.hadoop.hbase.master.handler.TableModifyFamilyHandler;
-import org.apache.hadoop.hbase.master.metrics.MasterMetrics;
-import org.apache.hadoop.hbase.master.metrics.MasterMetricsWrapperImpl;
 import org.apache.hadoop.hbase.monitoring.MemoryBoundedLogMessageBuffer;
 import org.apache.hadoop.hbase.monitoring.MonitoredTask;
 import org.apache.hadoop.hbase.monitoring.TaskMonitor;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
+import org.apache.hadoop.hbase.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.protobuf.ResponseConverter;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.NameStringPair;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionSpecifier.RegionSpecifierType;
@@ -160,6 +167,7 @@ import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.Regio
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupResponse;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorRequest;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorResponse;
+import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.replication.regionserver.Replication;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -247,7 +255,7 @@ Server {
   private final InetSocketAddress isa;
 
   // Metrics for the HMaster
-  private final MasterMetrics metrics;
+  private final MetricsMaster metricsMaster;
   // file system manager for the master FS operations
   private MasterFileSystem fileSystemManager;
 
@@ -309,6 +317,8 @@ Server {
   private final boolean masterCheckCompression;
 
   private SpanReceiverHost spanReceiverHost;
+
+  private Map<String, Service> coprocessorServiceHandlers = Maps.newHashMap();
 
   /**
    * Initializes the HMaster. The steps are as follows:
@@ -383,7 +393,7 @@ Server {
     //should we check the compression codec type at master side, default true, HBASE-6370
     this.masterCheckCompression = conf.getBoolean("hbase.master.check.compression", true);
 
-    this.metrics = new MasterMetrics( new MasterMetricsWrapperImpl(this));
+    this.metricsMaster = new MetricsMaster( new MetricsMasterWrapperImpl(this));
   }
 
   /**
@@ -413,8 +423,8 @@ Server {
 
   }
 
-  MasterMetrics getMetrics() {
-    return metrics;
+  MetricsMaster getMetrics() {
+    return metricsMaster;
   }
 
   /**
@@ -523,7 +533,7 @@ Server {
     this.loadBalancerTracker = new LoadBalancerTracker(zooKeeper, this);
     this.loadBalancerTracker.start();
     this.assignmentManager = new AssignmentManager(this, serverManager,
-      this.catalogTracker, this.balancer, this.executorService, this.metrics);
+      this.catalogTracker, this.balancer, this.executorService, this.metricsMaster);
     zooKeeper.registerListenerFirst(assignmentManager);
 
     this.regionServerTracker = new RegionServerTracker(zooKeeper, this,
@@ -627,7 +637,7 @@ Server {
     status.setStatus("Initializing Master file system");
     this.masterActiveTime = System.currentTimeMillis();
     // TODO: Do this using Dependency Injection, using PicoContainer, Guice or Spring.
-    this.fileSystemManager = new MasterFileSystem(this, this, metrics, masterRecovery);
+    this.fileSystemManager = new MasterFileSystem(this, this, metricsMaster, masterRecovery);
 
     this.tableDescriptors =
       new FSTableDescriptors(this.fileSystemManager.getFileSystem(),
@@ -673,6 +683,7 @@ Server {
     if (!masterRecovery) {
       this.assignmentManager.startTimeOutMonitor();
     }
+
     // TODO: Should do this in background rather than block master startup
     status.setStatus("Splitting logs after master startup");
     splitLogAfterStartup(this.fileSystemManager);
@@ -1181,9 +1192,9 @@ Server {
     try {
       HBaseProtos.ServerLoad sl = request.getLoad();
       this.serverManager.regionServerReport(ProtobufUtil.toServerName(request.getServer()), new ServerLoad(sl));
-      if (sl != null && this.metrics != null) {
+      if (sl != null && this.metricsMaster != null) {
         // Up our metrics.
-        this.metrics.incrementRequests(sl.getTotalNumberOfRequests());
+        this.metricsMaster.incrementRequests(sl.getTotalNumberOfRequests());
       }
     } catch (IOException ioe) {
       throw new ServiceException(ioe);
@@ -1255,7 +1266,7 @@ Server {
     return balancerCutoffTime;
   }
 
-  public boolean balance() {
+  public boolean balance() throws IOException {
     // if master not initialized, don't run balancer.
     if (!this.initialized) {
       LOG.debug("Master has not been initialized, don't run balancer.");
@@ -1284,13 +1295,8 @@ Server {
       }
 
       if (this.cpHost != null) {
-        try {
-          if (this.cpHost.preBalance()) {
-            LOG.debug("Coprocessor bypassing balancer request");
-            return false;
-          }
-        } catch (IOException ioe) {
-          LOG.error("Error invoking master coprocessor preBalance()", ioe);
+        if (this.cpHost.preBalance()) {
+          LOG.debug("Coprocessor bypassing balancer request");
           return false;
         }
       }
@@ -1325,12 +1331,7 @@ Server {
         }
       }
       if (this.cpHost != null) {
-        try {
-          this.cpHost.postBalance();
-        } catch (IOException ioe) {
-          // balancing already succeeded so don't change the result
-          LOG.error("Error invoking master coprocessor postBalance()", ioe);
-        }
+        this.cpHost.postBalance();
       }
     }
     return balancerRan;
@@ -1338,7 +1339,11 @@ Server {
 
   @Override
   public BalanceResponse balance(RpcController c, BalanceRequest request) throws ServiceException {
-    return BalanceResponse.newBuilder().setBalancerRan(balance()).build();
+    try {
+      return BalanceResponse.newBuilder().setBalancerRan(balance()).build();
+    } catch (IOException e) {
+      throw new ServiceException(e);
+    }
   }
 
   enum BalanceSwitchMode {
@@ -1839,7 +1844,14 @@ Server {
   }
 
   public String getClusterId() {
-    return fileSystemManager.getClusterId().toString();
+    if (fileSystemManager == null) {
+      return "";
+    }
+    ClusterId id = fileSystemManager.getClusterId();
+    if (id == null) {
+      return "";
+    }
+    return id.toString();
   }
 
   /**
@@ -2004,14 +2016,10 @@ Server {
     return rsFatals;
   }
 
-  public void shutdown() {
+  public void shutdown() throws IOException {
     spanReceiverHost.closeReceivers();
     if (cpHost != null) {
-      try {
-        cpHost.preShutdown();
-      } catch (IOException ioe) {
-        LOG.error("Error call master coprocessor preShutdown()", ioe);
-      }
+      cpHost.preShutdown();
     }
     if (mxBean != null) {
       MBeanUtil.unregisterMBean(mxBean);
@@ -2031,17 +2039,17 @@ Server {
   @Override
   public ShutdownResponse shutdown(RpcController controller, ShutdownRequest request)
   throws ServiceException {
-    shutdown();
+    try {
+      shutdown();
+    } catch (IOException e) {
+      throw new ServiceException(e);
+    }
     return ShutdownResponse.newBuilder().build();
   }
 
-  public void stopMaster() {
+  public void stopMaster() throws IOException {
     if (cpHost != null) {
-      try {
-        cpHost.preStopMaster();
-      } catch (IOException ioe) {
-        LOG.error("Error call master coprocessor preStopMaster()", ioe);
-      }
+      cpHost.preStopMaster();
     }
     stop("Stopped by " + Thread.currentThread().getName());
   }
@@ -2049,7 +2057,11 @@ Server {
   @Override
   public StopMasterResponse stopMaster(RpcController controller, StopMasterRequest request)
   throws ServiceException {
-    stopMaster();
+    try {
+      stopMaster();
+    } catch (IOException e) {
+      throw new ServiceException(e);
+    }
     return StopMasterResponse.newBuilder().build();
   }
 
@@ -2136,12 +2148,12 @@ Server {
           return arr;
         }
       }
-      assignRegion(regionInfo);
-     if (cpHost != null) {
-       cpHost.postAssign(regionInfo);
-     }
+      assignmentManager.assign(regionInfo, true, true);
+      if (cpHost != null) {
+        cpHost.postAssign(regionInfo);
+      }
 
-     return arr;
+      return arr;
     } catch (IOException ioe) {
       throw new ServiceException(ioe);
     }
@@ -2237,7 +2249,15 @@ Server {
    * @return the average load
    */
   public double getAverageLoad() {
-    return this.assignmentManager.getRegionStates().getAverageLoad();
+    if (this.assignmentManager == null) {
+      return 0;
+    }
+
+    RegionStates regionStates = this.assignmentManager.getRegionStates();
+    if (regionStates == null) {
+      return 0;
+    }
+    return regionStates.getAverageLoad();
   }
 
   /**
@@ -2263,6 +2283,79 @@ Server {
       throw new ServiceException(ioe);
     }
     return OfflineRegionResponse.newBuilder().build();
+  }
+
+  @Override
+  public boolean registerService(Service instance) {
+    /*
+     * No stacking of instances is allowed for a single service name
+     */
+    Descriptors.ServiceDescriptor serviceDesc = instance.getDescriptorForType();
+    if (coprocessorServiceHandlers.containsKey(serviceDesc.getFullName())) {
+      LOG.error("Coprocessor service "+serviceDesc.getFullName()+
+          " already registered, rejecting request from "+instance
+      );
+      return false;
+    }
+
+    coprocessorServiceHandlers.put(serviceDesc.getFullName(), instance);
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Registered master coprocessor service: service="+serviceDesc.getFullName());
+    }
+    return true;
+  }
+
+  @Override
+  public ClientProtos.CoprocessorServiceResponse execMasterService(final RpcController controller,
+      final ClientProtos.CoprocessorServiceRequest request) throws ServiceException {
+    try {
+      ServerRpcController execController = new ServerRpcController();
+
+      ClientProtos.CoprocessorServiceCall call = request.getCall();
+      String serviceName = call.getServiceName();
+      String methodName = call.getMethodName();
+      if (!coprocessorServiceHandlers.containsKey(serviceName)) {
+        throw new HBaseRPC.UnknownProtocolException(null,
+            "No registered master coprocessor service found for name "+serviceName);
+      }
+
+      Service service = coprocessorServiceHandlers.get(serviceName);
+      Descriptors.ServiceDescriptor serviceDesc = service.getDescriptorForType();
+      Descriptors.MethodDescriptor methodDesc = serviceDesc.findMethodByName(methodName);
+      if (methodDesc == null) {
+        throw new HBaseRPC.UnknownProtocolException(service.getClass(),
+            "Unknown method "+methodName+" called on master service "+serviceName);
+      }
+
+      //invoke the method
+      Message execRequest = service.getRequestPrototype(methodDesc).newBuilderForType()
+          .mergeFrom(call.getRequest()).build();
+      final Message.Builder responseBuilder =
+          service.getResponsePrototype(methodDesc).newBuilderForType();
+      service.callMethod(methodDesc, controller, execRequest, new RpcCallback<Message>() {
+        @Override
+        public void run(Message message) {
+          if (message != null) {
+            responseBuilder.mergeFrom(message);
+          }
+        }
+      });
+      Message execResult = responseBuilder.build();
+
+      if (execController.getFailedOn() != null) {
+        throw execController.getFailedOn();
+      }
+      ClientProtos.CoprocessorServiceResponse.Builder builder =
+          ClientProtos.CoprocessorServiceResponse.newBuilder();
+      builder.setRegion(RequestConverter.buildRegionSpecifier(
+          RegionSpecifierType.REGION_NAME, HConstants.EMPTY_BYTE_ARRAY));
+      builder.setValue(
+          builder.getValueBuilder().setName(execResult.getClass().getName())
+              .setValue(execResult.toByteString()));
+      return builder.build();
+    } catch (IOException ie) {
+      throw new ServiceException(ie);
+    }
   }
 
   /**
@@ -2293,7 +2386,7 @@ Server {
   /**
    * @see org.apache.hadoop.hbase.master.HMasterCommandLine
    */
-  public static void main(String [] args) throws Exception {
+  public static void main(String [] args) {
     VersionInfo.logVersion();
     new HMasterCommandLine(HMaster.class).doMain(args);
   }

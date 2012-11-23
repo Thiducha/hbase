@@ -60,6 +60,7 @@ import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.OpenRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.OpenRegionResponse;
 import org.apache.hadoop.hbase.regionserver.RegionOpeningState;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.Pair;
 
 import com.google.protobuf.ServiceException;
 
@@ -87,6 +88,18 @@ import com.google.protobuf.ServiceException;
  */
 @InterfaceAudience.Private
 public class ServerManager {
+  public static final String WAIT_ON_REGIONSERVERS_MAXTOSTART =
+      "hbase.master.wait.on.regionservers.maxtostart";
+
+  public static final String WAIT_ON_REGIONSERVERS_MINTOSTART =
+      "hbase.master.wait.on.regionservers.mintostart";
+
+  public static final String WAIT_ON_REGIONSERVERS_TIMEOUT =
+      "hbase.master.wait.on.regionservers.timeout";
+
+  public static final String WAIT_ON_REGIONSERVERS_INTERVAL =
+      "hbase.master.wait.on.regionservers.interval";
+
   private static final Log LOG = LogFactory.getLog(ServerManager.class);
 
   // Set if we are to shutdown the cluster.
@@ -602,11 +615,11 @@ public class ServerManager {
    * Open should not fail but can if server just crashed.
    * <p>
    * @param server server to open a region
-   * @param regions regions to open
+   * @param regionOpenInfos info of a list of regions to open
    * @return a list of region opening states
    */
   public List<RegionOpeningState> sendRegionOpen(ServerName server,
-      List<HRegionInfo> regions)
+      List<Pair<HRegionInfo, Integer>> regionOpenInfos)
   throws IOException {
     AdminProtocol admin = getServerConnection(server);
     if (admin == null) {
@@ -615,8 +628,14 @@ public class ServerManager {
       return null;
     }
 
-    OpenRegionResponse response = ProtobufUtil.openRegion(admin, regions);
-    return ResponseConverter.getRegionOpeningStateList(response);
+    OpenRegionRequest request =
+      RequestConverter.buildOpenRegionRequest(regionOpenInfos);
+    try {
+      OpenRegionResponse response = admin.openRegion(null, request);
+      return ResponseConverter.getRegionOpeningStateList(response);
+    } catch (ServiceException se) {
+      throw ProtobufUtil.getRemoteException(se);
+    }
   }
 
   /**
@@ -634,7 +653,7 @@ public class ServerManager {
    * @throws IOException
    */
   public boolean sendRegionClose(ServerName server, HRegionInfo region,
-    int versionOfClosingNode, ServerName dest) throws IOException {
+    int versionOfClosingNode, ServerName dest, boolean transitionInZK) throws IOException {
     if (server == null) throw new NullPointerException("Passed server is null");
     AdminProtocol admin = getServerConnection(server);
     if (admin == null) {
@@ -644,12 +663,12 @@ public class ServerManager {
         " failed because no RPC connection found to this server");
     }
     return ProtobufUtil.closeRegion(admin, region.getRegionName(),
-      versionOfClosingNode, dest);
+      versionOfClosingNode, dest, transitionInZK);
   }
 
-  public boolean sendRegionClose(ServerName server, HRegionInfo region,
-                                 int versionOfClosingNode) throws IOException {
-    return sendRegionClose(server, region, versionOfClosingNode, null);
+  public boolean sendRegionClose(ServerName server,
+      HRegionInfo region, int versionOfClosingNode) throws IOException {
+    return sendRegionClose(server, region, versionOfClosingNode, null, true);
   }
 
     /**
@@ -674,25 +693,38 @@ public class ServerManager {
    * Wait for the region servers to report in.
    * We will wait until one of this condition is met:
    *  - the master is stopped
-   *  - the 'hbase.master.wait.on.regionservers.timeout' is reached
    *  - the 'hbase.master.wait.on.regionservers.maxtostart' number of
    *    region servers is reached
    *  - the 'hbase.master.wait.on.regionservers.mintostart' is reached AND
    *   there have been no new region server in for
-   *      'hbase.master.wait.on.regionservers.interval' time
+   *      'hbase.master.wait.on.regionservers.interval' time AND
+   *   the 'hbase.master.wait.on.regionservers.timeout' is reached
    *
    * @throws InterruptedException
    */
   public void waitForRegionServers(MonitoredTask status)
   throws InterruptedException {
     final long interval = this.master.getConfiguration().
-      getLong("hbase.master.wait.on.regionservers.interval", 1500);
+      getLong(WAIT_ON_REGIONSERVERS_INTERVAL, 1500);
     final long timeout = this.master.getConfiguration().
-    getLong("hbase.master.wait.on.regionservers.timeout", 4500);
-    final int minToStart = this.master.getConfiguration().
-    getInt("hbase.master.wait.on.regionservers.mintostart", 1);
-    final int maxToStart = this.master.getConfiguration().
-    getInt("hbase.master.wait.on.regionservers.maxtostart", Integer.MAX_VALUE);
+      getLong(WAIT_ON_REGIONSERVERS_TIMEOUT, 4500);
+    int minToStart = this.master.getConfiguration().
+      getInt(WAIT_ON_REGIONSERVERS_MINTOSTART, 1);
+    if (minToStart < 1) {
+      LOG.warn(String.format(
+        "The value of '%s' (%d) can not be less than 1, ignoring.",
+        WAIT_ON_REGIONSERVERS_MINTOSTART, minToStart));
+      minToStart = 1;
+    }
+    int maxToStart = this.master.getConfiguration().
+      getInt(WAIT_ON_REGIONSERVERS_MAXTOSTART, Integer.MAX_VALUE);
+    if (maxToStart < minToStart) {
+        LOG.warn(String.format(
+            "The value of '%s' (%d) is set less than '%s' (%d), ignoring.",
+            WAIT_ON_REGIONSERVERS_MAXTOSTART, maxToStart,
+            WAIT_ON_REGIONSERVERS_MINTOSTART, minToStart));
+        maxToStart = Integer.MAX_VALUE;
+    }
 
     long now =  System.currentTimeMillis();
     final long startTime = now;
@@ -703,9 +735,8 @@ public class ServerManager {
     int oldCount = 0;
     while (
       !this.master.isStopped() &&
-        slept < timeout &&
         count < maxToStart &&
-        (lastCountChange+interval > now || count < minToStart)
+        (lastCountChange+interval > now || timeout > slept || count < minToStart)
       ){
 
       // Log some info at every interval time or if there is a change

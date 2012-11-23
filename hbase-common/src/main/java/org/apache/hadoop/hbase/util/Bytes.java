@@ -20,7 +20,6 @@ package org.apache.hadoop.hbase.util;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -243,14 +242,24 @@ public class Bytes {
   }
 
   /**
-   * Returns a new byte array, copied from the passed ByteBuffer.
-   * @param bb A ByteBuffer
+   * Returns a new byte array, copied from the given {@code buf},
+   * from the index 0 (inclusive) to the limit (exclusive),
+   * regardless of the current position.
+   * The position and the other index parameters are not changed.
+   *
+   * @param buf a byte buffer
    * @return the byte array
+   * @see #getBytes(ByteBuffer)
    */
-  public static byte[] toBytes(ByteBuffer bb) {
-    int length = bb.limit();
-    byte [] result = new byte[length];
-    System.arraycopy(bb.array(), bb.arrayOffset(), result, 0, length);
+  public static byte[] toBytes(ByteBuffer buf) {
+    ByteBuffer dup = buf.duplicate();
+    dup.position(0);
+    return readBytes(dup);
+  }
+
+  private static byte[] readBytes(ByteBuffer buf) {
+    byte [] result = new byte[buf.remaining()];
+    buf.get(result);
     return result;
   }
 
@@ -279,8 +288,7 @@ public class Bytes {
 
   /**
    * This method will convert utf8 encoded bytes into a string. If
-   * an UnsupportedEncodingException occurs, this method will eat it
-   * and return null instead.
+   * the given byte array is null, this method will return null.
    *
    * @param b Presumed UTF-8 encoded byte array.
    * @param off offset into array
@@ -294,12 +302,7 @@ public class Bytes {
     if (len == 0) {
       return "";
     }
-    try {
-      return new String(b, off, len, HConstants.UTF8_ENCODING);
-    } catch (UnsupportedEncodingException e) {
-      LOG.error("UTF-8 not supported?", e);
-      return null;
-    }
+    return new String(b, off, len, HConstants.UTF8_CHARSET);
   }
 
   /**
@@ -316,16 +319,23 @@ public class Bytes {
   }
 
   /**
-   * Converts the given byte buffer, from its array offset to its limit, to
-   * a string. The position and the mark are ignored.
+   * Converts the given byte buffer to a printable representation,
+   * from the index 0 (inclusive) to the limit (exclusive),
+   * regardless of the current position.
+   * The position and the other index parameters are not changed.
    *
    * @param buf a byte buffer
    * @return a string representation of the buffer's binary contents
+   * @see #toBytes(ByteBuffer)
+   * @see #getBytes(ByteBuffer)
    */
   public static String toStringBinary(ByteBuffer buf) {
     if (buf == null)
       return "null";
-    return toStringBinary(buf.array(), buf.arrayOffset(), buf.limit());
+    if (buf.hasArray()) {
+      return toStringBinary(buf.array(), buf.arrayOffset(), buf.limit());
+    }
+    return toStringBinary(toBytes(buf));
   }
 
   /**
@@ -343,21 +353,16 @@ public class Bytes {
     // Just in case we are passed a 'len' that is > buffer length...
     if (off >= b.length) return result.toString();
     if (off + len > b.length) len = b.length - off;
-    try {
-      String first = new String(b, off, len, "ISO-8859-1");
-      for (int i = 0; i < first.length() ; ++i ) {
-        int ch = first.charAt(i) & 0xFF;
-        if ( (ch >= '0' && ch <= '9')
-            || (ch >= 'A' && ch <= 'Z')
-            || (ch >= 'a' && ch <= 'z')
-            || " `~!@#$%^&*()-_=+[]{}\\|;:'\",.<>/?".indexOf(ch) >= 0 ) {
-          result.append(first.charAt(i));
-        } else {
-          result.append(String.format("\\x%02X", ch));
-        }
+    for (int i = off; i < off + len ; ++i ) {
+      int ch = b[i] & 0xFF;
+      if ( (ch >= '0' && ch <= '9')
+          || (ch >= 'A' && ch <= 'Z')
+          || (ch >= 'a' && ch <= 'z')
+          || " `~!@#$%^&*()-_=+[]{}|;:'\",.<>/?".indexOf(ch) >= 0 ) {
+        result.append((char)ch);
+      } else {
+        result.append(String.format("\\x%02X", ch));
       }
-    } catch (UnsupportedEncodingException e) {
-      LOG.error("ISO-8859-1 not supported?", e);
     }
     return result.toString();
   }
@@ -419,12 +424,7 @@ public class Bytes {
    * @return the byte array
    */
   public static byte[] toBytes(String s) {
-    try {
-      return s.getBytes(HConstants.UTF8_ENCODING);
-    } catch (UnsupportedEncodingException e) {
-      LOG.error("UTF-8 not supported?", e);
-      return null;
-    }
+    return s.getBytes(HConstants.UTF8_CHARSET);
   }
 
   /**
@@ -754,17 +754,16 @@ public class Bytes {
   }
 
   /**
-   * This method will get a sequence of bytes from pos -> limit,
-   * but will restore pos after.
-   * @param buf
-   * @return byte array
+   * Returns a new byte array, copied from the given {@code buf},
+   * from the position (inclusive) to the limit (exclusive).
+   * The position and the other index parameters are not changed.
+   *
+   * @param buf a byte buffer
+   * @return the byte array
+   * @see #toBytes(ByteBuffer)
    */
   public static byte[] getBytes(ByteBuffer buf) {
-    int savedPos = buf.position();
-    byte [] newBytes = new byte[buf.remaining()];
-    buf.get(newBytes);
-    buf.position(savedPos);
-    return newBytes;
+    return readBytes(buf.duplicate());
   }
 
   /**
@@ -1648,7 +1647,7 @@ public class Bytes {
 
     return toString(b, 0, n);
   }
-  
+
   /**
    * Copy the byte array given in parameter and return an instance 
    * of a new byte array with the same length and the same content.
@@ -1661,4 +1660,62 @@ public class Bytes {
     System.arraycopy(bytes, 0, result, 0, bytes.length);	  
     return result;
   }
+
+  /**
+   * Search sorted array "a" for byte "key". I can't remember if I wrote this or copied it from
+   * somewhere. (mcorgan)
+   * @param a Array to search. Entries must be sorted and unique.
+   * @param fromIndex First index inclusive of "a" to include in the search.
+   * @param toIndex Last index exclusive of "a" to include in the search.
+   * @param key The byte to search for.
+   * @return The index of key if found. If not found, return -(index + 1), where negative indicates
+   *         "not found" and the "index + 1" handles the "-0" case.
+   */
+  public static int unsignedBinarySearch(byte[] a, int fromIndex, int toIndex, byte key) {
+    int unsignedKey = key & 0xff;
+    int low = fromIndex;
+    int high = toIndex - 1;
+
+    while (low <= high) {
+      int mid = (low + high) >>> 1;
+      int midVal = a[mid] & 0xff;
+
+      if (midVal < unsignedKey) {
+        low = mid + 1;
+      } else if (midVal > unsignedKey) {
+        high = mid - 1;
+      } else {
+        return mid; // key found
+      }
+    }
+    return -(low + 1); // key not found.
+  }
+
+  /**
+   * Treat the byte[] as an unsigned series of bytes, most significant bits first.  Start by adding
+   * 1 to the rightmost bit/byte and carry over all overflows to the more significant bits/bytes.
+   *
+   * @param input The byte[] to increment.
+   * @return The incremented copy of "in".  May be same length or 1 byte longer.
+   */
+  public static byte[] unsignedCopyAndIncrement(final byte[] input) {
+    byte[] copy = copy(input);
+    if (copy == null) {
+      throw new IllegalArgumentException("cannot increment null array");
+    }
+    for (int i = copy.length - 1; i >= 0; --i) {
+      if (copy[i] == -1) {// -1 is all 1-bits, which is the unsigned maximum
+        copy[i] = 0;
+      } else {
+        ++copy[i];
+        return copy;
+      }
+    }
+    // we maxed out the array
+    byte[] out = new byte[copy.length + 1];
+    out[0] = 1;
+    System.arraycopy(copy, 0, out, 1, copy.length);
+    return out;
+  }
+
 }

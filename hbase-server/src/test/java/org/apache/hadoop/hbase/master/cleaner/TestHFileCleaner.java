@@ -63,7 +63,7 @@ public class TestHFileCleaner {
   @Test
   public void testTTLCleaner() throws IOException, InterruptedException {
     FileSystem fs = UTIL.getDFSCluster().getFileSystem();
-    Path root = UTIL.getDataTestDir();
+    Path root = UTIL.getDataTestDirOnTestFS();
     Path file = new Path(root, "file");
     fs.createNewFile(file);
     long createTime = System.currentTimeMillis();
@@ -95,9 +95,11 @@ public class TestHFileCleaner {
     Configuration conf = UTIL.getConfiguration();
     // set TTL
     long ttl = 2000;
+    conf.set(HFileCleaner.MASTER_HFILE_CLEANER_PLUGINS,
+      "org.apache.hadoop.hbase.master.cleaner.TimeToLiveHFileCleaner");
     conf.setLong(TimeToLiveHFileCleaner.TTL_CONF_KEY, ttl);
     Server server = new DummyServer();
-    Path archivedHfileDir = new Path(UTIL.getDataTestDir(), HConstants.HFILE_ARCHIVE_DIRECTORY);
+    Path archivedHfileDir = new Path(UTIL.getDataTestDirOnTestFS(), HConstants.HFILE_ARCHIVE_DIRECTORY);
     FileSystem fs = FileSystem.get(conf);
     HFileCleaner cleaner = new HFileCleaner(1000, server, conf, fs, archivedHfileDir);
 
@@ -163,7 +165,7 @@ public class TestHFileCleaner {
     // no cleaner policies = delete all files
     conf.setStrings(HFileCleaner.MASTER_HFILE_CLEANER_PLUGINS, "");
     Server server = new DummyServer();
-    Path archivedHfileDir = new Path(UTIL.getDataTestDir(), HConstants.HFILE_ARCHIVE_DIRECTORY);
+    Path archivedHfileDir = new Path(UTIL.getDataTestDirOnTestFS(), HConstants.HFILE_ARCHIVE_DIRECTORY);
 
     // setup the cleaner
     FileSystem fs = UTIL.getDFSCluster().getFileSystem();

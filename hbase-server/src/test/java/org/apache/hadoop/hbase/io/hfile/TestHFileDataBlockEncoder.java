@@ -29,14 +29,12 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.SmallTests;
 import org.apache.hadoop.hbase.io.HeapSize;
+import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
 import org.apache.hadoop.hbase.io.encoding.HFileBlockDefaultEncodingContext;
 import org.apache.hadoop.hbase.io.encoding.HFileBlockEncodingContext;
-import org.apache.hadoop.hbase.io.encoding.RedundantKVGenerator;
-import org.apache.hadoop.hbase.regionserver.metrics.SchemaConfigured;
-import org.apache.hadoop.hbase.regionserver.metrics.SchemaMetrics;
 import org.apache.hadoop.hbase.util.ChecksumType;
-import org.junit.After;
+import org.apache.hadoop.hbase.util.test.RedundantKVGenerator;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -52,8 +50,6 @@ public class TestHFileDataBlockEncoder {
       new HBaseTestingUtility();
   private HFileDataBlockEncoderImpl blockEncoder;
   private RedundantKVGenerator generator = new RedundantKVGenerator();
-  private SchemaConfigured UNKNOWN_TABLE_AND_CF =
-      SchemaConfigured.createUnknown();
   private boolean includesMemstoreTS;
 
   /**
@@ -75,7 +71,6 @@ public class TestHFileDataBlockEncoder {
   @Before
   public void setUp() {
     conf = TEST_UTIL.getConfiguration();
-    SchemaMetrics.configureGlobally(conf);
   }
 
   /**
@@ -91,7 +86,7 @@ public class TestHFileDataBlockEncoder {
     BlockCacheKey cacheKey = new BlockCacheKey("test", 0);
     blockCache.cacheBlock(cacheKey, cacheBlock);
 
-    HeapSize heapSize = blockCache.getBlock(cacheKey, false);
+    HeapSize heapSize = blockCache.getBlock(cacheKey, false, false);
     assertTrue(heapSize instanceof HFileBlock);
 
     HFileBlock returnedBlock = (HFileBlock) heapSize;;
@@ -116,9 +111,8 @@ public class TestHFileDataBlockEncoder {
   public void testEncodingWritePath() throws IOException {
     // usually we have just block without headers, but don't complicate that
     HFileBlock block = getSampleHFileBlock();
-    HFileBlockEncodingContext context =
-        new HFileBlockDefaultEncodingContext(
-            Compression.Algorithm.NONE, blockEncoder.getEncodingOnDisk());
+    HFileBlockEncodingContext context = new HFileBlockDefaultEncodingContext(
+        Compression.Algorithm.NONE, blockEncoder.getEncodingOnDisk(), HFileBlock.DUMMY_HEADER);
     blockEncoder.beforeWriteToDisk(block.getBufferWithoutHeader(),
             includesMemstoreTS, context, block.getBlockType());
 
@@ -161,7 +155,6 @@ public class TestHFileDataBlockEncoder {
     HFileBlock b = new HFileBlock(BlockType.DATA, size, size, -1, buf,
         HFileBlock.FILL_HEADER, 0, includesMemstoreTS, 
         HFileReaderV2.MAX_MINOR_VERSION, 0, ChecksumType.NULL.getCode(), 0);
-    UNKNOWN_TABLE_AND_CF.passSchemaMetricsTo(b);
     return b;
   }
 

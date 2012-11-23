@@ -22,7 +22,7 @@ import java.nio.ByteBuffer;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.io.hfile.Compression.Algorithm;
+import org.apache.hadoop.hbase.io.compress.Compression.Algorithm;
 import org.apache.hadoop.io.RawComparator;
 
 /**
@@ -162,7 +162,7 @@ public interface DataBlockEncoder {
      */
     public ByteBuffer getValueShallowCopy();
 
-    /** @return key value at current position. */
+    /** @return key value at current position with position set to limit */
     public ByteBuffer getKeyValueBuffer();
 
     /**

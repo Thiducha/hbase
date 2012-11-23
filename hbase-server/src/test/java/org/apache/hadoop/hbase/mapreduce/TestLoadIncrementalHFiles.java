@@ -33,8 +33,8 @@ import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
-import org.apache.hadoop.hbase.io.hfile.Compression;
 import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.io.hfile.HFileScanner;
 import org.apache.hadoop.hbase.regionserver.StoreFile;
@@ -126,7 +126,7 @@ public class TestLoadIncrementalHFiles {
 
   private void runTest(String testName, BloomType bloomType, 
           byte[][][] hfileRanges) throws Exception {
-    Path dir = util.getDataTestDir(testName);
+    Path dir = util.getDataTestDirOnTestFS(testName);
     FileSystem fs = util.getTestFileSystem();
     dir = dir.makeQualified(fs);
     Path familyDir = new Path(dir, Bytes.toString(FAMILY));
@@ -209,7 +209,7 @@ public class TestLoadIncrementalHFiles {
 
   @Test
   public void testSplitStoreFile() throws IOException {
-    Path dir = util.getDataTestDir("testSplitHFile");
+    Path dir = util.getDataTestDirOnTestFS("testSplitHFile");
     FileSystem fs = util.getTestFileSystem();
     Path testIn = new Path(dir, "testhfile");
     HColumnDescriptor familyDesc = new HColumnDescriptor(FAMILY);

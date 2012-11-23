@@ -71,7 +71,7 @@ public class RegionState implements org.apache.hadoop.io.Writable {
   }
 
   public void updateTimestampToNow() {
-    this.stamp.set(System.currentTimeMillis());
+    setTimestamp(System.currentTimeMillis());
   }
 
   public State getState() {
@@ -124,6 +124,18 @@ public class RegionState implements org.apache.hadoop.io.Writable {
 
   public boolean isSplit() {
     return state == State.SPLIT;
+  }
+
+  public boolean isPendingOpenOrOpeningOnServer(final ServerName sn) {
+    return isOnServer(sn) && (isPendingOpen() || isOpening());
+  }
+
+  public boolean isPendingCloseOrClosingOnServer(final ServerName sn) {
+    return isOnServer(sn) && (isPendingClose() || isClosing());
+  }
+
+  public boolean isOnServer(final ServerName sn) {
+    return serverName != null && serverName.equals(sn);
   }
 
   @Override
@@ -232,6 +244,10 @@ public class RegionState implements org.apache.hadoop.io.Writable {
     }
 
     return new RegionState(HRegionInfo.convert(proto.getRegionInfo()),state,proto.getStamp(),null);
+  }
+
+  protected void setTimestamp(final long timestamp) {
+    stamp.set(timestamp);
   }
 
   /**

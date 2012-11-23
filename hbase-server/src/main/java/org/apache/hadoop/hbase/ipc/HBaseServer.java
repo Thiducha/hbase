@@ -1133,7 +1133,7 @@ public abstract class HBaseServer implements RpcServer {
     SaslServer saslServer;
     private boolean useWrap = false;
     // Fake 'call' for failed authorization response
-    private final int AUTHROIZATION_FAILED_CALLID = -1;
+    private static final int AUTHROIZATION_FAILED_CALLID = -1;
     private final Call authFailedCall = new Call(AUTHROIZATION_FAILED_CALLID,
         null, this, null, 0, null);
     private ByteArrayOutputStream authFailedResponse =
@@ -2145,7 +2145,7 @@ public abstract class HBaseServer implements RpcServer {
    * done in chunks of this size. Most RPC requests and responses would be
    * be smaller.
    */
-  private static int NIO_BUFFER_LIMIT = 8*1024; //should not be more than 64KB.
+  private static int NIO_BUFFER_LIMIT = 64 * 1024; //should not be more than 64KB.
 
   /**
    * This is a wrapper around {@link java.nio.channels.WritableByteChannel#write(java.nio.ByteBuffer)}.

@@ -31,6 +31,10 @@
      <Match>
        <Package name="org.apache.hadoop.hbase.protobuf.generated"/>
      </Match>
+     
+     <Match>
+       <Package name="org.apache.hadoop.hbase.coprocessor.example.generated"/>
+     </Match>
 
      <Match>
        <Class name="org.apache.hadoop.hbase.regionserver.RegionCoprocessorHost" />
@@ -46,7 +50,7 @@
       <!-- This is read by a thread from hadoop and findbugs never finds it -->
      <Match>
        <Bug code="UrF"/>
-       <Class name="org.apache.hadoop.hbase.metrics.BaseMetricsSourceImpl"/>
+       <Class name="org.apache.hadoop.hbase.metrics.BaseSourceImpl"/>
      </Match>
 
     <Match>

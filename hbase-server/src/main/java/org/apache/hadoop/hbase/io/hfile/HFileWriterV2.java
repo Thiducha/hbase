@@ -34,9 +34,9 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.KeyValue.KeyComparator;
+import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.hfile.HFile.Writer;
 import org.apache.hadoop.hbase.io.hfile.HFileBlock.BlockWritable;
-import org.apache.hadoop.hbase.regionserver.metrics.SchemaMetrics;
 import org.apache.hadoop.hbase.util.ChecksumType;
 import org.apache.hadoop.hbase.util.BloomFilterWriter;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -113,7 +113,6 @@ public class HFileWriterV2 extends AbstractHFileWriter {
     super(cacheConf,
         ostream == null ? createOutputStream(conf, fs, path) : ostream,
         path, blockSize, compressAlgo, blockEncoder, comparator);
-    SchemaMetrics.configureGlobally(conf);
     this.checksumType = checksumType;
     this.bytesPerChecksum = bytesPerChecksum;
     finishInit(conf);
@@ -140,16 +139,6 @@ public class HFileWriterV2 extends AbstractHFileWriter {
     // Meta data block index writer
     metaBlockIndexWriter = new HFileBlockIndex.BlockIndexWriter();
     LOG.debug("Initialized with " + cacheConf);
-
-    if (isSchemaConfigured()) {
-      schemaConfigurationChanged();
-    }
-  }
-
-  @Override
-  protected void schemaConfigurationChanged() {
-    passSchemaMetricsTo(dataBlockIndexWriter);
-    passSchemaMetricsTo(metaBlockIndexWriter);
   }
 
   /**
@@ -226,7 +215,6 @@ public class HFileWriterV2 extends AbstractHFileWriter {
     final boolean isCompaction = false;
     HFileBlock cacheFormatBlock = blockEncoder.diskToCacheFormat(
         fsBlockWriter.getBlockForCaching(), isCompaction);
-    passSchemaMetricsTo(cacheFormatBlock);
     cacheConf.getBlockCache().cacheBlock(
         new BlockCacheKey(name, offset, blockEncoder.getEncodingInCache(),
             cacheFormatBlock.getBlockType()), cacheFormatBlock);

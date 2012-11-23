@@ -17,6 +17,8 @@
  */
 package org.apache.hadoop.hbase.protobuf;
 
+import static org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionSpecifier.RegionSpecifierType.REGION_NAME;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInput;
@@ -32,7 +34,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeSet;
 import java.util.Map.Entry;
 import java.util.NavigableMap;
 import java.util.NavigableSet;
@@ -46,6 +47,7 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.MasterAdminProtocol;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.Action;
 import org.apache.hadoop.hbase.client.AdminProtocol;
@@ -65,8 +67,8 @@ import org.apache.hadoop.hbase.client.RowMutations;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.coprocessor.Exec;
 import org.apache.hadoop.hbase.client.coprocessor.ExecResult;
-import org.apache.hadoop.hbase.filter.Filter;
 import org.apache.hadoop.hbase.filter.ByteArrayComparable;
+import org.apache.hadoop.hbase.filter.Filter;
 import org.apache.hadoop.hbase.io.HbaseObjectWritable;
 import org.apache.hadoop.hbase.io.TimeRange;
 import org.apache.hadoop.hbase.ipc.CoprocessorProtocol;
@@ -82,7 +84,6 @@ import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoRespo
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetStoreFileRequest;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetStoreFileResponse;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.OpenRegionRequest;
-import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.OpenRegionResponse;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryRequest;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ServerInfo;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.SplitRegionRequest;
@@ -108,12 +109,13 @@ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate.ColumnValu
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate.DeleteType;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate.MutateType;
 import org.apache.hadoop.hbase.protobuf.generated.ComparatorProtos;
-import org.apache.hadoop.hbase.protobuf.generated.FilterProtos;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.NameBytesPair;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.NameStringPair;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionInfo;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionLoad;
+import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionSpecifier;
+import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionSpecifier.RegionSpecifierType;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.CreateTableRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDescriptorsResponse;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
@@ -128,18 +130,16 @@ import org.apache.hadoop.hbase.util.Pair;
 
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ListMultimap;
-
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.RpcChannel;
 import com.google.protobuf.Service;
 import com.google.protobuf.ServiceException;
 
-import static org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionSpecifier.RegionSpecifierType.*;
-
 /**
  * Protobufs utility.
  */
+@SuppressWarnings("deprecation")
 public final class ProtobufUtil {
 
   private ProtobufUtil() {
@@ -531,6 +531,27 @@ public final class ProtobufUtil {
   }
 
   /**
+   * Convert a MutateRequest to Mutation
+   * 
+   * @param proto the protocol buffer Mutate to convert
+   * @return the converted Mutation
+   * @throws IOException 
+   */
+  public static Mutation toMutation(final Mutate proto) throws IOException {
+    MutateType type = proto.getMutateType();
+    if (type == MutateType.APPEND) {
+      return toAppend(proto);
+    }
+    if (type == MutateType.DELETE) {
+      return toDelete(proto);
+    }
+    if (type == MutateType.PUT) {
+      return toPut(proto);
+    }
+    throw new IOException("Not an understood mutate type " + type);
+  }
+
+  /**
    * Convert a protocol buffer Mutate to an Increment
    *
    * @param proto the protocol buffer Mutate to convert
@@ -622,20 +643,20 @@ public final class ProtobufUtil {
     if (scan.hasFilter()) {
       scanBuilder.setFilter(ProtobufUtil.toFilter(scan.getFilter()));
     }
-    Column.Builder columnBuilder = Column.newBuilder();
-    for (Map.Entry<byte[],NavigableSet<byte []>>
-        family: scan.getFamilyMap().entrySet()) {
-      columnBuilder.setFamily(ByteString.copyFrom(family.getKey()));
-      NavigableSet<byte []> columns = family.getValue();
-      columnBuilder.clearQualifier();
-      if (columns != null && columns.size() > 0) {
-        for (byte [] qualifier: family.getValue()) {
-          if (qualifier != null) {
+    if (scan.hasFamilies()) {
+      Column.Builder columnBuilder = Column.newBuilder();
+      for (Map.Entry<byte[],NavigableSet<byte []>>
+          family: scan.getFamilyMap().entrySet()) {
+        columnBuilder.setFamily(ByteString.copyFrom(family.getKey()));
+        NavigableSet<byte []> qualifiers = family.getValue();
+        columnBuilder.clearQualifier();
+        if (qualifiers != null && qualifiers.size() > 0) {
+          for (byte [] qualifier: qualifiers) {
             columnBuilder.addQualifier(ByteString.copyFrom(qualifier));
           }
         }
+        scanBuilder.addColumn(columnBuilder.build());
       }
-      scanBuilder.addColumn(columnBuilder.build());
     }
     if (scan.getMaxResultsPerColumnFamily() >= 0) {
       scanBuilder.setStoreLimit(scan.getMaxResultsPerColumnFamily());
@@ -702,17 +723,16 @@ public final class ProtobufUtil {
       scan.setAttribute(attribute.getName(), attribute.getValue().toByteArray());
     }
     if (proto.getColumnCount() > 0) {
-      TreeMap<byte [], NavigableSet<byte[]>> familyMap =
-        new TreeMap<byte [], NavigableSet<byte []>>(Bytes.BYTES_COMPARATOR);
       for (Column column: proto.getColumnList()) {
         byte[] family = column.getFamily().toByteArray();
-        TreeSet<byte []> set = new TreeSet<byte []>(Bytes.BYTES_COMPARATOR);
-        for (ByteString qualifier: column.getQualifierList()) {
-          set.add(qualifier.toByteArray());
+        if (column.getQualifierCount() > 0) {
+          for (ByteString qualifier: column.getQualifierList()) {
+            scan.addColumn(family, qualifier.toByteArray());
+          }
+        } else {
+          scan.addFamily(family);
         }
-        familyMap.put(family, set);
       }
-      scan.setFamilyMap(familyMap);
     }
     return scan;
   }
@@ -800,9 +820,7 @@ public final class ProtobufUtil {
         columnBuilder.clearQualifier();
         if (qualifiers != null && qualifiers.size() > 0) {
           for (byte[] qualifier: qualifiers) {
-            if (qualifier != null) {
-              columnBuilder.addQualifier(ByteString.copyFrom(qualifier));
-            }
+            columnBuilder.addQualifier(ByteString.copyFrom(qualifier));
           }
         }
         builder.addColumn(columnBuilder.build());
@@ -962,6 +980,7 @@ public final class ProtobufUtil {
    * @param proto the protocol buffer Comparator to convert
    * @return the converted ByteArrayComparable
    */
+  @SuppressWarnings("unchecked")
   public static ByteArrayComparable toComparator(ComparatorProtos.Comparator proto)
   throws IOException {
     String type = proto.getName();
@@ -986,6 +1005,7 @@ public final class ProtobufUtil {
    * @param proto the protocol buffer Filter to convert
    * @return the converted Filter
    */
+  @SuppressWarnings("unchecked")
   public static Filter toFilter(HBaseProtos.Filter proto) throws IOException {
     String type = proto.getName();
     final byte [] value = proto.getSerializedFilter().toByteArray();
@@ -1328,6 +1348,21 @@ public final class ProtobufUtil {
     }
   }
 
+  public static CoprocessorServiceResponse execService(final MasterAdminProtocol client,
+      final CoprocessorServiceCall call) throws IOException {
+    CoprocessorServiceRequest request = CoprocessorServiceRequest.newBuilder()
+        .setCall(call).setRegion(
+            RequestConverter.buildRegionSpecifier(REGION_NAME, HConstants.EMPTY_BYTE_ARRAY)).build();
+    try {
+      CoprocessorServiceResponse response =
+          client.execMasterService(null, request);
+      return response;
+    } catch (ServiceException se) {
+      throw getRemoteException(se);
+    }
+  }
+
+  @SuppressWarnings("unchecked")
   public static <T extends Service> T newServiceStub(Class<T> service, RpcChannel channel)
       throws Exception {
     return (T)Methods.call(service, null, "newStub",
@@ -1389,32 +1424,12 @@ public final class ProtobufUtil {
    * @return true if the region is closed
    * @throws IOException
    */
-  public static boolean closeRegion(final AdminProtocol admin,
-      final byte[] regionName, final int versionOfClosingNode) throws IOException {
-    CloseRegionRequest closeRegionRequest =
-      RequestConverter.buildCloseRegionRequest(regionName, versionOfClosingNode);
-    try {
-      CloseRegionResponse response = admin.closeRegion(null, closeRegionRequest);
-      return ResponseConverter.isClosed(response);
-    } catch (ServiceException se) {
-      throw getRemoteException(se);
-    }
-  }
-
-  /**
-   * A helper to close a region given a region name
-   * using admin protocol.
-   *
-   * @param admin
-   * @param regionName
-   * @param versionOfClosingNode
-   * @return true if the region is closed
-   * @throws IOException
-   */
   public static boolean closeRegion(final AdminProtocol admin, final byte[] regionName,
-                                    final int versionOfClosingNode, final ServerName destinationServer) throws IOException {
+      final int versionOfClosingNode, final ServerName destinationServer,
+      final boolean transitionInZK) throws IOException {
     CloseRegionRequest closeRegionRequest =
-      RequestConverter.buildCloseRegionRequest(regionName, versionOfClosingNode, destinationServer);
+      RequestConverter.buildCloseRegionRequest(
+        regionName, versionOfClosingNode, destinationServer, transitionInZK);
     try {
       CloseRegionResponse response = admin.closeRegion(null, closeRegionRequest);
       return ResponseConverter.isClosed(response);
@@ -1438,25 +1453,6 @@ public final class ProtobufUtil {
       admin.openRegion(null, request);
     } catch (ServiceException se) {
       throw ProtobufUtil.getRemoteException(se);
-    }
-  }
-
-  /**
-   * A helper to open a list of regions using admin protocol.
-   * 
-   * @param admin
-   * @param regions
-   * @return OpenRegionResponse
-   * @throws IOException
-   */
-  public static OpenRegionResponse openRegion(final AdminProtocol admin,
-      final List<HRegionInfo> regions) throws IOException {
-    OpenRegionRequest request =
-      RequestConverter.buildOpenRegionRequest(regions);
-    try {
-      return admin.openRegion(null, request);
-    } catch (ServiceException se) {
-      throw getRemoteException(se);
     }
   }
 
@@ -1816,6 +1812,28 @@ public final class ProtobufUtil {
     }
 
     return perms;
+  }
+
+  /**
+   * Find the HRegion encoded name based on a region specifier
+   *
+   * @param regionSpecifier the region specifier
+   * @return the corresponding region's encoded name
+   * @throws DoNotRetryIOException if the specifier type is unsupported
+   */
+  public static String getRegionEncodedName(
+      final RegionSpecifier regionSpecifier) throws DoNotRetryIOException {
+    byte[] value = regionSpecifier.getValue().toByteArray();
+    RegionSpecifierType type = regionSpecifier.getType();
+    switch (type) {
+      case REGION_NAME:
+        return HRegionInfo.encodeRegionName(value);
+      case ENCODED_REGION_NAME:
+        return Bytes.toString(value);
+      default:
+        throw new DoNotRetryIOException(
+          "Unsupported region specifier type: " + type);
+    }
   }
 
   /**

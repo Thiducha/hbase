@@ -140,6 +140,7 @@ EOF
     #----------------------------------------------------------------------------------------------
     # Delete a row
     def _deleteall_internal(row, column = nil, timestamp = org.apache.hadoop.hbase.HConstants::LATEST_TIMESTAMP)
+      raise ArgumentError, "Row Not Found" if _get_internal(row).nil?
       d = org.apache.hadoop.hbase.client.Delete.new(row.to_s.to_java_bytes, timestamp, nil)
       if column
         family, qualifier = parse_column_name(column)
@@ -153,6 +154,9 @@ EOF
     def _incr_internal(row, column, value = nil)
       value ||= 1
       family, qualifier = parse_column_name(column)
+      if qualifier.nil?
+	  raise ArgumentError, "Failed to provide both column family and column qualifier for incr"
+      end
       @table.incrementColumnValue(row.to_s.to_java_bytes, family, qualifier, value)
     end
 
@@ -206,6 +210,7 @@ EOF
 
       # Get maxlength parameter if passed
       maxlength = args.delete(MAXLENGTH) if args[MAXLENGTH]
+      filter = args.delete(FILTER) if args[FILTER]
 
       unless args.empty?
         columns = args[COLUMN] || args[COLUMNS]
@@ -248,6 +253,12 @@ EOF
           get.setTimeStamp(ts.to_i) if args[TIMESTAMP]
           get.setTimeRange(args[TIMERANGE][0], args[TIMERANGE][1]) if args[TIMERANGE]
         end
+      end
+
+      unless filter.class == String
+        get.setFilter(filter)
+      else
+        get.setFilter(org.apache.hadoop.hbase.filter.ParseFilter.new.parseFilterString(filter))
       end
 
       # Call hbase for the results

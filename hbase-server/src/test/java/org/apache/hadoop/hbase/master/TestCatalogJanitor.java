@@ -25,12 +25,12 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
+import com.google.protobuf.Service;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -267,13 +267,13 @@ public class TestCatalogJanitor {
 
         @Override
         public HTableDescriptor get(byte[] tablename)
-        throws FileNotFoundException, IOException {
+        throws IOException {
           return get(Bytes.toString(tablename));
         }
 
         @Override
         public HTableDescriptor get(String tablename)
-        throws FileNotFoundException, IOException {
+        throws IOException {
           return createHTableDescriptor();
         }
 
@@ -288,6 +288,11 @@ public class TestCatalogJanitor {
     @Override
     public boolean isServerShutdownHandlerEnabled() {
       return true;
+    }
+
+    @Override
+    public boolean registerService(Service instance) {
+      return false;
     }
   }
 

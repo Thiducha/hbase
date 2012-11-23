@@ -35,12 +35,12 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.KeyValue.KeyComparator;
+import org.apache.hadoop.hbase.io.compress.Compression;
+import org.apache.hadoop.hbase.io.compress.Compression.Algorithm;
 import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
-import org.apache.hadoop.hbase.io.hfile.Compression.Algorithm;
 import org.apache.hadoop.hbase.io.hfile.HFile.FileInfo;
 import org.apache.hadoop.hbase.io.hfile.HFile.Writer;
 import org.apache.hadoop.hbase.regionserver.MemStore;
-import org.apache.hadoop.hbase.regionserver.metrics.SchemaMetrics;
 import org.apache.hadoop.hbase.util.ChecksumType;
 import org.apache.hadoop.hbase.util.BloomFilterWriter;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -108,7 +108,6 @@ public class HFileWriterV1 extends AbstractHFileWriter {
       final KeyComparator comparator) throws IOException {
     super(cacheConf, ostream == null ? createOutputStream(conf, fs, path) : ostream, path,
         blockSize, compress, blockEncoder, comparator);
-    SchemaMetrics.configureGlobally(conf);
   }
 
   /**
@@ -157,7 +156,6 @@ public class HFileWriterV1 extends AbstractHFileWriter {
           HFileBlock.HEADER_SIZE_NO_CHECKSUM);       // onDiskDataSizeWithHeader
 
       block = blockEncoder.diskToCacheFormat(block, false);
-      passSchemaMetricsTo(block);
       cacheConf.getBlockCache().cacheBlock(
           new BlockCacheKey(name, blockBegin, DataBlockEncoding.NONE,
               block.getBlockType()), block);

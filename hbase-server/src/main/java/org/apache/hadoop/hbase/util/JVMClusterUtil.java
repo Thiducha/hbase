@@ -19,6 +19,7 @@
 package org.apache.hadoop.hbase.util;
 
 import java.io.IOException;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 
@@ -82,7 +83,9 @@ public class JVMClusterUtil {
   throws IOException {
     HRegionServer server;
     try {
-      server = hrsc.getConstructor(Configuration.class).newInstance(c);
+      Constructor<? extends HRegionServer> ctor = hrsc.getConstructor(Configuration.class);
+      ctor.setAccessible(true);
+      server = ctor.newInstance(c);
     } catch (InvocationTargetException ite) {
       Throwable target = ite.getTargetException();
       throw new RuntimeException("Failed construction of RegionServer: " +
@@ -219,7 +222,7 @@ public class JVMClusterUtil {
    * @param regionservers
    */
   public static void shutdown(final List<MasterThread> masters,
-      final List<RegionServerThread> regionservers) {
+      final List<RegionServerThread> regionservers) throws IOException {
     LOG.debug("Shutting down HBase Cluster");
     if (masters != null) {
       // Do backups first.

@@ -57,6 +57,8 @@ import org.apache.hadoop.hbase.catalog.CatalogTracker;
 import org.apache.hadoop.hbase.catalog.MetaReader;
 import org.apache.hadoop.hbase.client.MetaScanner.MetaScannerVisitor;
 import org.apache.hadoop.hbase.client.MetaScanner.MetaScannerVisitorBase;
+import org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel;
+import org.apache.hadoop.hbase.ipc.MasterCoprocessorRpcChannel;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.protobuf.ResponseConverter;
@@ -209,7 +211,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    * @throws ZooKeeperConnectionException
    * @throws MasterNotRunningException
    */
-   public boolean isMasterRunning()
+  public boolean isMasterRunning()
   throws MasterNotRunningException, ZooKeeperConnectionException {
     return connection.isMasterRunning();
   }
@@ -963,12 +965,11 @@ public class HBaseAdmin implements Abortable, Closeable {
     return execute(new MasterMonitorCallable<Pair<Integer, Integer>>() {
       @Override
       public Pair<Integer, Integer> call() throws ServiceException {
-        GetSchemaAlterStatusRequest req =
-          RequestConverter.buildGetSchemaAlterStatusRequest(tableName);
-        GetSchemaAlterStatusResponse ret = masterMonitor.getSchemaAlterStatus(null,req);
-        Pair<Integer,Integer> pair =
-          new Pair<Integer,Integer>(
-            new Integer(ret.getYetToUpdateRegions()),new Integer(ret.getTotalRegions()));
+        GetSchemaAlterStatusRequest req = RequestConverter
+            .buildGetSchemaAlterStatusRequest(tableName);
+        GetSchemaAlterStatusResponse ret = masterMonitor.getSchemaAlterStatus(null, req);
+        Pair<Integer, Integer> pair = new Pair<Integer, Integer>(Integer.valueOf(ret
+            .getYetToUpdateRegions()), Integer.valueOf(ret.getTotalRegions()));
         return pair;
       }
     });
@@ -1286,7 +1287,35 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void compact(final byte [] tableNameOrRegionName)
   throws IOException, InterruptedException {
-    compact(tableNameOrRegionName, false);
+    compact(tableNameOrRegionName, null, false);
+  }
+  
+  /**
+   * Compact a column family within a table or region.
+   * Asynchronous operation.
+   *
+   * @param tableOrRegionName table or region to compact
+   * @param columnFamily column family within a table or region
+   * @throws IOException if a remote or network exception occurs
+   * @throws InterruptedException
+   */
+  public void compact(String tableOrRegionName, String columnFamily)
+    throws IOException,  InterruptedException {
+    compact(Bytes.toBytes(tableOrRegionName), Bytes.toBytes(columnFamily));
+  }
+
+  /**
+   * Compact a column family within a table or region.
+   * Asynchronous operation.
+   *
+   * @param tableNameOrRegionName table or region to compact
+   * @param columnFamily column family within a table or region
+   * @throws IOException if a remote or network exception occurs
+   * @throws InterruptedException
+   */
+  public void compact(final byte [] tableNameOrRegionName, final byte[] columnFamily)
+  throws IOException, InterruptedException {
+    compact(tableNameOrRegionName, columnFamily, false);
   }
 
   /**
@@ -1312,7 +1341,36 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void majorCompact(final byte [] tableNameOrRegionName)
   throws IOException, InterruptedException {
-    compact(tableNameOrRegionName, true);
+    compact(tableNameOrRegionName, null, true);
+  }
+  
+  /**
+   * Major compact a column family within a table or region.
+   * Asynchronous operation.
+   *
+   * @param tableNameOrRegionName table or region to major compact
+   * @param columnFamily column family within a table or region
+   * @throws IOException if a remote or network exception occurs
+   * @throws InterruptedException
+   */
+  public void majorCompact(final String tableNameOrRegionName,
+    final String columnFamily) throws IOException, InterruptedException {
+    majorCompact(Bytes.toBytes(tableNameOrRegionName),
+      Bytes.toBytes(columnFamily));
+  }
+
+  /**
+   * Major compact a column family within a table or region.
+   * Asynchronous operation.
+   *
+   * @param tableNameOrRegionName table or region to major compact
+   * @param columnFamily column family within a table or region
+   * @throws IOException if a remote or network exception occurs
+   * @throws InterruptedException
+   */
+  public void majorCompact(final byte [] tableNameOrRegionName,
+    final byte[] columnFamily) throws IOException, InterruptedException {
+    compact(tableNameOrRegionName, columnFamily, true);
   }
 
   /**
@@ -1320,11 +1378,13 @@ public class HBaseAdmin implements Abortable, Closeable {
    * Asynchronous operation.
    *
    * @param tableNameOrRegionName table or region to compact
+   * @param columnFamily column family within a table or region
    * @param major True if we are to do a major compaction.
    * @throws IOException if a remote or network exception occurs
    * @throws InterruptedException
    */
-  private void compact(final byte [] tableNameOrRegionName, final boolean major)
+  private void compact(final byte [] tableNameOrRegionName,
+    final byte[] columnFamily,final boolean major)
   throws IOException, InterruptedException {
     CatalogTracker ct = getCatalogTracker();
     try {
@@ -1334,7 +1394,7 @@ public class HBaseAdmin implements Abortable, Closeable {
         if (regionServerPair.getSecond() == null) {
           throw new NoServerForRegionException(Bytes.toStringBinary(tableNameOrRegionName));
         } else {
-          compact(regionServerPair.getSecond(), regionServerPair.getFirst(), major);
+          compact(regionServerPair.getSecond(), regionServerPair.getFirst(), major, columnFamily);
         }
       } else {
         final String tableName = tableNameString(tableNameOrRegionName, ct);
@@ -1345,7 +1405,7 @@ public class HBaseAdmin implements Abortable, Closeable {
           if (pair.getFirst().isOffline()) continue;
           if (pair.getSecond() == null) continue;
           try {
-            compact(pair.getSecond(), pair.getFirst(), major);
+            compact(pair.getSecond(), pair.getFirst(), major, columnFamily);
           } catch (NotServingRegionException e) {
             if (LOG.isDebugEnabled()) {
               LOG.debug("Trying to" + (major ? " major" : "") + " compact " +
@@ -1361,12 +1421,12 @@ public class HBaseAdmin implements Abortable, Closeable {
   }
 
   private void compact(final ServerName sn, final HRegionInfo hri,
-      final boolean major)
+      final boolean major, final byte [] family)
   throws IOException {
     AdminProtocol admin =
       this.connection.getAdmin(sn.getHostname(), sn.getPort());
     CompactRegionRequest request =
-      RequestConverter.buildCompactRegionRequest(hri.getRegionName(), major);
+      RequestConverter.buildCompactRegionRequest(hri.getRegionName(), major, family);
     try {
       admin.compactRegion(null, request);
     } catch (ServiceException se) {
@@ -1846,16 +1906,8 @@ public class HBaseAdmin implements Abortable, Closeable {
         }
       }
 
-      // Check Master, same logic.
-      MasterAdminKeepAliveConnection master = null;
-      try {
-        master = connection.getKeepAliveMasterAdmin();
-        master.isMasterRunning(null,RequestConverter.buildIsMasterRunningRequest());
-      } finally {
-        if (master != null) {
-          master.close();
-        }
-      }
+      // Check Master
+      connection.isMasterRunning();
 
     } finally {
       connection.close();
@@ -2090,5 +2142,30 @@ public class HBaseAdmin implements Abortable, Closeable {
       // This should not happen...
       throw new IOException("Unexpected exception when calling master", e);
     }
+  }
+
+  /**
+   * Creates and returns a {@link com.google.protobuf.RpcChannel} instance
+   * connected to the active master.
+   *
+   * <p>
+   * The obtained {@link com.google.protobuf.RpcChannel} instance can be used to access a published
+   * coprocessor {@link com.google.protobuf.Service} using standard protobuf service invocations:
+   * </p>
+   *
+   * <div style="background-color: #cccccc; padding: 2px">
+   * <blockquote><pre>
+   * CoprocessorRpcChannel channel = myAdmin.coprocessorService();
+   * MyService.BlockingInterface service = MyService.newBlockingStub(channel);
+   * MyCallRequest request = MyCallRequest.newBuilder()
+   *     ...
+   *     .build();
+   * MyCallResponse response = service.myCall(null, request);
+   * </pre></blockquote></div>
+   *
+   * @return A MasterCoprocessorRpcChannel instance
+   */
+  public CoprocessorRpcChannel coprocessorService() {
+    return new MasterCoprocessorRpcChannel(connection);
   }
 }

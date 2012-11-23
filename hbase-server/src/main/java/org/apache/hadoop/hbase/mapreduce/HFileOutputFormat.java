@@ -47,8 +47,8 @@ import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
+import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
-import org.apache.hadoop.hbase.io.hfile.Compression;
 import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.io.hfile.HFileDataBlockEncoder;
 import org.apache.hadoop.hbase.io.hfile.HFileDataBlockEncoderImpl;
@@ -69,11 +69,12 @@ import org.apache.hadoop.mapreduce.lib.partition.TotalOrderPartitioner;
 
 /**
  * Writes HFiles. Passed KeyValues must arrive in order.
- * Currently, can only write files to a single column family at a
- * time.  Multiple column families requires coordinating keys cross family.
  * Writes current time as the sequence id for the file. Sets the major compacted
  * attribute on created hfiles. Calling write(null,null) will forceably roll
  * all HFiles being written.
+ * <p>
+ * Using this class as part of a MapReduce job is best done 
+ * using {@link #configureIncrementalLoad(Job, HTable)}.
  * @see KeyValueSortReducer
  */
 @InterfaceAudience.Public

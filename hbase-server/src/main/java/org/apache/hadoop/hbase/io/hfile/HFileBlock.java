@@ -34,14 +34,14 @@ import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.fs.HFileSystem;
+import org.apache.hadoop.hbase.io.compress.Compression;
+import org.apache.hadoop.hbase.io.compress.Compression.Algorithm;
 import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
 import org.apache.hadoop.hbase.io.encoding.HFileBlockDecodingContext;
 import org.apache.hadoop.hbase.io.encoding.HFileBlockDefaultDecodingContext;
 import org.apache.hadoop.hbase.io.encoding.HFileBlockDefaultEncodingContext;
 import org.apache.hadoop.hbase.io.encoding.HFileBlockEncodingContext;
-import org.apache.hadoop.hbase.io.hfile.Compression.Algorithm;
 import org.apache.hadoop.hbase.regionserver.MemStore;
-import org.apache.hadoop.hbase.regionserver.metrics.SchemaConfigured;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.ChecksumType;
 import org.apache.hadoop.hbase.util.ClassSize;
@@ -84,7 +84,7 @@ import com.google.common.base.Preconditions;
  * except that the data section is always uncompressed in the cache.
  */
 @InterfaceAudience.Private
-public class HFileBlock extends SchemaConfigured implements Cacheable {
+public class HFileBlock implements Cacheable {
 
   /** Minor versions starting with this number have hbase checksums */
   static final int MINOR_VERSION_WITH_CHECKSUM = 1;
@@ -538,8 +538,7 @@ public class HFileBlock extends SchemaConfigured implements Cacheable {
   @Override
   public long heapSize() {
     long size = ClassSize.align(
-        // Base class size, including object overhead.
-        SCHEMA_CONFIGURED_UNALIGNED_HEAP_SIZE +
+        ClassSize.OBJECT +
         // Block type and byte buffer references
         2 * ClassSize.REFERENCE +
         // On-disk size, uncompressed size, and next block's on-disk size
@@ -726,7 +725,7 @@ public class HFileBlock extends SchemaConfigured implements Cacheable {
       this.dataBlockEncoder = dataBlockEncoder != null
           ? dataBlockEncoder : NoOpDataBlockEncoder.INSTANCE;
       defaultBlockEncodingCtx =
-        new HFileBlockDefaultEncodingContext(compressionAlgorithm, null);
+        new HFileBlockDefaultEncodingContext(compressionAlgorithm, null, DUMMY_HEADER);
       dataBlockEncodingCtx =
         this.dataBlockEncoder.newOnDiskDataBlockEncodingContext(
             compressionAlgorithm, DUMMY_HEADER);

@@ -34,7 +34,6 @@ import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
 import org.apache.hadoop.hbase.io.hfile.BlockType.BlockCategory;
 import org.apache.hadoop.hbase.io.hfile.HFile.FileInfo;
 import org.apache.hadoop.hbase.io.hfile.HFile.Writer;
-import org.apache.hadoop.hbase.regionserver.metrics.SchemaMetrics;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.io.RawComparator;
@@ -226,17 +225,12 @@ public class HFileReaderV1 extends AbstractHFileReader {
 
     // Per meta key from any given file, synchronize reads for said block
     synchronized (metaBlockIndexReader.getRootBlockKey(block)) {
-      metaLoads.incrementAndGet();
-
       // Check cache for block.  If found return.
       if (cacheConf.isBlockCacheEnabled()) {
         HFileBlock cachedBlock =
           (HFileBlock) cacheConf.getBlockCache().getBlock(cacheKey,
-              cacheConf.shouldCacheBlockOnRead(effectiveCategory));
+              cacheConf.shouldCacheBlockOnRead(effectiveCategory), false);
         if (cachedBlock != null) {
-          cacheHits.incrementAndGet();
-          getSchemaMetrics().updateOnCacheHit(effectiveCategory,
-              SchemaMetrics.NO_COMPACTION);
           return cachedBlock.getBufferWithoutHeader();
         }
         // Cache Miss, please load.
@@ -245,13 +239,10 @@ public class HFileReaderV1 extends AbstractHFileReader {
       HFileBlock hfileBlock = fsBlockReader.readBlockData(offset,
           nextOffset - offset, metaBlockIndexReader.getRootBlockDataSize(block),
           true);
-      passSchemaMetricsTo(hfileBlock);
       hfileBlock.expectType(BlockType.META);
 
       final long delta = System.nanoTime() - startTimeNs;
       HFile.offerReadLatency(delta, true);
-      getSchemaMetrics().updateOnCacheMiss(effectiveCategory,
-          SchemaMetrics.NO_COMPACTION, delta);
 
       // Cache the block
       if (cacheBlock && cacheConf.shouldCacheBlockOnRead(effectiveCategory)) {
@@ -291,17 +282,12 @@ public class HFileReaderV1 extends AbstractHFileReader {
     // the other choice is to duplicate work (which the cache would prevent you
     // from doing).
     synchronized (dataBlockIndexReader.getRootBlockKey(block)) {
-      blockLoads.incrementAndGet();
-
       // Check cache for block.  If found return.
       if (cacheConf.isBlockCacheEnabled()) {
         HFileBlock cachedBlock =
           (HFileBlock) cacheConf.getBlockCache().getBlock(cacheKey,
-              cacheConf.shouldCacheDataOnRead());
+              cacheConf.shouldCacheDataOnRead(), false);
         if (cachedBlock != null) {
-          cacheHits.incrementAndGet();
-          getSchemaMetrics().updateOnCacheHit(
-              cachedBlock.getBlockType().getCategory(), isCompaction);
           return cachedBlock.getBufferWithoutHeader();
         }
         // Carry on, please load.
@@ -323,13 +309,10 @@ public class HFileReaderV1 extends AbstractHFileReader {
 
       HFileBlock hfileBlock = fsBlockReader.readBlockData(offset, nextOffset
           - offset, dataBlockIndexReader.getRootBlockDataSize(block), pread);
-      passSchemaMetricsTo(hfileBlock);
       hfileBlock.expectType(BlockType.DATA);
 
       final long delta = System.nanoTime() - startTimeNs;
       HFile.offerReadLatency(delta, pread);
-      getSchemaMetrics().updateOnCacheMiss(BlockCategory.DATA, isCompaction,
-          delta);
 
       // Cache the block
       if (cacheBlock && cacheConf.shouldCacheBlockOnRead(

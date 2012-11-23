@@ -942,7 +942,8 @@ public abstract class FSUtils {
             isValid = this.fs.getFileStatus(p).isDir();
         }
       } catch (IOException e) {
-        e.printStackTrace();
+        LOG.warn("An error occurred while verifying if [" + p.toString() + 
+                 "] is a valid directory. Returning 'not valid' and continuing.", e);
       }
       return isValid;
     }
@@ -1311,7 +1312,7 @@ public abstract class FSUtils {
    */
   public static void checkAccess(UserGroupInformation ugi, FileStatus file,
       FsAction action) throws AccessControlException {
-    if (ugi.getUserName().equals(file.getOwner())) {
+    if (ugi.getShortUserName().equals(file.getOwner())) {
       if (file.getPermission().getUserAction().implies(action)) {
         return;
       }
@@ -1323,7 +1324,7 @@ public abstract class FSUtils {
       return;
     }
     throw new AccessControlException("Permission denied:" + " action=" + action
-        + " path=" + file.getPath() + " user=" + ugi.getUserName());
+        + " path=" + file.getPath() + " user=" + ugi.getShortUserName());
   }
 
   private static boolean contains(String[] groups, String user) {

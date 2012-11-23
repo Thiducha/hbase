@@ -63,12 +63,13 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.fs.HFileSystem;
+import org.apache.hadoop.hbase.io.compress.Compression;
+import org.apache.hadoop.hbase.io.compress.Compression.Algorithm;
 import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
 import org.apache.hadoop.hbase.io.hfile.ChecksumUtil;
-import org.apache.hadoop.hbase.io.hfile.Compression;
-import org.apache.hadoop.hbase.io.hfile.Compression.Algorithm;
 import org.apache.hadoop.hbase.mapreduce.MapreduceTestingShim;
 import org.apache.hadoop.hbase.master.HMaster;
+import org.apache.hadoop.hbase.master.ServerManager;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.regionserver.HStore;
@@ -79,6 +80,7 @@ import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.FSUtils;
 import org.apache.hadoop.hbase.util.JVMClusterUtil;
+import org.apache.hadoop.hbase.util.JVMClusterUtil.MasterThread;
 import org.apache.hadoop.hbase.util.RegionSplitter;
 import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.zookeeper.EmptyWatcher;
@@ -96,6 +98,7 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.NodeExistsException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.ZooKeeper.States;
 
 /**
  * Facility for testing HBase. Replacement for
@@ -137,11 +140,15 @@ public class HBaseTestingUtility {
 
   private String hadoopLogDir;
 
-  // Directory where we put the data for this instance of HBaseTestingUtility.
+  /** Directory where we put the data for this instance of HBaseTestingUtility*/
   private File dataTestDir = null;
 
-  // Directory (a subdirectory of dataTestDir) used by the dfs cluster if any
+  /** Directory (a subdirectory of dataTestDir) used by the dfs cluster if any */
   private File clusterTestDir = null;
+
+  /** Directory on test filesystem where we put the data for this instance of
+    * HBaseTestingUtility*/
+  private Path dataTestDirOnTestFS = null;
 
   /**
    * System property key to get test directory value.
@@ -252,6 +259,17 @@ public class HBaseTestingUtility {
   }
 
   /**
+   * @return Where to write test data on the test filesystem; Returns working directory
+   * for the test filesytem by default
+   * @see #setupDataTestDirOnTestFS()
+   * @see #getTestFileSystem()
+   */
+  private Path getBaseTestDirOnTestFS() throws IOException {
+    FileSystem fs = getTestFileSystem();
+    return new Path(fs.getWorkingDirectory(), "test-data");
+  }
+
+  /**
    * @return Where to write test data on local filesystem, specific to
    *  the test.  Useful for tests that do not use a cluster.
    * Creates it if it does not exist already.
@@ -305,6 +323,31 @@ public class HBaseTestingUtility {
   }
 
   /**
+   * Returns a Path in the test filesystem, obtained from {@link #getTestFileSystem()}
+   * to write temporary test data. Call this method after setting up the mini dfs cluster
+   * if the test relies on it.
+   * @return a unique path in the test filesystem
+   */
+  public Path getDataTestDirOnTestFS() throws IOException {
+    if (dataTestDirOnTestFS == null) {
+      setupDataTestDirOnTestFS();
+    }
+
+    return dataTestDirOnTestFS;
+  }
+
+  /**
+   * Returns a Path in the test filesystem, obtained from {@link #getTestFileSystem()}
+   * to write temporary test data. Call this method after setting up the mini dfs cluster
+   * if the test relies on it.
+   * @return a unique path in the test filesystem
+   * @param subdirName name of the subdir to create under the base test dir
+   */
+  public Path getDataTestDirOnTestFS(final String subdirName) throws IOException {
+    return new Path(getDataTestDirOnTestFS(), subdirName);
+  }
+
+  /**
    * Home our data in a dir under {@link #DEFAULT_BASE_TEST_DIRECTORY}.
    * Give it a random name so can have many concurrent tests running if
    * we need to.  It needs to amend the {@link #TEST_DIRECTORY_KEY}
@@ -347,10 +390,6 @@ public class HBaseTestingUtility {
     createSubDir(
       "mapred.local.dir",
       testPath, "mapred-local-dir");
-
-    createSubDirAndSystemProperty(
-      "mapred.working.dir",
-      testPath, "mapred-working-dir");
   }
 
   private void createSubDir(String propertyName, Path parent, String subDirName){
@@ -386,6 +425,34 @@ public class HBaseTestingUtility {
     }
   }
 
+
+  /**
+   * Sets up a path in test filesystem to be used by tests
+   */
+  private void setupDataTestDirOnTestFS() throws IOException {
+    if (dataTestDirOnTestFS != null) {
+      LOG.warn("Data test on test fs dir already setup in "
+          + dataTestDirOnTestFS.toString());
+      return;
+    }
+
+    //The file system can be either local, mini dfs, or if the configuration
+    //is supplied externally, it can be an external cluster FS. If it is a local
+    //file system, the tests should use getBaseTestDir, otherwise, we can use
+    //the working directory, and create a unique sub dir there
+    FileSystem fs = getTestFileSystem();
+    if (fs.getUri().getScheme().equals(fs.getLocal(conf).getUri().getScheme())) {
+      if (dataTestDir == null) {
+        setupDataTestDir();
+      }
+      dataTestDirOnTestFS = new Path(dataTestDir.getAbsolutePath());
+    } else {
+      Path base = getBaseTestDirOnTestFS();
+      String randomStr = UUID.randomUUID().toString();
+      dataTestDirOnTestFS = new Path(base, randomStr);
+      fs.deleteOnExit(dataTestDirOnTestFS);
+    }
+  }
   /**
    * Start a minidfscluster.
    * @param servers How many DNs to start.
@@ -441,6 +508,9 @@ public class HBaseTestingUtility {
     // Wait for the cluster to be totally up
     this.dfsCluster.waitClusterUp();
 
+    //reset the test directory for test file system
+    dataTestDirOnTestFS = null;
+
     return this.dfsCluster;
   }
 
@@ -460,6 +530,9 @@ public class HBaseTestingUtility {
     // Wait for the cluster to be totally up
     this.dfsCluster.waitClusterUp();
 
+    //reset the test directory for test file system
+    dataTestDirOnTestFS = null;
+
     return this.dfsCluster;
   }
 
@@ -471,18 +544,23 @@ public class HBaseTestingUtility {
   }
 
   /** This is used before starting HDFS and map-reduce mini-clusters */
-  private void createDirsAndSetProperties() {
+  private void createDirsAndSetProperties() throws IOException {
     setupClusterTestDir();
     System.setProperty(TEST_DIRECTORY_KEY, clusterTestDir.getPath());
     createDirAndSetProperty("cache_data", "test.cache.data");
     createDirAndSetProperty("hadoop_tmp", "hadoop.tmp.dir");
     hadoopLogDir = createDirAndSetProperty("hadoop_logs", "hadoop.log.dir");
-    createDirAndSetProperty("mapred_output", MapreduceTestingShim.getMROutputDirProp());
     createDirAndSetProperty("mapred_local", "mapred.local.dir");
-    createDirAndSetProperty("mapred_system", "mapred.system.dir");
     createDirAndSetProperty("mapred_temp", "mapred.temp.dir");
     enableShortCircuit();
 
+    Path root = getDataTestDirOnTestFS("hadoop");
+    conf.set(MapreduceTestingShim.getMROutputDirProp(),
+      new Path(root, "mapred-output-dir").toString());
+    conf.set("mapred.system.dir", new Path(root, "mapred-system-dir").toString());
+    conf.set("mapreduce.jobtracker.staging.root.dir",
+      new Path(root, "mapreduce-jobtracker-staging-root-dir").toString());
+    conf.set("mapred.working.dir", new Path(root, "mapred-working-dir").toString());
   }
 
 
@@ -520,7 +598,7 @@ public class HBaseTestingUtility {
   }
 
   private String createDirAndSetProperty(final String relPath, String property) {
-    String path = clusterTestDir.getPath() + "/" + relPath;
+    String path = getDataTestDir(relPath).toString();
     System.setProperty(property, path);
     conf.set(property, path);
     new File(path).mkdirs();
@@ -538,6 +616,9 @@ public class HBaseTestingUtility {
       // The below throws an exception per dn, AsynchronousCloseException.
       this.dfsCluster.shutdown();
       dfsCluster = null;
+      dataTestDirOnTestFS = null;
+      this.conf.set("fs.defaultFS", "file:///");
+      this.conf.set("fs.default.name", "file:///");
     }
   }
 
@@ -730,9 +811,13 @@ public class HBaseTestingUtility {
     createRootDir();
 
     // These settings will make the server waits until this exact number of
-    //  regions servers are connected.
-    conf.setInt("hbase.master.wait.on.regionservers.mintostart", numSlaves);
-    conf.setInt("hbase.master.wait.on.regionservers.maxtostart", numSlaves);
+    // regions servers are connected.
+    if (conf.getInt(ServerManager.WAIT_ON_REGIONSERVERS_MINTOSTART, -1) == -1) {
+      conf.setInt(ServerManager.WAIT_ON_REGIONSERVERS_MINTOSTART, numSlaves);
+    }
+    if (conf.getInt(ServerManager.WAIT_ON_REGIONSERVERS_MAXTOSTART, -1) == -1) {
+      conf.setInt(ServerManager.WAIT_ON_REGIONSERVERS_MAXTOSTART, numSlaves);
+    }
 
     Configuration c = new Configuration(this.conf);
     this.hbaseCluster =
@@ -816,6 +901,9 @@ public class HBaseTestingUtility {
       zooKeeperWatcher = null;
     }
 
+    // unset the configuration for MIN and MAX RS to start
+    conf.setInt(ServerManager.WAIT_ON_REGIONSERVERS_MINTOSTART, -1);
+    conf.setInt(ServerManager.WAIT_ON_REGIONSERVERS_MAXTOSTART, -1);
     if (this.hbaseCluster != null) {
       this.hbaseCluster.shutdown();
       // Wait till hbase is down before going on to shutdown zk.
@@ -1473,7 +1561,8 @@ public class HBaseTestingUtility {
 
     // Allow the user to override FS URI for this map-reduce cluster to use.
     mrCluster = new MiniMRCluster(servers,
-      FS_URI != null ? FS_URI : FileSystem.get(conf).getUri().toString(), 1);
+      FS_URI != null ? FS_URI : FileSystem.get(conf).getUri().toString(), 1,
+      null, null, new JobConf(this.conf));
     JobConf jobConf = MapreduceTestingShim.getJobConf(mrCluster);
     if (jobConf == null) {
       jobConf = mrCluster.createJobConf();
@@ -1542,9 +1631,28 @@ public class HBaseTestingUtility {
   public void expireRegionServerSession(int index) throws Exception {
     HRegionServer rs = getMiniHBaseCluster().getRegionServer(index);
     expireSession(rs.getZooKeeper(), false);
+    decrementMinRegionServerCount();
   }
 
+  private void decrementMinRegionServerCount() {
+    // decrement the count for this.conf, for newly spwaned master
+    // this.hbaseCluster shares this configuration too
+    decrementMinRegionServerCount(getConfiguration());
 
+    // each master thread keeps a copy of configuration
+    for (MasterThread master : getHBaseCluster().getMasterThreads()) {
+      decrementMinRegionServerCount(master.getMaster().getConfiguration());
+    }
+  }
+
+  private void decrementMinRegionServerCount(Configuration conf) {
+    int currentCount = conf.getInt(
+        ServerManager.WAIT_ON_REGIONSERVERS_MINTOSTART, -1);
+    if (currentCount != -1) {
+      conf.setInt(ServerManager.WAIT_ON_REGIONSERVERS_MINTOSTART,
+          Math.max(currentCount - 1, 1));
+    }
+  }
 
   public void expireSession(ZooKeeperWatcher nodeZK) throws Exception {
    expireSession(nodeZK, false);
@@ -1593,6 +1701,14 @@ public class HBaseTestingUtility {
     // Making it expire
     ZooKeeper newZK = new ZooKeeper(quorumServers,
         1000, EmptyWatcher.instance, sessionID, password);
+
+    //ensure that we have connection to the server before closing down, otherwise
+    //the close session event will be eaten out before we start CONNECTING state
+    long start = System.currentTimeMillis();
+    while (newZK.getState() != States.CONNECTED 
+         && System.currentTimeMillis() - start < 1000) {
+       Thread.sleep(1);
+    }
     newZK.close();
     LOG.info("ZK Closed Session 0x" + Long.toHexString(sessionID));
 

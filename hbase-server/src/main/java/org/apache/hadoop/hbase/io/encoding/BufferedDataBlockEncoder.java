@@ -24,8 +24,8 @@ import java.nio.ByteBuffer;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.KeyValue.SamePrefixComparator;
+import org.apache.hadoop.hbase.io.compress.Compression.Algorithm;
 import org.apache.hadoop.hbase.io.hfile.BlockType;
-import org.apache.hadoop.hbase.io.hfile.Compression.Algorithm;
 import org.apache.hadoop.hbase.util.ByteBufferUtils;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.io.RawComparator;
@@ -349,6 +349,23 @@ abstract class BufferedDataBlockEncoder implements DataBlockEncoder {
       encodingCtx.postEncoding(BlockType.ENCODED_DATA);
     } else {
       encodingCtx.postEncoding(BlockType.DATA);
+    }
+  }
+
+  /**
+   * Asserts that there is at least the given amount of unfilled space
+   * remaining in the given buffer.
+   * @param out typically, the buffer we are writing to
+   * @param length the required space in the buffer
+   * @throws EncoderBufferTooSmallException If there are no enough bytes.
+   */
+  protected static void ensureSpace(ByteBuffer out, int length)
+      throws EncoderBufferTooSmallException {
+    if (out.position() + length > out.limit()) {
+      throw new EncoderBufferTooSmallException(
+          "Buffer position=" + out.position() +
+          ", buffer limit=" + out.limit() +
+          ", length to be written=" + length);
     }
   }
 

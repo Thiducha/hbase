@@ -194,7 +194,6 @@ public class TestCacheOnWriteInSchema {
     BlockCache cache = cacheConf.getBlockCache();
     StoreFile sf = new StoreFile(fs, path, conf, cacheConf,
         BloomType.ROWCOL, null);
-    store.passSchemaMetricsTo(sf);
     HFileReaderV2 reader = (HFileReaderV2) sf.createReader().getHFileReader();
     try {
       // Open a scanner with (on read) caching disabled
@@ -214,7 +213,7 @@ public class TestCacheOnWriteInSchema {
           false, null);
         BlockCacheKey blockCacheKey = new BlockCacheKey(reader.getName(),
           offset);
-        boolean isCached = cache.getBlock(blockCacheKey, true) != null;
+        boolean isCached = cache.getBlock(blockCacheKey, true, false) != null;
         boolean shouldBeCached = cowType.shouldBeCached(block.getBlockType());
         if (shouldBeCached != isCached) {
           throw new AssertionError(

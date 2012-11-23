@@ -63,6 +63,7 @@ import org.apache.hadoop.hbase.io.DataInputInputStream;
 import org.apache.hadoop.hbase.ipc.CoprocessorProtocol;
 import org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel;
 import org.apache.hadoop.hbase.ipc.ExecRPCInvoker;
+import org.apache.hadoop.hbase.ipc.RegionCoprocessorRpcChannel;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.GetRequest;
@@ -921,7 +922,9 @@ public class HTable implements HTableInterface {
     if (row == null) {
       npe = new NullPointerException("row is null");
     } else if (family == null) {
-      npe = new NullPointerException("column is null");
+      npe = new NullPointerException("family is null");
+    } else if (qualifier == null) {
+      npe = new NullPointerException("qualifier is null");
     }
     if (npe != null) {
       throw new IOException(
@@ -1341,7 +1344,7 @@ public class HTable implements HTableInterface {
    * {@inheritDoc}
    */
   public CoprocessorRpcChannel coprocessorService(byte[] row) {
-    return new CoprocessorRpcChannel(connection, tableName, row);
+    return new RegionCoprocessorRpcChannel(connection, tableName, row);
   }
 
   /**
@@ -1418,8 +1421,8 @@ public class HTable implements HTableInterface {
     Map<byte[],Future<R>> futures =
         new TreeMap<byte[],Future<R>>(Bytes.BYTES_COMPARATOR);
     for (final byte[] r : keys) {
-      final CoprocessorRpcChannel channel =
-          new CoprocessorRpcChannel(connection, tableName, r);
+      final RegionCoprocessorRpcChannel channel =
+          new RegionCoprocessorRpcChannel(connection, tableName, r);
       Future<R> future = pool.submit(
           new Callable<R>() {
             public R call() throws Exception {

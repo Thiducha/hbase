@@ -46,7 +46,6 @@ import org.apache.hadoop.hbase.security.token.AuthenticationTokenSecretManager;
 import org.apache.hadoop.ipc.RemoteException;
 import org.apache.hadoop.security.authorize.ServiceAuthorizationManager;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.hbase.util.Objects;
 import org.codehaus.jackson.map.ObjectMapper;
 
 import com.google.protobuf.Message;
@@ -326,7 +325,7 @@ class ProtobufRpcEngine implements RpcEngine {
         //which implementation of the protocol should be used to service the
         //current request, etc. Ideally, we shouldn't land up in a situation
         //where we need to support such a use case.
-        //For now the clientVersion field is simply ignored 
+        //For now the clientVersion field is simply ignored
         long clientVersion = rpcRequest.getClientProtocolVersion();
 
         if (verbose) {
@@ -334,10 +333,10 @@ class ProtobufRpcEngine implements RpcEngine {
               ", method=" + methodName);
         }
 
-        status.setRPC(rpcRequest.getMethodName(), 
+        status.setRPC(rpcRequest.getMethodName(),
             new Object[]{rpcRequest.getRequest()}, receiveTime);
         status.setRPCPacket(rpcRequest);
-        status.resume("Servicing call");        
+        status.resume("Servicing call");
         //get an instance of the method arg type
         Message protoType = getMethodArgType(method);
         Message param = protoType.newBuilderForType()
@@ -367,10 +366,11 @@ class ProtobufRpcEngine implements RpcEngine {
         int qTime = (int) (startTime-receiveTime);
         if (TRACELOG.isDebugEnabled()) {
           TRACELOG.debug("Call #" + CurCall.get().id +
-              "; Served: " + protocol.getSimpleName()+"#"+method.getName() +
-              " queueTime=" + qTime +
-              " processingTime=" + processingTime +
-              " contents=" + Objects.describeQuantity(param));
+              "; served=" + protocol.getSimpleName() + "#" + method.getName() +
+              ", queueTime=" + qTime +
+              ", processingTime=" + processingTime +
+              ", request=" + param.toString() +
+              " response=" + result.toString());
         }
         rpcMetrics.rpcQueueTime.inc(qTime);
         rpcMetrics.rpcProcessingTime.inc(processingTime);
@@ -394,7 +394,7 @@ class ProtobufRpcEngine implements RpcEngine {
           buffer.append(param.getClass().getName());
           buffer.append(")");
           buffer.append(", client version="+clientVersion);
-          logResponse(new Object[]{rpcRequest.getRequest()}, 
+          logResponse(new Object[]{rpcRequest.getRequest()},
               methodName, buffer.toString(), (tooLarge ? "TooLarge" : "TooSlow"),
               status.getClient(), startTime, processingTime, qTime,
               responseSize);

@@ -42,7 +42,7 @@
   <version>0.95-SNAPSHOT</version>
   <name>HBase</name>
   <description>
-    HBase is the &amp;lt;a href="http://hadoop.apache.org"&amp;rt;Hadoop&lt;/a&amp;rt; database. Use it when you need
+    Apache HBase&#153; is the &amp;lt;a href="http://hadoop.apache.org"&amp;rt;Hadoop&lt;/a&amp;rt; database. Use it when you need
     random, realtime read/write access to your Big Data.
     This project's goal is the hosting of very large tables -- billions of rows X millions of columns -- atop clusters
     of commodity hardware.
@@ -50,11 +50,13 @@
   <url>http://hbase.apache.org</url>
   <modules>
     <module>hbase-server</module>
+    <module>hbase-protocol</module>
     <module>hbase-hadoop2-compat</module>
     <module>hbase-hadoop1-compat</module>
     <module>hbase-hadoop-compat</module>
     <module>hbase-common</module>
     <module>hbase-it</module>
+    <module>hbase-examples</module>
   </modules>
   <scm>
     <connection>scm:svn:http://svn.apache.org/repos/asf/hbase/trunk</connection>
@@ -119,8 +121,8 @@
       <name>Andrew Purtell</name>
       <email>apurtell@apache.org</email>
       <timezone>-8</timezone>
-      <organization>Trend Micro</organization>
-      <organizationUrl>http://www.trendmicro.com</organizationUrl>
+      <organization>Intel</organization>
+      <organizationUrl>http://www.intel.com</organizationUrl>
     </developer>
     <developer>
       <id>dmeil</id>
@@ -163,12 +165,20 @@
       <organizationUrl>http://www.cloudera.com</organizationUrl>
     </developer>
     <developer>
+      <id>jyates</id>
+      <name>Jesse Yates</name>
+      <email>jyates@apache.org</email>
+      <timezone>-8</timezone>
+      <organization>Salesforce.com</organization>
+      <organizationUrl>http://www.salesforce.com/</organizationUrl>
+    </developer>
+    <developer>
       <id>jgray</id>
       <name>Jonathan Gray</name>
       <email>jgray@fb.com</email>
       <timezone>-8</timezone>
-      <organization>Facebook</organization>
-      <organizationUrl>http://www.facebook.com</organizationUrl>
+      <organization>Continuuity</organization>
+      <organizationUrl>http://www.continuuity.com</organizationUrl>
     </developer>
     <developer>
       <id>jmhsieh</id>
@@ -239,24 +249,24 @@
       <name>Ryan Rawson</name>
       <email>rawson@apache.org</email>
       <timezone>-8</timezone>
-      <organization>CX</organization>
-      <organizationUrl>http://www.cx.com</organizationUrl>
+      <organization>DrawnToScale</organization>
+      <organizationUrl>http://drawntoscale.com/</organizationUrl>
     </developer>
     <developer>
       <id>stack</id>
       <name>Michael Stack</name>
       <email>stack@apache.org</email>
       <timezone>-8</timezone>
-      <organization>StumbleUpon</organization>
-      <organizationUrl>http://www.stumbleupon.com/</organizationUrl>
+      <organization>Cloudera</organization>
+      <organizationUrl>http://www.cloudera.com/</organizationUrl>
     </developer>
     <developer>
       <id>tedyu</id>
       <name>Ted Yu</name>
       <email>yuzhihong@gmail.com</email>
       <timezone>-8</timezone>
-      <organization>CarrierIQ</organization>
-      <organizationUrl>http://www.carrieriq.com</organizationUrl>
+      <organization>EBay</organization>
+      <organizationUrl>http://www.ebay.com</organizationUrl>
     </developer>
     <developer>
       <id>todd</id>
@@ -396,7 +406,7 @@
               profile on the command line as follows:
 
               $ ~/bin/mvn/bin/mvn  -Papache-release release:perform
-              
+
               I've also been kiling the release:prepare step mid-way to check the
               release.properties it generates at the top-level.  Sometimes it refers
               to HEAD rather than to the svn branch.
@@ -408,7 +418,7 @@
              -->
             <releaseProfiles>apache-release</releaseProfiles>
             <!--This stops our running tests for each stage of maven release.
-                But it builds the test jar.  From SUREFIRE-172.      
+                But it builds the test jar.  From SUREFIRE-172.
               -->
             <arguments>-Dmaven.test.skip.exec</arguments>
           </configuration>
@@ -429,8 +439,8 @@
           <artifactId>maven-surefire-plugin</artifactId>
           <version>${surefire.version}</version>
           <dependencies>
-            <!-- by default surefire selects dynamically the connector to the unit tests 
-              tool. We want to use always the same as the different connectors can have different 
+            <!-- by default surefire selects dynamically the connector to the unit tests
+              tool. We want to use always the same as the different connectors can have different
               bugs and behaviour. -->
             <dependency>
               <groupId>org.apache.maven.surefire</groupId>
@@ -469,7 +479,7 @@
                 <perCoreThreadCount>false</perCoreThreadCount>
                 <threadCount>${surefire.secondPartThreadCount}</threadCount>
                 <parallel>classes</parallel>
-                <!-- surefire hack, if not we're using method 
+                <!-- surefire hack, if not we're using method
                   parallelisation class ! -->
                 <groups>${surefire.secondPartGroups}</groups>
               </configuration>
@@ -558,11 +568,11 @@
           <artifactId>maven-eclipse-plugin</artifactId>
           <version>2.8</version>
         </plugin>
-        <!--This plugin's configuration is used to store Eclipse m2e settings only. It 
-          has no influence on the Maven build itself. m2e does not provide any safeguards against 
-          rogue maven plugins that leak classloaders, modify random files inside workspace 
+        <!--This plugin's configuration is used to store Eclipse m2e settings only. It
+          has no influence on the Maven build itself. m2e does not provide any safeguards against
+          rogue maven plugins that leak classloaders, modify random files inside workspace
           or throw nasty exceptions to fail the build -->
-        <!-- Top level doesn't do any specific configuration currently - left to modules 
+        <!-- Top level doesn't do any specific configuration currently - left to modules
           to decide what they want to bind -->
         <plugin>
           <groupId>org.eclipse.m2e</groupId>
@@ -587,6 +597,7 @@
               <exclude>**/target/**</exclude>
               <exclude>**/CHANGES.txt</exclude>
               <exclude>**/generated/**</exclude>
+              <exclude>**/gen-*/**</exclude>
               <exclude>**/conf/*</exclude>
               <exclude>**/*.avpr</exclude>
               <exclude>**/*.svg</exclude>
@@ -817,8 +828,8 @@
     <compileSource>1.6</compileSource>
     <hbase.version>${project.version}</hbase.version>
     <!-- Dependencies -->
-    <hadoop-two.version>2.0.1-alpha</hadoop-two.version>
-    <hadoop-one.version>1.0.3</hadoop-one.version>
+    <hadoop-two.version>2.0.2-alpha</hadoop-two.version>
+    <hadoop-one.version>1.1.0</hadoop-one.version>
     <commons-cli.version>1.2</commons-cli.version>
     <commons-codec.version>1.7</commons-codec.version>
     <!-- pretty outdated -->
@@ -841,13 +852,13 @@
     <mockito-all.version>1.9.0</mockito-all.version>
     <protobuf.version>2.4.1</protobuf.version>
     <stax-api.version>1.0.1</stax-api.version>
-    <thrift.version>0.8.0</thrift.version>
+    <thrift.version>0.9.0</thrift.version>
     <zookeeper.version>3.4.3</zookeeper.version>
     <hadoop-snappy.version>0.0.1-SNAPSHOT</hadoop-snappy.version>
     <clover.version>2.6.3</clover.version>
     <jamon-runtime.version>2.3.1</jamon-runtime.version>
     <jettison.version>1.3.1</jettison.version>
-    <netty.version>3.5.0.Final</netty.version>
+    <netty.version>3.5.9.Final</netty.version>
     <!-- Plugin Dependencies -->
     <maven.assembly.version>2.3</maven.assembly.version>
     <maven.antrun.version>1.6</maven.antrun.version>
@@ -907,6 +918,11 @@
       </dependency>
       <dependency>
         <groupId>org.apache.hbase</groupId>
+        <artifactId>hbase-protocol</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.hbase</groupId>
         <artifactId>hbase-hadoop-compat</artifactId>
         <version>${project.version}</version>
       </dependency>
@@ -940,6 +956,11 @@
         <version>${project.version}</version>
         <type>test-jar</type>
         <scope>test</scope>
+      </dependency>
+      <dependency>
+        <artifactId>hbase-examples</artifactId>
+        <groupId>org.apache.hbase</groupId>
+        <version>${project.version}</version>
       </dependency>
       <!-- General dependencies -->
       <dependency>
@@ -1010,6 +1031,10 @@
           <exclusion>
             <groupId>jline</groupId>
             <artifactId>jline</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>org.jboss.netty</groupId>
+            <artifactId>netty</artifactId>
           </exclusion>
         </exclusions>
       </dependency>
@@ -1336,7 +1361,7 @@
         </dependencies>
       </dependencyManagement>
     </profile>
-    <!-- profile for building against Hadoop 2.0.x 
+    <!-- profile for building against Hadoop 2.0.x
     Activate using: mvn -Dhadoop.profile=2.0 -->
     <profile>
       <id>hadoop-2.0</id>
@@ -1364,7 +1389,7 @@
             <artifactId>hadoop-annotations</artifactId>
             <version>${hadoop-two.version}</version>
           </dependency>
-          <!-- This was marked as test dep in earlier pom, but was scoped compile. 
+          <!-- This was marked as test dep in earlier pom, but was scoped compile.
             Where do we actually need it? -->
           <dependency>
             <groupId>org.apache.hadoop</groupId>

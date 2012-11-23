@@ -36,6 +36,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.CompatibilitySingletonFactory;
 import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.FailedSanityCheckException;
 import org.apache.hadoop.hbase.HBaseConfiguration;
@@ -56,13 +57,11 @@ import org.apache.hadoop.hbase.MultithreadedTestUtil.RepeatingTestThread;
 import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Get;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Increment;
 import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.filter.BinaryComparator;
 import org.apache.hadoop.hbase.filter.ColumnCountGetFilter;
@@ -72,24 +71,21 @@ import org.apache.hadoop.hbase.filter.FilterList;
 import org.apache.hadoop.hbase.filter.NullComparator;
 import org.apache.hadoop.hbase.filter.PrefixFilter;
 import org.apache.hadoop.hbase.filter.SingleColumnValueFilter;
-import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.monitoring.MonitoredRPCHandler;
 import org.apache.hadoop.hbase.monitoring.MonitoredTask;
 import org.apache.hadoop.hbase.monitoring.TaskMonitor;
 import org.apache.hadoop.hbase.regionserver.HRegion.RegionScannerImpl;
 import org.apache.hadoop.hbase.regionserver.StoreFile.BloomType;
-import org.apache.hadoop.hbase.regionserver.metrics.SchemaMetrics;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.regionserver.wal.HLogFactory;
 import org.apache.hadoop.hbase.regionserver.wal.HLogUtil;
 import org.apache.hadoop.hbase.regionserver.wal.HLogKey;
-import org.apache.hadoop.hbase.regionserver.wal.HLogMetrics;
+import org.apache.hadoop.hbase.regionserver.wal.MetricsWALSource;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
+import org.apache.hadoop.hbase.test.MetricsAssertHelper;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManagerTestHelper;
 import org.apache.hadoop.hbase.util.IncrementingEnvironmentEdge;
-import org.apache.hadoop.hbase.util.ManualEnvironmentEdge;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.PairOfSameType;
 import org.apache.hadoop.hbase.util.Threads;
@@ -131,15 +127,15 @@ public class TestHRegion extends HBaseTestCase {
   protected final byte [] row = Bytes.toBytes("rowA");
   protected final byte [] row2 = Bytes.toBytes("rowB");
 
+  protected final MetricsAssertHelper metricsAssertHelper =
+      CompatibilitySingletonFactory.getInstance(MetricsAssertHelper.class);
 
-  private Map<String, Long> startingMetrics;
 
   /**
    * @see org.apache.hadoop.hbase.HBaseTestCase#setUp()
    */
   @Override
   protected void setUp() throws Exception {
-    startingMetrics = SchemaMetrics.getMetricsSnapshot();
     super.setUp();
   }
 
@@ -147,7 +143,6 @@ public class TestHRegion extends HBaseTestCase {
   protected void tearDown() throws Exception {
     super.tearDown();
     EnvironmentEdgeManagerTestHelper.reset();
-    SchemaMetrics.validateMetricChanges(startingMetrics);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -633,9 +628,10 @@ public class TestHRegion extends HBaseTestCase {
     byte[] qual = Bytes.toBytes("qual");
     byte[] val = Bytes.toBytes("val");
     this.region = initHRegion(b, getName(), cf);
+    MetricsWALSource source = CompatibilitySingletonFactory.getInstance(MetricsWALSource.class);
     try {
-      HLogMetrics.getSyncTime(); // clear counter from prior tests
-      assertEquals(0, HLogMetrics.getSyncTime().count);
+      long syncs = metricsAssertHelper.getCounter("syncTimeNumOps", source);
+      metricsAssertHelper.assertCounter("syncTimeNumOps", syncs, source);
 
       LOG.info("First a batch put with all valid puts");
       final Put[] puts = new Put[10];
@@ -650,7 +646,8 @@ public class TestHRegion extends HBaseTestCase {
         assertEquals(OperationStatusCode.SUCCESS, codes[i]
             .getOperationStatusCode());
       }
-      assertEquals(1, HLogMetrics.getSyncTime().count);
+      metricsAssertHelper.assertCounter("syncTimeNumOps", syncs + 1, source);
+
 
       LOG.info("Next a batch put with one invalid family");
       puts[5].add(Bytes.toBytes("BAD_CF"), qual, val);
@@ -660,7 +657,8 @@ public class TestHRegion extends HBaseTestCase {
         assertEquals((i == 5) ? OperationStatusCode.BAD_FAMILY :
           OperationStatusCode.SUCCESS, codes[i].getOperationStatusCode());
       }
-      assertEquals(1, HLogMetrics.getSyncTime().count);
+
+      metricsAssertHelper.assertCounter("syncTimeNumOps", syncs + 2, source);
 
       LOG.info("Next a batch put that has to break into two batches to avoid a lock");
       Integer lockedRow = region.obtainRowLock(Bytes.toBytes("row_2"));
@@ -681,7 +679,7 @@ public class TestHRegion extends HBaseTestCase {
   
       LOG.info("...waiting for put thread to sync first time");
       long startWait = System.currentTimeMillis();
-      while (HLogMetrics.getSyncTime().count == 0) {
+      while (metricsAssertHelper.getCounter("syncTimeNumOps", source) == syncs +2 ) {
         Thread.sleep(100);
         if (System.currentTimeMillis() - startWait > 10000) {
           fail("Timed out waiting for thread to sync first minibatch");
@@ -692,7 +690,7 @@ public class TestHRegion extends HBaseTestCase {
       LOG.info("...joining on thread");
       ctx.stop();
       LOG.info("...checking that next batch was synced");
-      assertEquals(1, HLogMetrics.getSyncTime().count);
+      metricsAssertHelper.assertCounter("syncTimeNumOps", syncs + 4, source);
       codes = retFromThread.get();
       for (int i = 0; i < 10; i++) {
         assertEquals((i == 5) ? OperationStatusCode.BAD_FAMILY :
@@ -716,7 +714,7 @@ public class TestHRegion extends HBaseTestCase {
           OperationStatusCode.SUCCESS, codes[i].getOperationStatusCode());
       }
       // Make sure we didn't do an extra batch
-      assertEquals(1, HLogMetrics.getSyncTime().count);
+      metricsAssertHelper.assertCounter("syncTimeNumOps", syncs + 5, source);
   
       // Make sure we still hold lock
       assertTrue(region.isRowLocked(lockedRow));
@@ -742,8 +740,9 @@ public class TestHRegion extends HBaseTestCase {
     this.region = initHRegion(b, getName(), conf, cf);
 
     try{
-      HLogMetrics.getSyncTime(); // clear counter from prior tests
-      assertEquals(0, HLogMetrics.getSyncTime().count);
+      MetricsWALSource source = CompatibilitySingletonFactory.getInstance(MetricsWALSource.class);
+      long syncs = metricsAssertHelper.getCounter("syncTimeNumOps", source);
+      metricsAssertHelper.assertCounter("syncTimeNumOps", syncs, source);
 
       final Put[] puts = new Put[10];
       for (int i = 0; i < 10; i++) {
@@ -757,8 +756,7 @@ public class TestHRegion extends HBaseTestCase {
         assertEquals(OperationStatusCode.SANITY_CHECK_FAILURE, codes[i]
             .getOperationStatusCode());
       }
-      assertEquals(0, HLogMetrics.getSyncTime().count);
-
+      metricsAssertHelper.assertCounter("syncTimeNumOps", syncs, source);
 
     } finally {
       HRegion.closeHRegion(this.region);
@@ -2389,351 +2387,6 @@ public class TestHRegion extends HBaseTestCase {
     }
   }
 
-  public void testIncrementColumnValue_UpdatingInPlace() throws IOException {
-    this.region = initHRegion(tableName, getName(), fam1);
-    try {
-      long value = 1L;
-      long amount = 3L;
-
-      Put put = new Put(row);
-      put.add(fam1, qual1, Bytes.toBytes(value));
-      region.put(put);
-
-      long result = region.incrementColumnValue(row, fam1, qual1, amount, true);
-
-      assertEquals(value+amount, result);
-
-      HStore store = (HStore) region.getStore(fam1);
-      // ICV removes any extra values floating around in there.
-      assertEquals(1, store.memstore.kvset.size());
-      assertTrue(store.memstore.snapshot.isEmpty());
-
-      assertICV(row, fam1, qual1, value+amount);
-    } finally {
-      HRegion.closeHRegion(this.region);
-      this.region = null;
-    }
-  }
-
-  public void testIncrementColumnValue_BumpSnapshot() throws IOException {
-    ManualEnvironmentEdge mee = new ManualEnvironmentEdge();
-    EnvironmentEdgeManagerTestHelper.injectEdge(mee);
-    this.region = initHRegion(tableName, getName(), fam1);
-    try {
-      long value = 42L;
-      long incr = 44L;
-
-      // first put something in kvset, then snapshot it.
-      Put put = new Put(row);
-      put.add(fam1, qual1, Bytes.toBytes(value));
-      region.put(put);
-
-      // get the store in question:
-      HStore s = (HStore) region.getStore(fam1);
-      s.snapshot(); //bam
-
-      // now increment:
-      long newVal = region.incrementColumnValue(row, fam1, qual1,
-          incr, false);
-
-      assertEquals(value+incr, newVal);
-
-      // get both versions:
-      Get get = new Get(row);
-      get.setMaxVersions();
-      get.addColumn(fam1,qual1);
-
-      Result r = region.get(get, null);
-      assertEquals(2, r.size());
-      KeyValue first = r.raw()[0];
-      KeyValue second = r.raw()[1];
-
-      assertTrue("ICV failed to upgrade timestamp",
-          first.getTimestamp() != second.getTimestamp());
-    } finally {
-      HRegion.closeHRegion(this.region);
-      this.region = null;
-    }
-  }
-
-  public void testIncrementColumnValue_ConcurrentFlush() throws IOException {
-    this.region = initHRegion(tableName, getName(), fam1);
-    try {
-      long value = 1L;
-      long amount = 3L;
-
-      Put put = new Put(row);
-      put.add(fam1, qual1, Bytes.toBytes(value));
-      region.put(put);
-
-      // now increment during a flush
-      Thread t = new Thread() {
-        public void run() {
-          try {
-            region.flushcache();
-          } catch (IOException e) {
-            LOG.info("test ICV, got IOE during flushcache()");
-          }
-        }
-      };
-      t.start();
-      long r = region.incrementColumnValue(row, fam1, qual1, amount, true);
-      assertEquals(value+amount, r);
-
-      // this also asserts there is only 1 KeyValue in the set.
-      assertICV(row, fam1, qual1, value+amount);
-    } finally {
-      HRegion.closeHRegion(this.region);
-      this.region = null;
-    }
-  }
-
-  public void testIncrementColumnValue_heapSize() throws IOException {
-    EnvironmentEdgeManagerTestHelper.injectEdge(new IncrementingEnvironmentEdge());
-
-    this.region = initHRegion(tableName, getName(), fam1);
-    try {
-      long byAmount = 1L;
-      long size;
-
-      for( int i = 0; i < 1000 ; i++) {
-        region.incrementColumnValue(row, fam1, qual1, byAmount, true);
-
-        size = region.memstoreSize.get();
-        assertTrue("memstore size: " + size, size >= 0);
-      }
-    } finally {
-      HRegion.closeHRegion(this.region);
-      this.region = null;
-    }
-  }
-
-  public void testIncrementColumnValue_UpdatingInPlace_Negative()
-    throws IOException {
-    this.region = initHRegion(tableName, getName(), fam1);
-    try {
-      long value = 3L;
-      long amount = -1L;
-
-      Put put = new Put(row);
-      put.add(fam1, qual1, Bytes.toBytes(value));
-      region.put(put);
-
-      long result = region.incrementColumnValue(row, fam1, qual1, amount, true);
-      assertEquals(value+amount, result);
-
-      assertICV(row, fam1, qual1, value+amount);
-    } finally {
-      HRegion.closeHRegion(this.region);
-      this.region = null;
-    }
-  }
-
-  public void testIncrementColumnValue_AddingNew()
-    throws IOException {
-    this.region = initHRegion(tableName, getName(), fam1);
-    try {
-      long value = 1L;
-      long amount = 3L;
-
-      Put put = new Put(row);
-      put.add(fam1, qual1, Bytes.toBytes(value));
-      put.add(fam1, qual2, Bytes.toBytes(value));
-      region.put(put);
-
-      long result = region.incrementColumnValue(row, fam1, qual3, amount, true);
-      assertEquals(amount, result);
-
-      Get get = new Get(row);
-      get.addColumn(fam1, qual3);
-      Result rr = region.get(get, null);
-      assertEquals(1, rr.size());
-
-      // ensure none of the other cols were incremented.
-      assertICV(row, fam1, qual1, value);
-      assertICV(row, fam1, qual2, value);
-      assertICV(row, fam1, qual3, amount);
-    } finally {
-      HRegion.closeHRegion(this.region);
-      this.region = null;
-    }
-  }
-
-  public void testIncrementColumnValue_UpdatingFromSF() throws IOException {
-    this.region = initHRegion(tableName, getName(), fam1);
-    try {
-      long value = 1L;
-      long amount = 3L;
-
-      Put put = new Put(row);
-      put.add(fam1, qual1, Bytes.toBytes(value));
-      put.add(fam1, qual2, Bytes.toBytes(value));
-      region.put(put);
-
-      // flush to disk.
-      region.flushcache();
-
-      HStore store = (HStore) region.getStore(fam1);
-      assertEquals(0, store.memstore.kvset.size());
-
-      long r = region.incrementColumnValue(row, fam1, qual1, amount, true);
-      assertEquals(value+amount, r);
-
-      assertICV(row, fam1, qual1, value+amount);
-    } finally {
-      HRegion.closeHRegion(this.region);
-      this.region = null;
-    }
-  }
-
-  public void testIncrementColumnValue_AddingNewAfterSFCheck()
-    throws IOException {
-    this.region = initHRegion(tableName, getName(), fam1);
-    try {
-      long value = 1L;
-      long amount = 3L;
-
-      Put put = new Put(row);
-      put.add(fam1, qual1, Bytes.toBytes(value));
-      put.add(fam1, qual2, Bytes.toBytes(value));
-      region.put(put);
-      region.flushcache();
-
-      HStore store = (HStore) region.getStore(fam1);
-      assertEquals(0, store.memstore.kvset.size());
-
-      long r = region.incrementColumnValue(row, fam1, qual3, amount, true);
-      assertEquals(amount, r);
-
-      assertICV(row, fam1, qual3, amount);
-
-      region.flushcache();
-
-      // ensure that this gets to disk.
-      assertICV(row, fam1, qual3, amount);
-    } finally {
-      HRegion.closeHRegion(this.region);
-      this.region = null;
-    }
-  }
-
-  /**
-   * Added for HBASE-3235.
-   *
-   * When the initial put and an ICV update were arriving with the same timestamp,
-   * the initial Put KV was being skipped during {@link MemStore#upsert(KeyValue)}
-   * causing the iteration for matching KVs, causing the update-in-place to not
-   * happen and the ICV put to effectively disappear.
-   * @throws IOException
-   */
-  public void testIncrementColumnValue_UpdatingInPlace_TimestampClobber() throws IOException {
-    this.region = initHRegion(tableName, getName(), fam1);
-    try {
-      long value = 1L;
-      long amount = 3L;
-      long now = EnvironmentEdgeManager.currentTimeMillis();
-      ManualEnvironmentEdge mock = new ManualEnvironmentEdge();
-      mock.setValue(now);
-      EnvironmentEdgeManagerTestHelper.injectEdge(mock);
-
-      // verify we catch an ICV on a put with the same timestamp
-      Put put = new Put(row);
-      put.add(fam1, qual1, now, Bytes.toBytes(value));
-      region.put(put);
-
-      long result = region.incrementColumnValue(row, fam1, qual1, amount, true);
-
-      assertEquals(value+amount, result);
-
-      HStore store = (HStore) region.getStore(fam1);
-      // ICV should update the existing Put with the same timestamp
-      assertEquals(1, store.memstore.kvset.size());
-      assertTrue(store.memstore.snapshot.isEmpty());
-
-      assertICV(row, fam1, qual1, value+amount);
-
-      // verify we catch an ICV even when the put ts > now
-      put = new Put(row);
-      put.add(fam1, qual2, now+1, Bytes.toBytes(value));
-      region.put(put);
-
-      result = region.incrementColumnValue(row, fam1, qual2, amount, true);
-
-      assertEquals(value+amount, result);
-
-      store = (HStore) region.getStore(fam1);
-      // ICV should update the existing Put with the same timestamp
-      assertEquals(2, store.memstore.kvset.size());
-      assertTrue(store.memstore.snapshot.isEmpty());
-
-      assertICV(row, fam1, qual2, value+amount);
-      EnvironmentEdgeManagerTestHelper.reset();
-    } finally {
-      HRegion.closeHRegion(this.region);
-      this.region = null;
-    }
-  }
-
-  public void testIncrementColumnValue_WrongInitialSize() throws IOException {
-    this.region = initHRegion(tableName, getName(), fam1);
-    try {
-      byte[] row1 = Bytes.add(Bytes.toBytes("1234"), Bytes.toBytes(0L));
-      int row1Field1 = 0;
-      int row1Field2 = 1;
-      Put put1 = new Put(row1);
-      put1.add(fam1, qual1, Bytes.toBytes(row1Field1));
-      put1.add(fam1, qual2, Bytes.toBytes(row1Field2));
-      region.put(put1);
-
-      long result;
-      try {
-        result = region.incrementColumnValue(row1, fam1, qual1, 1, true);
-        fail("Expected to fail here");
-      } catch (Exception exception) {
-        // Expected.
-      }
-
-
-      assertICV(row1, fam1, qual1, row1Field1);
-      assertICV(row1, fam1, qual2, row1Field2);
-    } finally {
-      HRegion.closeHRegion(this.region);
-      this.region = null;
-    }
-  }
-
-  public void testIncrement_WrongInitialSize() throws IOException {
-    this.region = initHRegion(tableName, getName(), fam1);
-    try {
-      byte[] row1 = Bytes.add(Bytes.toBytes("1234"), Bytes.toBytes(0L));
-      long row1Field1 = 0;
-      int row1Field2 = 1;
-      Put put1 = new Put(row1);
-      put1.add(fam1, qual1, Bytes.toBytes(row1Field1));
-      put1.add(fam1, qual2, Bytes.toBytes(row1Field2));
-      region.put(put1);
-      Increment increment = new Increment(row1);
-      increment.addColumn(fam1, qual1, 1);
-
-      //here we should be successful as normal
-      region.increment(increment, null, true);
-      assertICV(row1, fam1, qual1, row1Field1 + 1);
-
-      //failed to increment
-      increment = new Increment(row1);
-      increment.addColumn(fam1, qual2, 1);
-      try {
-        region.increment(increment, null, true);
-        fail("Expected to fail here");
-      } catch (Exception exception) {
-        // Expected.
-      }
-      assertICV(row1, fam1, qual2, row1Field2);
-    } finally {
-      HRegion.closeHRegion(this.region);
-      this.region = null;
-    }
-  }
   private void assertICV(byte [] row,
                          byte [] familiy,
                          byte[] qualifier,
@@ -3676,9 +3329,6 @@ public class TestHRegion extends HBaseTestCase {
       info = new HRegionInfo(htd.getName(), HConstants.EMPTY_BYTE_ARRAY,
           HConstants.EMPTY_BYTE_ARRAY, false);
       Path path = new Path(DIR + "testStatusSettingToAbortIfAnyExceptionDuringRegionInitilization");
-      // no where we are instantiating HStore in this test case so useTableNameGlobally is null. To
-      // avoid NullPointerException we are setting useTableNameGlobally to false.
-      SchemaMetrics.setUseTableNameInTest(false);
       region = HRegion.newHRegion(path, null, fs, conf, info, htd, null);
       // region initialization throws IOException and set task state to ABORTED.
       region.initialize();
@@ -4069,7 +3719,7 @@ public class TestHRegion extends HBaseTestCase {
    * @throws IOException
    * @return A region on which you must call {@link HRegion#closeHRegion(HRegion)} when done.
    */
-  private static HRegion initHRegion (byte [] tableName, String callingMethod,
+  public static HRegion initHRegion (byte [] tableName, String callingMethod,
       Configuration conf, byte [] ... families)
     throws IOException{
     return initHRegion(tableName, null, null, callingMethod, conf, families);

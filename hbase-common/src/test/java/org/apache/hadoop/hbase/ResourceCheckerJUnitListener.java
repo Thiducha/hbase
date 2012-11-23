@@ -20,13 +20,19 @@
 package org.apache.hadoop.hbase;
 
 
-import com.sun.management.UnixOperatingSystemMXBean;
-import org.junit.runner.notification.RunListener;
-
 import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+
+import org.apache.hadoop.hbase.ResourceChecker.Phase;
+import org.junit.runner.notification.RunListener;
+
+import org.apache.hadoop.hbase.util.JVM;
 
 /**
  * Listen to the test progress and check the usage of:
@@ -40,43 +46,54 @@ public class ResourceCheckerJUnitListener extends RunListener {
   private Map<String, ResourceChecker> rcs = new ConcurrentHashMap<String, ResourceChecker>();
 
   static class ThreadResourceAnalyzer extends ResourceChecker.ResourceAnalyzer {
+    private static Set<String> initialThreadNames = new HashSet<String>();
+    private static List<String> stringsToLog = null;
+
     @Override
-    public int getVal() {
-      return Thread.getAllStackTraces().size();
+    public int getVal(Phase phase) {
+      Map<Thread, StackTraceElement[]> stackTraces = Thread.getAllStackTraces();
+      if (phase == Phase.INITIAL) {
+        stringsToLog = null;
+        for (Thread t : stackTraces.keySet()) {
+          initialThreadNames.add(t.getName());
+        }
+      } else if (phase == Phase.END) {
+        if (stackTraces.size() > initialThreadNames.size()) {
+          stringsToLog = new ArrayList<String>();
+          for (Thread t : stackTraces.keySet()) {
+            if (!initialThreadNames.contains(t.getName())) {
+              stringsToLog.add("\nPotentially hanging thread: " + t.getName() + "\n");
+              StackTraceElement[] stackElements = stackTraces.get(t);
+              for (StackTraceElement ele : stackElements) {
+                stringsToLog.add("\t" + ele + "\n");
+              }
+            }
+          }
+        }
+      }
+      return stackTraces.size();
     }
 
     @Override
     public int getMax() {
       return 500;
     }
-  }
-
-  /**
-   * On unix, we know how to get the number of open file descriptor. This class allow to share
-   *  the MXBeans code.
-   */
-  abstract static class OSResourceAnalyzer extends ResourceChecker.ResourceAnalyzer {
-    protected static final OperatingSystemMXBean osStats;
-    protected static final UnixOperatingSystemMXBean unixOsStats;
-
-    static {
-      osStats = ManagementFactory.getOperatingSystemMXBean();
-      if (osStats instanceof UnixOperatingSystemMXBean) {
-        unixOsStats = (UnixOperatingSystemMXBean) osStats;
-      } else {
-        unixOsStats = null;
-      }
+    
+    @Override
+    public List<String> getStringsToLog() {
+      return stringsToLog;
     }
   }
 
-  static class OpenFileDescriptorResourceAnalyzer extends OSResourceAnalyzer {
+
+  static class OpenFileDescriptorResourceAnalyzer extends ResourceChecker.ResourceAnalyzer {
     @Override
-    public int getVal() {
-      if (unixOsStats == null) {
-        return 0;
-      } else {
-        return (int) unixOsStats.getOpenFileDescriptorCount();
-      }
+    public int getVal(Phase phase) {
+      JVM jvm = new JVM();
+      if (jvm != null && jvm.isUnix() == true)
+          return (int)jvm.getOpenFileDescriptorCount();
+      else
+           return 0;
     }
 
     @Override
@@ -85,16 +102,16 @@ public class ResourceCheckerJUnitListener extends RunListener {
     }
   }
 
-  static class MaxFileDescriptorResourceAnalyzer extends OSResourceAnalyzer {
+  static class MaxFileDescriptorResourceAnalyzer extends ResourceChecker.ResourceAnalyzer {
     @Override
-    public int getVal() {
-      if (unixOsStats == null) {
-        return 0;
-      } else {
-        return (int) unixOsStats.getMaxFileDescriptorCount();
-      }
-    }
-  }
+    public int getVal(Phase phase) {
+      JVM jvm = new JVM();
+      if (jvm != null && jvm.isUnix() == true)
+           return (int)jvm.getMaxFileDescriptorCount();
+      else
+           return 0;
+     } 
+   }
 
 
   /**

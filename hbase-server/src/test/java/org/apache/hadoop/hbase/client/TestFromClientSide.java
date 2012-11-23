@@ -49,7 +49,6 @@ import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.metrics.ScanMetrics;
 import org.apache.hadoop.hbase.coprocessor.CoprocessorHost;
 import org.apache.hadoop.hbase.coprocessor.MultiRowMutationEndpoint;
-import org.apache.hadoop.hbase.coprocessor.MultiRowMutationProtocol;
 import org.apache.hadoop.hbase.filter.BinaryComparator;
 import org.apache.hadoop.hbase.filter.CompareFilter;
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp;
@@ -64,11 +63,18 @@ import org.apache.hadoop.hbase.filter.SingleColumnValueFilter;
 import org.apache.hadoop.hbase.filter.WhileMatchFilter;
 import org.apache.hadoop.hbase.io.hfile.BlockCache;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
+import org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel;
+import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate.MutateType;
+import org.apache.hadoop.hbase.protobuf.generated.MultiRowMutation.MultiMutateRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MultiRowMutation.MultiRowMutationService;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.regionserver.NoSuchColumnFamilyException;
 import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
 import org.apache.hadoop.io.DataInputBuffer;
@@ -3624,6 +3630,29 @@ public class TestFromClientSide {
   }
 
   @Test
+  public void testGet_NullQualifier() throws IOException {
+    HTable table = TEST_UTIL.createTable(Bytes.toBytes("testGet_NullQualifier"), FAMILY);
+    Put put = new Put(ROW);
+    put.add(FAMILY, QUALIFIER, VALUE);
+    table.put(put);
+
+    put = new Put(ROW);
+    put.add(FAMILY, null, VALUE);
+    table.put(put);
+    LOG.info("Row put");
+
+    Get get = new Get(ROW);
+    get.addColumn(FAMILY, null);
+    Result r = table.get(get);
+    assertEquals(1, r.size());
+
+    get = new Get(ROW);
+    get.addFamily(FAMILY);
+    r = table.get(get);
+    assertEquals(2, r.size());
+  }
+
+  @Test
   public void testGet_NonExistentRow() throws IOException {
     HTable table = TEST_UTIL.createTable(Bytes.toBytes("testGet_NonExistentRow"), FAMILY);
     Put put = new Put(ROW);
@@ -4175,16 +4204,22 @@ public class TestFromClientSide {
     final byte [] ROW1 = Bytes.toBytes("testRow1");
 
     HTable t = TEST_UTIL.createTable(TABLENAME, FAMILY);
-    List<Mutation> mrm = new ArrayList<Mutation>();
     Put p = new Put(ROW);
     p.add(FAMILY, QUALIFIER, VALUE);
-    mrm.add(p);
+    Mutate m1 = ProtobufUtil.toMutate(MutateType.PUT, p);
+
     p = new Put(ROW1);
     p.add(FAMILY, QUALIFIER, VALUE);
-    mrm.add(p);
-    MultiRowMutationProtocol mr = t.coprocessorProxy(
-        MultiRowMutationProtocol.class, ROW);
-    mr.mutateRows(mrm);
+    Mutate m2 = ProtobufUtil.toMutate(MutateType.PUT, p);
+
+    MultiMutateRequest.Builder mrmBuilder = MultiMutateRequest.newBuilder();
+    mrmBuilder.addMutationRequest(m1);
+    mrmBuilder.addMutationRequest(m2);
+    MultiMutateRequest mrm = mrmBuilder.build();
+    CoprocessorRpcChannel channel = t.coprocessorService(ROW);
+    MultiRowMutationService.BlockingInterface service = 
+       MultiRowMutationService.newBlockingStub(channel);
+    service.mutateRows(null, mrm);
     Get g = new Get(ROW);
     Result r = t.get(g);
     assertEquals(0, Bytes.compareTo(VALUE, r.getValue(FAMILY, QUALIFIER)));
@@ -4247,7 +4282,7 @@ public class TestFromClientSide {
     assertEquals(0, Bytes.compareTo(Bytes.add(v1,v2), r.getValue(FAMILY, QUALIFIERS[0])));
     assertEquals(0, Bytes.compareTo(Bytes.add(v2,v1), r.getValue(FAMILY, QUALIFIERS[1])));
   }
- 
+
   @Test
   public void testIncrementWithDeletes() throws Exception {
     LOG.info("Starting testIncrementWithDeletes");
@@ -4291,6 +4326,59 @@ public class TestFromClientSide {
       ht.increment(inc);
       fail("Should have thrown DoNotRetryIOException");
     } catch (DoNotRetryIOException iox) {
+      // success
+    }
+  }
+
+  @Test
+  public void testIncrementInvalidArguments() throws Exception {
+    LOG.info("Starting testIncrementInvalidArguments");
+    final byte[] TABLENAME = Bytes.toBytes("testIncrementInvalidArguments");
+    HTable ht = TEST_UTIL.createTable(TABLENAME, FAMILY);
+    final byte[] COLUMN = Bytes.toBytes("column");
+    try {
+      // try null row
+      ht.incrementColumnValue(null, FAMILY, COLUMN, 5);
+      fail("Should have thrown IOException");
+    } catch (IOException iox) {
+      // success
+    }
+    try {
+      // try null family
+      ht.incrementColumnValue(ROW, null, COLUMN, 5);
+      fail("Should have thrown IOException");
+    } catch (IOException iox) {
+      // success
+    }
+    try {
+      // try null qualifier
+      ht.incrementColumnValue(ROW, FAMILY, null, 5);
+      fail("Should have thrown IOException");
+    } catch (IOException iox) {
+      // success
+    }
+    // try null row
+    try {
+      Increment incNoRow = new Increment(null);
+      incNoRow.addColumn(FAMILY, COLUMN, 5);
+      fail("Should have thrown IllegalArgumentException");
+    } catch (IllegalArgumentException iax) {
+      // success
+    }
+    // try null family
+    try {
+      Increment incNoFamily = new Increment(ROW);
+      incNoFamily.addColumn(null, COLUMN, 5);
+      fail("Should have thrown IllegalArgumentException");
+    } catch (IllegalArgumentException iax) {
+      // success
+    }
+    // try null qualifier
+    try {
+      Increment incNoQualifier = new Increment(ROW);
+      incNoQualifier.addColumn(FAMILY, null, 5);
+      fail("Should have thrown IllegalArgumentException");
+    } catch (IllegalArgumentException iax) {
       // success
     }
   }
@@ -4415,6 +4503,10 @@ public class TestFromClientSide {
     threads.get(1).join();
     assertEquals(2, pool.getPoolSize());
 
+    //ensure that ThreadPoolExecutor knows that threads are finished.
+    while (pool.getCompletedTaskCount() < 2) {
+      Threads.sleep(1);
+    }
     // Now let's simulate adding a RS meaning that we'll go up to three
     // concurrent threads. The pool should not grow larger than three.
     pool.submit(threads.get(2));
@@ -4439,14 +4531,15 @@ public class TestFromClientSide {
     HTable table = TEST_UTIL.createTable(tableName, new byte[][] { FAMILY },
         conf, Integer.MAX_VALUE);
     table.setAutoFlush(true);
-    Put put = new Put(ROW);
-    put.add(FAMILY, QUALIFIER, VALUE);
 
+    final long ts = EnvironmentEdgeManager.currentTimeMillis();
     Get get = new Get(ROW);
     get.addColumn(FAMILY, QUALIFIER);
     get.setMaxVersions();
 
     for (int versions = 1; versions <= numVersions; versions++) {
+      Put put = new Put(ROW);
+      put.add(FAMILY, QUALIFIER, ts + versions, VALUE);
       table.put(put);
 
       Result result = table.get(get);
@@ -4476,14 +4569,15 @@ public class TestFromClientSide {
     final HTable table = TEST_UTIL.createTable(tableName,
         new byte[][] { FAMILY }, conf);
     table.setAutoFlush(true);
-    final Put put = new Put(ROW);
-    put.add(FAMILY, QUALIFIER, VALUE);
 
+    final long ts = EnvironmentEdgeManager.currentTimeMillis();
     final Get get = new Get(ROW);
     get.addColumn(FAMILY, QUALIFIER);
     get.setMaxVersions();
 
     for (int versions = 1; versions <= numVersions; versions++) {
+      Put put = new Put(ROW);
+      put.add(FAMILY, QUALIFIER, ts + versions, VALUE);
       table.put(put);
 
       Result result = table.get(get);
@@ -4508,6 +4602,8 @@ public class TestFromClientSide {
         @Override
         public Void call() {
           try {
+            Put put = new Put(ROW);
+            put.add(FAMILY, QUALIFIER, ts + versionsCopy, VALUE);
             table.put(put);
 
             Result result = table.get(get);
@@ -4636,7 +4732,7 @@ public class TestFromClientSide {
     assertEquals("Did not access all the regions in the table", numOfRegions,
         scanMetrics.countOfRegions.getCurrentIntervalValue());
 
-    // now, test that the metrics are still collected even if you don't call close, but do 
+    // now, test that the metrics are still collected even if you don't call close, but do
     // run past the end of all the records
     Scan scanWithoutClose = new Scan();
     scanWithoutClose.setAttribute(Scan.SCAN_ATTRIBUTES_METRICS_ENABLE, Bytes.toBytes(Boolean.TRUE));
@@ -4925,5 +5021,33 @@ public class TestFromClientSide {
     assertEquals(1, bar.length);
   }
 
+  @Test
+  public void testScan_NullQualifier() throws IOException {
+    HTable table = TEST_UTIL.createTable(Bytes.toBytes("testScan_NullQualifier"), FAMILY);
+    Put put = new Put(ROW);
+    put.add(FAMILY, QUALIFIER, VALUE);
+    table.put(put);
+
+    put = new Put(ROW);
+    put.add(FAMILY, null, VALUE);
+    table.put(put);
+    LOG.info("Row put");
+
+    Scan scan = new Scan();
+    scan.addColumn(FAMILY, null);
+
+    ResultScanner scanner = table.getScanner(scan);
+    Result[] bar = scanner.next(100);
+    assertEquals(1, bar.length);
+    assertEquals(1, bar[0].size());
+
+    scan = new Scan();
+    scan.addFamily(FAMILY);
+
+    scanner = table.getScanner(scan);
+    bar = scanner.next(100);
+    assertEquals(1, bar.length);
+    assertEquals(2, bar[0].size());
+  }
 }
 

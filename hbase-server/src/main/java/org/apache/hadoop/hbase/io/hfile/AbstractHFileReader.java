@@ -27,17 +27,16 @@ import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.fs.HFileSystem;
+import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
 import org.apache.hadoop.hbase.io.hfile.HFile.FileInfo;
-import org.apache.hadoop.hbase.regionserver.metrics.SchemaConfigured;
 import org.apache.hadoop.io.RawComparator;
 
 /**
  * Common functionality needed by all versions of {@link HFile} readers.
  */
 @InterfaceAudience.Private
-public abstract class AbstractHFileReader extends SchemaConfigured
-    implements HFile.Reader {
+public abstract class AbstractHFileReader implements HFile.Reader {
 
   /** Filesystem-level block reader for this HFile format version. */
   protected HFileBlock.FSReader fsBlockReader;
@@ -91,10 +90,6 @@ public abstract class AbstractHFileReader extends SchemaConfigured
   /** Block cache configuration. */
   protected final CacheConfig cacheConf;
 
-  protected AtomicLong cacheHits = new AtomicLong();
-  protected AtomicLong blockLoads = new AtomicLong();
-  protected AtomicLong metaLoads = new AtomicLong();
-
   /** Path of file */
   protected final Path path;
 
@@ -118,7 +113,6 @@ public abstract class AbstractHFileReader extends SchemaConfigured
       final long fileSize,
       final boolean closeIStream,
       final CacheConfig cacheConf, final HFileSystem hfs) {
-    super(null, path);
     this.trailer = trailer;
     this.compressAlgo = trailer.getCompressionCodec();
     this.cacheConf = cacheConf;
