@@ -568,7 +568,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     Path hbaseDir = createRootDir();
     Path oldLogDir = new Path(hbaseDir, ".oldlogs");
     Path dir = new Path(hbaseDir, "tests");
-    HLog log = new HLog(fs, dir, oldLogDir, getConfiguration());
+    HLog log = null;//new HLog(fs, dir, oldLogDir, getConfiguration());
     LOG.info("Hlog Created");
 
     ServerSocket[][] sock = new ServerSocket[nbDNtoKill][];
@@ -663,7 +663,7 @@ public class HBaseRecoveryTestingUtility extends HBaseTestingUtility {
     LOG.info("START checkHLog");
 
     // Now open a reader on the log
-    HLog.Reader reader = HLog.getReader(getDFSCluster().getFileSystem(), filename, getConfiguration());
+    HLog.Reader reader = null; //HLog.getReader(getDFSCluster().getFileSystem(), filename, getConfiguration());
     HLog.Entry entry = reader.next();
 
     checkHLogValues(entry, nbCol, hri);
