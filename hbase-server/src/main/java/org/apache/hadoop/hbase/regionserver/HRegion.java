@@ -364,7 +364,7 @@ public class HRegion implements HeapSize { // , Writable{
   private HTableDescriptor htableDescriptor = null;
   private RegionSplitPolicy splitPolicy;
 
-  private final MetricsRegion metricsRegion;
+  private final MetricsRegion metricsRegion = null;
 
   /**
    * Should only be used for testing purposes
@@ -388,7 +388,7 @@ public class HRegion implements HeapSize { // , Writable{
     this.coprocessorHost = null;
     this.scannerReadPoints = new ConcurrentHashMap<RegionScanner, Long>();
 
-    this.metricsRegion = new MetricsRegion(new MetricsRegionWrapperImpl(this));
+    //this.metricsRegion = new MetricsRegion(new MetricsRegionWrapperImpl(this));
   }
 
   /**
@@ -451,7 +451,7 @@ public class HRegion implements HeapSize { // , Writable{
     this.regiondir = getRegionDir(this.tableDir, encodedNameStr);
     this.scannerReadPoints = new ConcurrentHashMap<RegionScanner, Long>();
 
-    this.metricsRegion = new MetricsRegion(new MetricsRegionWrapperImpl(this));
+    //this.metricsRegion = new MetricsRegion(new MetricsRegionWrapperImpl(this));
 
     /*
      * timestamp.slop provides a server-side constraint on the timestamp. This
@@ -1024,7 +1024,7 @@ public class HRegion implements HeapSize { // , Writable{
         status.setStatus("Running coprocessor post-close hooks");
         this.coprocessorHost.postClose(abort);
       }
-      this.metricsRegion.close();
+      //this.metricsRegion.close();
       status.markComplete("Closed");
       LOG.info("Closed " + this);
       return result;
@@ -2331,11 +2331,11 @@ public class HRegion implements HeapSize { // , Writable{
       if (noOfPuts > 0) {
         // There were some Puts in the batch.
         double noOfMutations = noOfPuts + noOfDeletes;
-        this.metricsRegion.updatePut();
+        //this.metricsRegion.updatePut();
       }
       if (noOfDeletes > 0) {
         // There were some Deletes in the batch.
-        this.metricsRegion.updateDelete();
+        //this.metricsRegion.updateDelete();
       }
       if (!success) {
         for (int i = firstIndex; i < lastIndexExclusive; i++) {
@@ -4270,7 +4270,7 @@ public class HRegion implements HeapSize { // , Writable{
 
     // do after lock
 
-    this.metricsRegion.updateGet();
+    //this.metricsRegion.updateGet();
 
     return results;
   }
@@ -4657,7 +4657,7 @@ public class HRegion implements HeapSize { // , Writable{
       closeRegionOperation();
     }
 
-    this.metricsRegion.updateAppend();
+    //this.metricsRegion.updateAppend();
 
 
     if (flush) {
@@ -4795,7 +4795,7 @@ public class HRegion implements HeapSize { // , Writable{
         mvcc.completeMemstoreInsert(w);
       }
       closeRegionOperation();
-      this.metricsRegion.updateIncrement();
+      //this.metricsRegion.updateIncrement();
     }
 
     if (flush) {
