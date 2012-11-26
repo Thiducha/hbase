@@ -438,7 +438,11 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     createDirsAndSetProperties();
 
     // Error level to skip some warnings specific to the minicluster. See HBASE-4709
-    org.apache.log4j.Logger.getLogger("org.apache.hadoop.metrics2.*").setLevel(org.apache.log4j.Level.ERROR);
+    org.apache.log4j.Logger.getLogger(org.apache.hadoop.metrics2.util.MBeans.class).
+        setLevel(org.apache.log4j.Level.ERROR);
+    org.apache.log4j.Logger.getLogger(org.apache.hadoop.metrics2.impl.MetricsSystemImpl.class).
+        setLevel(org.apache.log4j.Level.ERROR);
+
 
     this.dfsCluster = new MiniDFSCluster(0, this.conf, servers, true, true,
       true, null, null, hosts, null);
