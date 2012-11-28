@@ -127,7 +127,7 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
       "; deleting unassigned node");
     try {
       // delete the opened znode only if the version matches.
-      if (true) return true;
+      //if (true) return true;
       return ZKAssign.deleteNode(server.getZooKeeper(),regionInfo.getEncodedName(), EventType.RS_ZK_REGION_OPENED, expectedVersion);
     } catch(KeeperException.NoNodeException e){
       // Getting no node exception here means that already the region has been opened.
