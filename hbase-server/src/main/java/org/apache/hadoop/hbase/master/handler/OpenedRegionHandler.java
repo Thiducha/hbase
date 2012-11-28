@@ -156,7 +156,7 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
     public void run() {
       for (; ; ) {
         try {
-          Thread.sleep(1);
+          Thread.sleep(2000);
         } catch (InterruptedException e) {
         }
         List<org.apache.hadoop.hbase.util.Pair<String, Integer>> inProgress = null;
