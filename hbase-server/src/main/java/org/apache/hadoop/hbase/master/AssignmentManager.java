@@ -1215,6 +1215,7 @@ public class AssignmentManager extends ZooKeeperListener {
     List<HRegionInfo> failedToOpenRegions = new ArrayList<HRegionInfo>();
     Map<String, Lock> locks = locker.acquireLocks(encodedNames);
     try {
+      List<org.apache.zookeeper.Op> opsCreate = new ArrayList<org.apache.zookeeper.Op>();
       AtomicInteger counter = new AtomicInteger(0);
       Map<String, Integer> offlineNodesVersions = new ConcurrentHashMap<String, Integer>();
       OfflineCallback cb = new OfflineCallback(
@@ -1224,18 +1225,19 @@ public class AssignmentManager extends ZooKeeperListener {
       for (HRegionInfo region : regions) {
         String encodedRegionName = region.getEncodedName();
         RegionState state = forceRegionStateToOffline(region, true);
-        if (state != null && asyncSetOfflineInZooKeeper(state, cb, destination)) {
+        if (state != null && asyncSetOfflineInZooKeeper(state, cb, destination, opsCreate)) {
           RegionPlan plan = new RegionPlan(region, state.getServerName(), destination);
           plans.put(encodedRegionName, plan);
           states.add(state);
         } else {
           LOG.warn("failed to force region state to offline or "
             + "failed to set it offline in ZK, will reassign later: " + region);
-          failedToOpenRegions.add(region); // assign individually later
+          failedToOpenRegions.add(region); //  assign individually later
           Lock lock = locks.remove(encodedRegionName);
           lock.unlock();
         }
       }
+
 
       watcher.getRecoverableZooKeeper().getZooKeeper().multi(opsCreate);
       OfflineCallback.ExistCallback cb2 = new OfflineCallback.ExistCallback(destination, counter, offlineNodesVersions);
@@ -2710,7 +2712,6 @@ public class AssignmentManager extends ZooKeeperListener {
   }
 
 
-  List<org.apache.zookeeper.Op> opsCreate = new ArrayList<org.apache.zookeeper.Op>();
   /**
    * Set region as OFFLINED up in zookeeper asynchronously.
    * @param state
@@ -2718,7 +2719,7 @@ public class AssignmentManager extends ZooKeeperListener {
    * updating zk).
    */
   private boolean asyncSetOfflineInZooKeeper(final RegionState state,
-      final AsyncCallback.StringCallback cb, final ServerName destination) {
+      final AsyncCallback.StringCallback cb, final ServerName destination, List<org.apache.zookeeper.Op> opsCreate) {
     if (!state.isClosed() && !state.isOffline()) {
       this.server.abort("Unexpected state trying to OFFLINE; " + state,
         new IllegalStateException());
