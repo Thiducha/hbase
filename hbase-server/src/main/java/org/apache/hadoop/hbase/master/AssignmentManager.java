@@ -1200,10 +1200,10 @@ public class AssignmentManager extends ZooKeeperListener {
    * @param regions Regions to assign.
    * @return true if successful
    */
-  static int ncall = 0;
+  static int gncall = 0;
   boolean assign(final ServerName destination,
       final List<HRegionInfo> regions) {
-    ncall++;
+    int ncall = ++gncall;
     int regionCount = regions.size();
     if (regionCount == 0) {
       return true;
