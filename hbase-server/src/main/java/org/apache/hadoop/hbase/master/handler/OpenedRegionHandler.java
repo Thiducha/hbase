@@ -31,6 +31,9 @@ import org.apache.hadoop.hbase.master.RegionState;
 import org.apache.hadoop.hbase.zookeeper.ZKAssign;
 import org.apache.zookeeper.KeeperException;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Handles OPENED region event on Master.
  */
@@ -121,14 +124,74 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
     }
   }
 
+  static class P extends Thread{
+    List<org.apache.hadoop.hbase.util.Pair<String, Integer>> toDelete =
+        new ArrayList<org.apache.hadoop.hbase.util.Pair<String, Integer>>();
+
+    synchronized public void add(String s, Integer e){
+      add(new org.apache.hadoop.hbase.util.Pair<String, Integer>(s, e) );
+    }
+
+
+    synchronized public void add(org.apache.hadoop.hbase.util.Pair<String, Integer> toAdd){
+      toDelete.add(toAdd);
+    }
+
+    Server server;
+    public P(Server s){
+      super.setDaemon(true);
+      server = s;
+    }
+
+    static  P instance = null;
+    public synchronized static P getInstance(Server s){
+      if (instance==null){
+        instance = new P(s);
+      }
+      return instance;
+    }
+
+    public void run() {
+      for (; ; ) {
+        try {
+          Thread.sleep(10000);
+        } catch (InterruptedException e) {
+        }
+        List<org.apache.hadoop.hbase.util.Pair<String, Integer>> inProgress = null;
+        synchronized (this){
+          if (!toDelete.isEmpty()){
+            inProgress = toDelete;
+            toDelete =
+                new ArrayList<org.apache.hadoop.hbase.util.Pair<String, Integer>>();
+          }
+        }
+        if (inProgress != null){
+          for (org.apache.hadoop.hbase.util.Pair<String, Integer> pa:inProgress){
+            try {
+              ZKAssign.deleteNode(
+                  server.getZooKeeper(),
+                  pa.getFirst(), EventType.RS_ZK_REGION_OPENED, pa.getSecond());
+            } catch (KeeperException e) {
+            }
+          }
+        }
+
+      }
+
+    }
+  }
+
+  //public static
+
   private boolean deleteOpenedNode(int expectedVersion) {
     debugLog(regionInfo, "Handling OPENED event for " +
       this.regionInfo.getRegionNameAsString() + " from " + this.sn.toString() +
       "; deleting unassigned node");
     try {
       // delete the opened znode only if the version matches.
-      //if (true) return true;
-      return ZKAssign.deleteNode(server.getZooKeeper(),regionInfo.getEncodedName(), EventType.RS_ZK_REGION_OPENED, expectedVersion);
+      P.getInstance(server).add(regionInfo.getEncodedName(), expectedVersion);
+      if (true) return true;
+       return ZKAssign.deleteNode(server.getZooKeeper(),regionInfo.getEncodedName(), EventType.RS_ZK_REGION_OPENED, expectedVersion);
     } catch(KeeperException.NoNodeException e){
       // Getting no node exception here means that already the region has been opened.
       LOG.warn("The znode of the region " + regionInfo.getRegionNameAsString() +
