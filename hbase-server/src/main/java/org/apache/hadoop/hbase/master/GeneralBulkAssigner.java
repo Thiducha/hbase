@@ -81,6 +81,8 @@ public class GeneralBulkAssigner extends BulkAssigner {
   @Override
   protected boolean waitUntilDone(final long timeout)
   throws InterruptedException {
+
+    LOG.info("****** START  waitUntilDone");
     Set<HRegionInfo> regionSet = new HashSet<HRegionInfo>();
     for (List<HRegionInfo> regionList : bulkPlan.values()) {
       regionSet.addAll(regionList);
@@ -99,6 +101,7 @@ public class GeneralBulkAssigner extends BulkAssigner {
         reassignFailedPlans();
       }
     }
+    LOG.info("****** POOL TERMINATED  waitUntilDone");
     if (!pool.isTerminated()) {
       LOG.warn("bulk assigner is still running after "
         + (System.currentTimeMillis() - startTime) + "ms, shut it down now");
@@ -137,6 +140,7 @@ public class GeneralBulkAssigner extends BulkAssigner {
         regionStates.waitForUpdate(100);
       }
     }
+    LOG.info("****** regionSet.isEmpty  waitUntilDone");
 
     if (LOG.isDebugEnabled()) {
       long elapsedTime = System.currentTimeMillis() - startTime;
