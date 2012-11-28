@@ -1242,8 +1242,10 @@ public class AssignmentManager extends ZooKeeperListener {
       watcher.getRecoverableZooKeeper().getZooKeeper().multi(opsCreate);
       OfflineCallback.ExistCallback cb2 = new OfflineCallback.ExistCallback(destination, counter, offlineNodesVersions);
       ZooKeeper zk = watcher.getRecoverableZooKeeper().getZooKeeper();
+      int i = 0;
       for (org.apache.zookeeper.Op op:opsCreate  ){
-        zk.exists(op.getPath(), watcher, cb2, null);
+        zk.exists(op.getPath(), watcher, cb2, states.get(i));
+        i++;
       }
 
 
