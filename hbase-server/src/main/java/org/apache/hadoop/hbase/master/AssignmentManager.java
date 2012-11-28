@@ -82,8 +82,10 @@ import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.KeeperException.NodeExistsException;
+import org.apache.zookeeper.OpResult;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.Stat;
+import sun.util.LocaleServiceProviderPool;
 
 /**
  * Manages and performs region assignment.
@@ -1230,6 +1232,7 @@ public class AssignmentManager extends ZooKeeperListener {
           plans.put(encodedRegionName, plan);
           states.add(state);
         } else {
+          System.exit(-1);
           LOG.warn("failed to force region state to offline or "
             + "failed to set it offline in ZK, will reassign later: " + region);
           failedToOpenRegions.add(region); //  assign individually later
@@ -1239,7 +1242,12 @@ public class AssignmentManager extends ZooKeeperListener {
       }
 
 
-      watcher.getRecoverableZooKeeper().getZooKeeper().multi(opsCreate);
+      LOG.info("********************** BEFORE MULTI");
+      List<OpResult> res= watcher.getRecoverableZooKeeper().getZooKeeper().multi(opsCreate);
+      LOG.info("********************** AFTER MULTI");
+      for (OpResult r:res){
+      }
+
       OfflineCallback.ExistCallback cb2 = new OfflineCallback.ExistCallback(destination, counter, offlineNodesVersions);
       ZooKeeper zk = watcher.getRecoverableZooKeeper().getZooKeeper();
       int ii = 0;
@@ -1247,6 +1255,7 @@ public class AssignmentManager extends ZooKeeperListener {
         zk.exists(op.getPath(), watcher, cb2, states.get(ii));
         ii++;
       }
+      LOG.info("********************** AFTER EXISTS");
 
 
       // Wait until all unassigned nodes have been put up and watchers set.
@@ -1265,6 +1274,9 @@ public class AssignmentManager extends ZooKeeperListener {
       if (server.isStopped()) {
         return false;
       }
+
+      LOG.info("********************** AFTER WAIT");
+
 
       // Add region plans, so we can updateTimers when one region is opened so
       // that unnecessary timeout on RIT is reduced.
@@ -2746,6 +2758,7 @@ public class AssignmentManager extends ZooKeeperListener {
     try {
       ZKAssign.asyncCreateNodeOffline(watcher, state.getRegion(), destination, cb, state);
     } catch (KeeperException e) {
+
       if (e instanceof NodeExistsException) {
         LOG.warn("Node for " + state.getRegion() + " already exists");
       } else {
