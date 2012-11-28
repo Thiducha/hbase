@@ -1246,7 +1246,7 @@ public class AssignmentManager extends ZooKeeperListener {
 
       LOG.info("********************** BEFORE MULTI "+ncall);
       List<OpResult> res= watcher.getRecoverableZooKeeper().getZooKeeper().multi(opsCreate);
-      LOG.info("********************** AFTER MULTI"+ncall);
+      LOG.info("********************** AFTER MULTI "+ncall);
       for (int i=0; i<res.size(); ++i){
         //if (res.get(i).getType())
       }
@@ -1258,7 +1258,7 @@ public class AssignmentManager extends ZooKeeperListener {
         zk.exists(op.getPath(), watcher, cb2, states.get(ii));
         ii++;
       }
-      LOG.info("********************** AFTER EXISTS"+ncall);
+      LOG.info("********************** AFTER EXISTS "+ncall);
 
 
       // Wait until all unassigned nodes have been put up and watchers set.
@@ -1278,7 +1278,7 @@ public class AssignmentManager extends ZooKeeperListener {
         return false;
       }
 
-      LOG.info("********************** AFTER WAIT"+ncall);
+      LOG.info("********************** AFTER WAIT "+ncall);
 
 
       // Add region plans, so we can updateTimers when one region is opened so
@@ -1304,6 +1304,9 @@ public class AssignmentManager extends ZooKeeperListener {
         }
       }
 
+      LOG.info("********************** AFTER CHECKVERSION "+ncall);
+
+
       // Move on to open regions.
       try {
         // Send OPEN RPC. If it fails on a IOE or RemoteException, the
@@ -1312,9 +1315,13 @@ public class AssignmentManager extends ZooKeeperListener {
           this.server.getConfiguration().
             getLong("hbase.regionserver.rpc.startup.waittime", 60000);
         for (int i = 1; i <= maximumAttempts && !server.isStopped(); i++) {
+          LOG.info("********************** BEFORE OPEN ON RS TRY "+i+ " ncall="+ ncall);
+
           try {
             List<RegionOpeningState> regionOpeningStateList = serverManager
               .sendRegionOpen(destination, regionOpenInfos);
+            LOG.info("********************** AFTER OPEN ON RS TRY "+i+ " ncall="+ ncall);
+
             if (regionOpeningStateList == null) {
               // Failed getting RPC connection to this server
               return false;
@@ -1384,6 +1391,8 @@ public class AssignmentManager extends ZooKeeperListener {
         lock.unlock();
       }
     }
+
+    LOG.info("********************** AFTER BULK ASSIGN  ncall="+ ncall);
 
     if (!failedToOpenRegions.isEmpty()) {
       for (HRegionInfo region : failedToOpenRegions) {
