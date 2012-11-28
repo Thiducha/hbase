@@ -1245,7 +1245,8 @@ public class AssignmentManager extends ZooKeeperListener {
       LOG.info("********************** BEFORE MULTI");
       List<OpResult> res= watcher.getRecoverableZooKeeper().getZooKeeper().multi(opsCreate);
       LOG.info("********************** AFTER MULTI");
-      for (OpResult r:res){
+      for (int i=0; i<res.size(); ++i){
+        //if (res.get(i).getType())
       }
 
       OfflineCallback.ExistCallback cb2 = new OfflineCallback.ExistCallback(destination, counter, offlineNodesVersions);
