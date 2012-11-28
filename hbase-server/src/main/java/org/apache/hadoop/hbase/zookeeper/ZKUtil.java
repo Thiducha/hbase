@@ -720,7 +720,7 @@ public class ZKUtil {
     return (System.getProperty("java.security.auth.login.config") != null);
   }
 
-  private static ArrayList<ACL> createACL(ZooKeeperWatcher zkw, String node) {
+  public static ArrayList<ACL> createACL(ZooKeeperWatcher zkw, String node) {
     if (isSecureZooKeeper(zkw.getConfiguration())) {
       // Certain znodes are accessed directly by the client,
       // so they must be readable by non-authenticated clients

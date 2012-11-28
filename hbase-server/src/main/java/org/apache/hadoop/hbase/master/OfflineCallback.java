@@ -78,7 +78,7 @@ public class OfflineCallback implements StringCallback {
    * Callback handler for the exists call that sets watcher on unassigned znodes.
    * Used during bulk assign on startup.
    */
-  static class ExistCallback implements StatCallback {
+  public static class ExistCallback implements StatCallback {
     private final Log LOG = LogFactory.getLog(ExistCallback.class);
     private final Map<String, Integer> offlineNodesVersions;
     private final AtomicInteger counter;

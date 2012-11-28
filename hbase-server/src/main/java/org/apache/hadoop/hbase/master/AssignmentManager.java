@@ -78,9 +78,11 @@ import org.apache.hadoop.hbase.zookeeper.ZKUtil;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperListener;
 import org.apache.hadoop.ipc.RemoteException;
 import org.apache.zookeeper.AsyncCallback;
+import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.KeeperException.NodeExistsException;
+import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.Stat;
 
 /**
@@ -1235,6 +1237,14 @@ public class AssignmentManager extends ZooKeeperListener {
         }
       }
 
+      watcher.getRecoverableZooKeeper().getZooKeeper().multi(opsCreate);
+      OfflineCallback.ExistCallback cb2 = new OfflineCallback.ExistCallback(destination, counter, offlineNodesVersions);
+      ZooKeeper zk = watcher.getRecoverableZooKeeper().getZooKeeper();
+      for (org.apache.zookeeper.Op op:opsCreate  ){
+        zk.exists(op.getPath(), watcher, cb2, null);
+      }
+
+
       // Wait until all unassigned nodes have been put up and watchers set.
       int total = states.size();
       for (int oldCounter = 0; !server.isStopped();) {
@@ -1347,6 +1357,9 @@ public class AssignmentManager extends ZooKeeperListener {
       } catch (InterruptedException e) {
         throw new RuntimeException(e);
       }
+    } catch (InterruptedException e) {
+    } catch (KeeperException e) {
+      e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
     } finally {
       for (Lock lock : locks.values()) {
         lock.unlock();
@@ -2696,6 +2709,8 @@ public class AssignmentManager extends ZooKeeperListener {
     }
   }
 
+
+  List<org.apache.zookeeper.Op> opsCreate = new ArrayList<org.apache.zookeeper.Op>();
   /**
    * Set region as OFFLINED up in zookeeper asynchronously.
    * @param state
@@ -2709,11 +2724,24 @@ public class AssignmentManager extends ZooKeeperListener {
         new IllegalStateException());
       return false;
     }
-    regionStates.updateRegionState(
-      state.getRegion(), RegionState.State.OFFLINE);
+    regionStates.updateRegionState(state.getRegion(), RegionState.State.OFFLINE);
+
+    RegionTransition rt =
+        RegionTransition.createRegionTransition(EventType.M_ZK_REGION_OFFLINE,
+            state.getRegion().getRegionName(), destination);
+
+    String node =  ZKUtil.joinZNode(watcher.assignmentZNode, state.getRegion().getEncodedName());
+
+    opsCreate.add(org.apache.zookeeper.Op.create(
+        node, rt.toByteArray(), ZKUtil.createACL(watcher, node), CreateMode.PERSISTENT));
+
+    if (true){
+      return true;
+    }
+    //ZKUtil.asyncCreate(watcher, node, rt.toByteArray(), cb, state);
+
     try {
-      ZKAssign.asyncCreateNodeOffline(watcher, state.getRegion(),
-        destination, cb, state);
+      ZKAssign.asyncCreateNodeOffline(watcher, state.getRegion(), destination, cb, state);
     } catch (KeeperException e) {
       if (e instanceof NodeExistsException) {
         LOG.warn("Node for " + state.getRegion() + " already exists");
