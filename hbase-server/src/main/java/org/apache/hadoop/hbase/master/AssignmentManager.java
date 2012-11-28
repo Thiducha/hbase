@@ -1200,8 +1200,10 @@ public class AssignmentManager extends ZooKeeperListener {
    * @param regions Regions to assign.
    * @return true if successful
    */
+  static int ncall = 0;
   boolean assign(final ServerName destination,
       final List<HRegionInfo> regions) {
+    ncall++;
     int regionCount = regions.size();
     if (regionCount == 0) {
       return true;
@@ -1242,9 +1244,9 @@ public class AssignmentManager extends ZooKeeperListener {
       }
 
 
-      LOG.info("********************** BEFORE MULTI");
+      LOG.info("********************** BEFORE MULTI "+ncall);
       List<OpResult> res= watcher.getRecoverableZooKeeper().getZooKeeper().multi(opsCreate);
-      LOG.info("********************** AFTER MULTI");
+      LOG.info("********************** AFTER MULTI"+ncall);
       for (int i=0; i<res.size(); ++i){
         //if (res.get(i).getType())
       }
@@ -1256,7 +1258,7 @@ public class AssignmentManager extends ZooKeeperListener {
         zk.exists(op.getPath(), watcher, cb2, states.get(ii));
         ii++;
       }
-      LOG.info("********************** AFTER EXISTS");
+      LOG.info("********************** AFTER EXISTS"+ncall);
 
 
       // Wait until all unassigned nodes have been put up and watchers set.
@@ -1276,7 +1278,7 @@ public class AssignmentManager extends ZooKeeperListener {
         return false;
       }
 
-      LOG.info("********************** AFTER WAIT");
+      LOG.info("********************** AFTER WAIT"+ncall);
 
 
       // Add region plans, so we can updateTimers when one region is opened so
