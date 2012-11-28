@@ -147,9 +147,11 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
     public synchronized static P getInstance(Server s){
       if (instance==null){
         instance = new P(s);
+        instance.start();
       }
       return instance;
     }
+
 
     public void run() {
       for (; ; ) {
