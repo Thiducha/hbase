@@ -33,6 +33,7 @@ import org.apache.zookeeper.KeeperException;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Handles OPENED region event on Master.
@@ -86,7 +87,7 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
   public HRegionInfo getHRegionInfo() {
     return this.regionInfo;
   }
-  
+
   @Override
   public String toString() {
     String name = "UnknownServerName";
@@ -125,16 +126,19 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
   }
 
   static class P extends Thread{
-    List<org.apache.hadoop.hbase.util.Pair<String, Integer>> toDelete =
-        new ArrayList<org.apache.hadoop.hbase.util.Pair<String, Integer>>();
+    List<org.apache.hadoop.hbase.util.Triple<String, Integer, Object>> toDelete =
+        new ArrayList<org.apache.hadoop.hbase.util.Triple<String, Integer, Object>>();
 
-    synchronized public void add(String s, Integer e){
-      add(new org.apache.hadoop.hbase.util.Pair<String, Integer>(s, e) );
+    synchronized public Object add(String s, Integer e){
+      Object notifier = new Object();
+      add(new org.apache.hadoop.hbase.util.Triple<String, Integer, Object>(s, e, notifier) );
+      return notifier;
     }
 
 
-    synchronized public void add(org.apache.hadoop.hbase.util.Pair<String, Integer> toAdd){
+    synchronized public void add(org.apache.hadoop.hbase.util.Triple<String, Integer, Object> toAdd){
       toDelete.add(toAdd);
+      lastUpdate.set(System.currentTimeMillis());
     }
 
     Server server;
@@ -144,6 +148,7 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
     }
 
     static  P instance = null;
+    AtomicLong lastUpdate = new AtomicLong(0);
     public synchronized static P getInstance(Server s){
       if (instance==null){
         instance = new P(s);
@@ -154,32 +159,40 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
 
 
     public void run() {
+      int nbNloop = 0;
       for (; ; ) {
         try {
-          Thread.sleep(2000);
+          Thread.sleep(200);
         } catch (InterruptedException e) {
         }
-        List<org.apache.hadoop.hbase.util.Pair<String, Integer>> inProgress = null;
-        synchronized (this){
-          if (!toDelete.isEmpty()){
-            inProgress = toDelete;
-            toDelete =
-                new ArrayList<org.apache.hadoop.hbase.util.Pair<String, Integer>>();
+        nbNloop++;
+        // max 2s, or the last update is more than 200ms
+        if (nbNloop>10 || System.currentTimeMillis() - 200 > lastUpdate.get()) {
+          nbNloop = 0;
+          List<org.apache.hadoop.hbase.util.Triple<String, Integer, Object>> inProgress = null;
+          synchronized (this) {
+            if (!toDelete.isEmpty()) {
+              inProgress = toDelete;
+              toDelete =
+                  new ArrayList<org.apache.hadoop.hbase.util.Triple<String, Integer, Object>>();
+            }
           }
-        }
-        if (inProgress != null){
-          for (org.apache.hadoop.hbase.util.Pair<String, Integer> pa:inProgress){
-            try {
-              ZKAssign.deleteNode(
-                  server.getZooKeeper(),
-                  pa.getFirst(), EventType.RS_ZK_REGION_OPENED, pa.getSecond());
-            } catch (KeeperException e) {
+          if (inProgress != null) {
+            for (org.apache.hadoop.hbase.util.Triple<String, Integer, Object> pa : inProgress) {
+              try {
+                ZKAssign.deleteNode(
+                    server.getZooKeeper(),
+                    pa.getFirst(), EventType.RS_ZK_REGION_OPENED, pa.getSecond());
+                synchronized (pa.getThird()){
+                  pa.getThird().notifyAll();
+                }
+
+              } catch (KeeperException e) {
+              }
             }
           }
         }
-
       }
-
     }
   }
 
@@ -191,9 +204,11 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
       "; deleting unassigned node");
     try {
       // delete the opened znode only if the version matches.
-      P.getInstance(server).add(regionInfo.getEncodedName(), expectedVersion);
+      Object o = P.getInstance(server).add(regionInfo.getEncodedName(), expectedVersion);
+      o.wait();
+
       if (true) return true;
-       return ZKAssign.deleteNode(server.getZooKeeper(),regionInfo.getEncodedName(), EventType.RS_ZK_REGION_OPENED, expectedVersion);
+       return ZKAssign.deleteNode (server.getZooKeeper(),regionInfo.getEncodedName(), EventType.RS_ZK_REGION_OPENED, expectedVersion);
     } catch(KeeperException.NoNodeException e){
       // Getting no node exception here means that already the region has been opened.
       LOG.warn("The znode of the region " + regionInfo.getRegionNameAsString() +
@@ -202,6 +217,7 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
     } catch (KeeperException e) {
       server.abort("Error deleting OPENED node in ZK (" +
         regionInfo.getRegionNameAsString() + ")", e);
+    } catch (InterruptedException e) {
     }
     return false;
   }

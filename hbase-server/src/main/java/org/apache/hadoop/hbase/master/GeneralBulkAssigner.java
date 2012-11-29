@@ -93,6 +93,7 @@ public class GeneralBulkAssigner extends BulkAssigner {
     int regionCount = regionSet.size();
     long startTime = System.currentTimeMillis();
     long rpcWaitTime = startTime + timeout;
+
     while (!server.isStopped() && !pool.isTerminated()
         && rpcWaitTime > System.currentTimeMillis()) {
       if (failedPlans.isEmpty()) {
@@ -101,6 +102,11 @@ public class GeneralBulkAssigner extends BulkAssigner {
         reassignFailedPlans();
       }
     }
+
+    // When we're here, we've asked to the region server to open the regions, but it's not
+    //  done yet.
+
+
     LOG.info("****** POOL TERMINATED  waitUntilDone");
     if (!pool.isTerminated()) {
       LOG.warn("bulk assigner is still running after "
@@ -125,7 +131,8 @@ public class GeneralBulkAssigner extends BulkAssigner {
     long endTime = Math.max(System.currentTimeMillis(), rpcWaitTime)
       + perRegionOpenTimeGuesstimate * (reassigningRegions + 1);
     RegionStates regionStates = assignmentManager.getRegionStates();
-    // We're not synchronizing on regionsInTransition now because we don't use any iterator.
+
+    // That's where we're really waiting: we want the regions to be really assigned here
     while (!regionSet.isEmpty() && !server.isStopped() && endTime > System.currentTimeMillis()) {
       Iterator<HRegionInfo> regionInfoIterator = regionSet.iterator();
       while (regionInfoIterator.hasNext()) {
