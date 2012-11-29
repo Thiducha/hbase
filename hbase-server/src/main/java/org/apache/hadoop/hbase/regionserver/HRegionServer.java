@@ -1206,6 +1206,7 @@ public class  HRegionServer implements ClientProtocol,
       this.rootDir = new Path(this.conf.get(HConstants.HBASE_DIR));
       this.tableDescriptors = new FSTableDescriptors(this.fs, this.rootDir, true);
       this.hlog = setupWALAndReplication();
+      this.hlogForMeta = setupMetaWAL();
       // Init in here rather than in constructor after thread name has been set
       this.metricsRegionServer = new MetricsRegionServer(new MetricsRegionServerWrapperImpl(this));
       startServiceThreads();
