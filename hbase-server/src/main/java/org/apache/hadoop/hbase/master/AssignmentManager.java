@@ -207,7 +207,7 @@ public class AssignmentManager extends ZooKeeperListener {
     this.regionStates = new RegionStates(server, serverManager);
 
     //Why this vs. a single ExecutorService
-    int workers = conf.getInt("hbase.assignment.zkevent.workers", 500);
+    int workers = conf.getInt("hbase.assignment.zkevent.workers", 50);
     zkEventWorkers = new java.util.concurrent.ExecutorService[workers];
     ThreadFactory threadFactory =
       Threads.newDaemonThreadFactory("am-zkevent-worker");
