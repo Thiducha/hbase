@@ -366,6 +366,10 @@ public class  HRegionServer implements ClientProtocol,
   // HLog and HLog roller. log is protected rather than private to avoid
   // eclipse warning when accessed by inner classes
   protected volatile HLog hlog;
+  // Optionally, the meta updates are written to a different hlog. If this
+  // regionserver holds meta, then this field will be non-null.
+  protected volatile HLog hlogForMeta;
+  
   LogRoller hlogRoller;
 
   // flag set after we're done setting up server threads (used for testing)
@@ -1401,9 +1405,40 @@ public class  HRegionServer implements ClientProtocol,
   }
 
   /**
+   * Setup WAL log and replication if enabled.
+   * Replication setup is done in here because it wants to be hooked up to WAL.
+   * @return A WAL instance.
+   * @throws IOException
+   */
+  public HLog setupMetaWAL() throws IOException {
+    if (this.hlogForMeta == null) {
+      final String logName
+      = HLogUtil.getHLogDirectoryName(this.serverNameFromMasterPOV.toString());
+
+      Path logdir = new Path(rootDir, logName);
+      if (LOG.isDebugEnabled()) LOG.debug("mmmm logdir=" + logdir);
+
+      return instantiateMetaHLog(rootDir, logName);
+    }
+    return this.hlogForMeta;
+  }
+
+  /**
+   * Called by {@link #setupMetaWAL()} creating WAL instance.
+   * @param rootdir
+   * @param logName
+   * @return WAL instance.
+   * @throws IOException
+   */
+  protected HLog instantiateMetaHLog(Path rootdir, String logName) throws IOException {
+    return HLogFactory.createMetaHLog(this.fs.getBackingFs(), rootdir, logName, this.conf,
+        getWALActionListeners(), this.serverNameFromMasterPOV.toString());
+  }
+
+  /**
    * Called by {@link #setupWALAndReplication()} creating WAL instance.
-   * @param logdir
-   * @param oldLogDir
+   * @param rootdir
+   * @param logName
    * @return WAL instance.
    * @throws IOException
    */
@@ -3970,5 +4005,15 @@ public class  HRegionServer implements ClientProtocol,
     public RegionScannerHolder(RegionScanner s) {
       this.s = s;
     }
+  }
+
+  @Override
+  public HLog getMetaWAL() {
+    return this.hlogForMeta;
+  }
+
+  @Override
+  public HLog getMetaWAL() {
+    return this.hlogForMeta;
   }
 }
