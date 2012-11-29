@@ -927,6 +927,7 @@ public class AssignmentManager extends ZooKeeperListener {
   @Override
   public void nodeDeleted(final String path) {
     if (path.startsWith(watcher.assignmentZNode)) {
+      // likely to ensure ensure that the regions are handled by the same worker...
       int wi = Math.abs(path.hashCode() % zkEventWorkers.length);
       // do the job in a separate thread as we're called in the zk#process thread
       zkEventWorkers[wi].submit(new Runnable() {
