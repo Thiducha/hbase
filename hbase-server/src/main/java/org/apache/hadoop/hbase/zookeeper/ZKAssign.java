@@ -18,6 +18,7 @@
  */
 package org.apache.hadoop.hbase.zookeeper;
 
+import java.nio.channels.AsynchronousCloseException;
 import java.util.List;
 
 import org.apache.commons.logging.Log;
@@ -433,6 +434,46 @@ public class ZKAssign {
         regionName + " in expected state " + expectedState));
     return true;
   }
+
+  public static boolean deleteNodeAS(ZooKeeperWatcher zkw, String regionName,
+                                   EventType expectedState, int expectedVersion,
+                                   AsyncCallback.VoidCallback cb,
+                                   Object notifier
+                                   )
+      throws KeeperException, KeeperException.NoNodeException {
+    LOG.debug(zkw.prefix("Deleting existing unassigned " +
+        "node for " + regionName + " that is in expected state " + expectedState));
+    String node = getNodeName(zkw, regionName);
+    zkw.sync(node);
+    Stat stat = new Stat();
+    byte [] bytes = ZKUtil.getDataNoWatch(zkw, node, stat);
+    if (bytes == null) {
+      // If it came back null, node does not exist.
+      throw KeeperException.create(Code.NONODE);
+    }
+    RegionTransition rt = getRegionTransition(bytes);
+    EventType et = rt.getEventType();
+    if (!et.equals(expectedState)) {
+      LOG.warn(zkw.prefix("Attempting to delete unassigned node " + regionName + " in " +
+          expectedState + " state but node is in " + et + " state"));
+      return false;
+    }
+    if (expectedVersion != -1
+        && stat.getVersion() != expectedVersion) {
+      LOG.warn("The node " + regionName + " we are trying to delete is not" +
+          " the expected one. Got a version mismatch");
+      return false;
+    }
+
+    zkw.getRecoverableZooKeeper().getZooKeeper().delete(
+        node, stat.getVersion(), cb, notifier
+    );
+
+    LOG.debug(zkw.prefix("Successfully ask async deletion unassigned node for region " +
+        regionName + " in expected state " + expectedState));
+    return true;
+  }
+
 
   /**
    * Deletes all unassigned nodes regardless of their state.

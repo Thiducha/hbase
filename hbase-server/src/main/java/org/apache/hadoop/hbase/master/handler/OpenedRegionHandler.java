@@ -29,6 +29,7 @@ import org.apache.hadoop.hbase.executor.EventHandler;
 import org.apache.hadoop.hbase.master.AssignmentManager;
 import org.apache.hadoop.hbase.master.RegionState;
 import org.apache.hadoop.hbase.zookeeper.ZKAssign;
+import org.apache.zookeeper.AsyncCallback;
 import org.apache.zookeeper.KeeperException;
 
 import java.util.ArrayList;
@@ -140,6 +141,18 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
       return notifier;
     }
 
+    static AsyncCallback.VoidCallback cb = new AsyncCallback.VoidCallback(){
+
+      @Override
+      public void processResult(int rc, String path, final Object ctx) {
+        synchronized (ctx){
+          ctx.notifyAll();
+        }
+
+      }
+    };
+
+
 
     synchronized public void add(org.apache.hadoop.hbase.util.Triple<String, Integer, DeleteResult> toAdd){
       toDelete.add(toAdd);
@@ -185,16 +198,20 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
           if (inProgress != null) {
             for (org.apache.hadoop.hbase.util.Triple<String, Integer, DeleteResult> pa : inProgress) {
               try {
-                pa.getThird().res = ZKAssign.deleteNode(
+                pa.getThird().res = ZKAssign.deleteNodeAS(
                     server.getZooKeeper(),
-                    pa.getFirst(), EventType.RS_ZK_REGION_OPENED, pa.getSecond());
+                    pa.getFirst(), EventType.RS_ZK_REGION_OPENED, pa.getSecond(),
+                    cb,pa.getThird()
+                );
+
+                if (!pa.getThird().res){
+                  synchronized (pa.getThird()){
+                    pa.getThird().notifyAll();
+                  }
+                }
 
               } catch (KeeperException e) {
                 pa.getThird().ex = e;
-              }  finally {
-                synchronized (pa.getThird()){
-                  pa.getThird().notifyAll();
-                }
               }
             }
           }
