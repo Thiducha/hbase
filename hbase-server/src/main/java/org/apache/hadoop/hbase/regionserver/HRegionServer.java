@@ -4011,9 +4011,4 @@ public class  HRegionServer implements ClientProtocol,
   public HLog getMetaWAL() {
     return this.hlogForMeta;
   }
-
-  @Override
-  public HLog getMetaWAL() {
-    return this.hlogForMeta;
-  }
 }
