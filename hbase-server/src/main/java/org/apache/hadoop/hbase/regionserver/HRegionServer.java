@@ -1614,7 +1614,6 @@ public class  HRegionServer implements ClientProtocol,
       return false;
     }
 
-    LOG.info("AAAAA 3 lease = "+leases);
     // Verify that all threads are alive
     if (!(leases != null && hlogRoller != null && metaHlogRoller != null &&
         cacheFlusher != null && leases.isAlive()
