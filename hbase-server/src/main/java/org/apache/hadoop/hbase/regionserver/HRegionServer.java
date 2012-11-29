@@ -222,6 +222,7 @@ import com.google.common.base.Function;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
+import sun.util.LocaleServiceProviderPool;
 
 import static org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceRequest;
 import static org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceResponse;
@@ -1608,8 +1609,10 @@ public class  HRegionServer implements ClientProtocol,
       // File system problem
       return false;
     }
+
+    LOG.info("AAAAA lease = "+leases);
     // Verify that all threads are alive
-    if (!(leases.isAlive()
+    if (!(leases != null && leases.isAlive()
         && cacheFlusher.isAlive() && hlogRoller.isAlive() && metaHlogRoller.isAlive()
         && this.compactionChecker.isAlive())) {
       LOG.info("ISALIVE: " + leases.isAlive() + " " +cacheFlusher.isAlive() + " "+ this.compactionChecker.isAlive() + " " + hlogRoller.isAlive() + " " + metaHlogRoller.isAlive()); //REMOVETHIS
