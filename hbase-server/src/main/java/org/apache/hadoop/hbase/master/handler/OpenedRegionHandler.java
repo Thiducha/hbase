@@ -179,13 +179,15 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
     public void run() {
       int nbNloop = 0;
       for (; ; ) {
+        nbNloop++;
         try {
           Thread.sleep(200);
         } catch (InterruptedException e) {
+          // We can't stop, but we're going to consider this as a "hurry up" query
+          nbNloop = Integer.MAX_VALUE;
         }
-        nbNloop++;
         // max 2s, or the last update is more than 200ms
-        if (nbNloop>10 || System.currentTimeMillis() - 200 > lastUpdate.get()) {
+        if (nbNloop>100 || System.currentTimeMillis() - 2000 > lastUpdate.get()) {
           nbNloop = 0;
           List<org.apache.hadoop.hbase.util.Triple<String, Integer, DeleteResult>> inProgress = null;
           synchronized (this) {
@@ -201,7 +203,7 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
                 pa.getThird().res = ZKAssign.deleteNodeAS(
                     server.getZooKeeper(),
                     pa.getFirst(), EventType.RS_ZK_REGION_OPENED, pa.getSecond(),
-                    cb,pa.getThird()
+                    cb, pa.getThird()
                 );
 
                 if (!pa.getThird().res){
