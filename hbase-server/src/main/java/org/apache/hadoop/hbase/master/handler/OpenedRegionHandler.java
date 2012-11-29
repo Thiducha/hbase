@@ -230,7 +230,7 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
       // delete the opened znode only if the version matches.
       DeleteResult o = P.getInstance(server).add(regionInfo.getEncodedName(), expectedVersion);
       synchronized (o){
-        o.wait();
+        //o.wait();
       }
       if (o.ex != null) throw o.ex;
       return o.res;
@@ -243,8 +243,6 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
     } catch (KeeperException e) {
       server.abort("Error deleting OPENED node in ZK (" +
         regionInfo.getRegionNameAsString() + ")", e);
-    } catch (InterruptedException e) {
-      return false;
     }
     return false;
   }

@@ -206,7 +206,8 @@ public class AssignmentManager extends ZooKeeperListener {
     this.metricsMaster = metricsMaster;// can be null only with tests.
     this.regionStates = new RegionStates(server, serverManager);
 
-    int workers = conf.getInt("hbase.assignment.zkevent.workers", 5);
+    //Why this vs. a single ExecutorService
+    int workers = conf.getInt("hbase.assignment.zkevent.workers", 500);
     zkEventWorkers = new java.util.concurrent.ExecutorService[workers];
     ThreadFactory threadFactory =
       Threads.newDaemonThreadFactory("am-zkevent-worker");
@@ -927,6 +928,7 @@ public class AssignmentManager extends ZooKeeperListener {
   public void nodeDeleted(final String path) {
     if (path.startsWith(watcher.assignmentZNode)) {
       int wi = Math.abs(path.hashCode() % zkEventWorkers.length);
+      // do the job in a separate thread as we're called in the zk#process thread
       zkEventWorkers[wi].submit(new Runnable() {
         @Override
         public void run() {
