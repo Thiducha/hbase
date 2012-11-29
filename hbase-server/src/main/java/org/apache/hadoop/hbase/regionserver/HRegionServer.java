@@ -1610,12 +1610,17 @@ public class  HRegionServer implements ClientProtocol,
       return false;
     }
 
-    LOG.info("AAAAA lease = "+leases);
+    LOG.info("AAAAA 2 lease = "+leases);
     // Verify that all threads are alive
-    if (!(leases != null && leases.isAlive()
+    if (!(leases != null && hlogRoller != null && metaHlogRoller != null &&
+        cacheFlusher != null && leases.isAlive()
         && cacheFlusher.isAlive() && hlogRoller.isAlive() && metaHlogRoller.isAlive()
         && this.compactionChecker.isAlive())) {
-      LOG.info("ISALIVE: " + leases.isAlive() + " " +cacheFlusher.isAlive() + " "+ this.compactionChecker.isAlive() + " " + hlogRoller.isAlive() + " " + metaHlogRoller.isAlive()); //REMOVETHIS
+      LOG.info("ISALIVE: " + leases != null ? " leases null " : leases.isAlive() + " " +
+          cacheFlusher != null ? " leases null " : cacheFlusher.isAlive() + " " +
+          compactionChecker != null ? " leases null " : compactionChecker.isAlive() + " " +
+          hlogRoller != null ? " leases null " : hlogRoller.isAlive() + " " +
+          metaHlogRoller != null ? " leases null " : metaHlogRoller.isAlive()); //REMOVETHIS
       stop("One or more threads are no longer alive -- stop");
       return false;
     }
