@@ -930,6 +930,7 @@ public class  HRegionServer implements ClientProtocol,
     if (this.cacheFlusher != null) this.cacheFlusher.interruptIfNecessary();
     if (this.compactSplitThread != null) this.compactSplitThread.interruptIfNecessary();
     if (this.hlogRoller != null) this.hlogRoller.interruptIfNecessary();
+    if (this.metaHlogRoller != null) this.metaHlogRoller.interruptIfNecessary();
     if (this.compactionChecker != null)
       this.compactionChecker.interrupt();
 
@@ -1533,6 +1534,8 @@ public class  HRegionServer implements ClientProtocol,
       conf.getInt("hbase.regionserver.executor.closemeta.threads", 1));
 
     Threads.setDaemonThreadRunning(this.hlogRoller.getThread(), n + ".logRoller", handler);
+    Threads.setDaemonThreadRunning(this.metaHlogRoller.getThread(), n + ".logRoller", handler);
+
     Threads.setDaemonThreadRunning(this.cacheFlusher.getThread(), n + ".cacheFlusher",
       handler);
     Threads.setDaemonThreadRunning(this.compactionChecker.getThread(), n +
@@ -1617,10 +1620,10 @@ public class  HRegionServer implements ClientProtocol,
         && cacheFlusher.isAlive() && hlogRoller.isAlive() && metaHlogRoller.isAlive()
         && this.compactionChecker.isAlive())) {
       LOG.info("ISALIVE: " + leases != null ? " leases null " : leases.isAlive() + " " +
-          cacheFlusher != null ? " leases null " : cacheFlusher.isAlive() + " " +
-          compactionChecker != null ? " leases null " : compactionChecker.isAlive() + " " +
-          hlogRoller != null ? " leases null " : hlogRoller.isAlive() + " " +
-          metaHlogRoller != null ? " leases null " : metaHlogRoller.isAlive()); //REMOVETHIS
+          cacheFlusher != null ? " cacheFlusher null " : cacheFlusher.isAlive() + " " +
+          compactionChecker != null ? " compactionChecker null " : compactionChecker.isAlive() + " " +
+          hlogRoller != null ? " hlogRoller null " : hlogRoller.isAlive() + " " +
+          metaHlogRoller != null ? " metaHlogRoller null " : metaHlogRoller.isAlive()); //REMOVETHIS
       stop("One or more threads are no longer alive -- stop");
       return false;
     }
@@ -1774,6 +1777,9 @@ public class  HRegionServer implements ClientProtocol,
     Threads.shutdown(this.cacheFlusher.getThread());
     if (this.hlogRoller != null) {
       Threads.shutdown(this.hlogRoller.getThread());
+    }
+    if (this.metaHlogRoller != null) {
+      Threads.shutdown(this.metaHlogRoller.getThread());
     }
     if (this.compactSplitThread != null) {
       this.compactSplitThread.join();
