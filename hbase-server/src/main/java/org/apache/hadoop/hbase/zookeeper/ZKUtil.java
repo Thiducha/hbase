@@ -364,6 +364,11 @@ public class ZKUtil {
     return children;
   }
 
+  public static boolean deleteNodeAS(ZooKeeperWatcher zkw, String node, int version) {
+    zkw.getRecoverableZooKeeper().getZooKeeper().delete(node, version, null, null);
+    return true;
+  }
+
   /**
    * Simple class to hold a node path and node data.
    * @deprecated Unused
