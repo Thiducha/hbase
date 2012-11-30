@@ -32,7 +32,6 @@ import org.apache.hadoop.hbase.ServerName;
 // We should not be importing this Type here, nor a RegionTransition, etc.  This class should be
 // about zk and bytes only.
 import org.apache.hadoop.hbase.executor.EventHandler.EventType;
-import org.apache.hadoop.hbase.master.AssignmentManager;
 import org.apache.zookeeper.AsyncCallback;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.Code;
@@ -374,38 +373,32 @@ public class ZKAssign {
     return deleteNode(zkw, regionName, expectedState, -1);
   }
 
+  /**
+   * Deletes an existing unassigned node that is in the specified state for the
+   * specified region.
+   *
+   * <p>If a node does not already exist for this region, a
+   * {@link NoNodeException} will be thrown.
+   *
+   * <p>No watcher is set whether this succeeds or not.
+   *
+   * <p>Returns false if the node was not in the proper state but did exist.
+   *
+   * <p>This method is used when a region finishes opening/closing.
+   * The Master acknowledges completion
+   * of the specified regions transition to being closed/opened.
+   *
+   * @param zkw zk reference
+   * @param regionName region to be deleted from zk
+   * @param expectedState state region must be in for delete to complete
+   * @param expectedVersion of the znode that is to be deleted.
+   *        If expectedVersion need not be compared while deleting the znode
+   *        pass -1
+   * @throws KeeperException if unexpected zookeeper exception
+   * @throws KeeperException.NoNodeException if node does not exist
+   */
   public static boolean deleteNode(ZooKeeperWatcher zkw, String regionName,
-                                   EventType expectedState, int expectedVersion)
-      throws KeeperException, KeeperException.NoNodeException {
-    return deleteNode(zkw, regionName, expectedState, expectedVersion, null);
-  }
-
-    /**
-    * Deletes an existing unassigned node that is in the specified state for the
-    * specified region.
-    *
-    * <p>If a node does not already exist for this region, a
-    * {@link NoNodeException} will be thrown.
-    *
-    * <p>No watcher is set whether this succeeds or not.
-    *
-    * <p>Returns false if the node was not in the proper state but did exist.
-    *
-    * <p>This method is used when a region finishes opening/closing.
-    * The Master acknowledges completion
-    * of the specified regions transition to being closed/opened.
-    *
-    * @param zkw zk reference
-    * @param regionName region to be deleted from zk
-    * @param expectedState state region must be in for delete to complete
-    * @param expectedVersion of the znode that is to be deleted.
-    *        If expectedVersion need not be compared while deleting the znode
-    *        pass -1
-    * @throws KeeperException if unexpected zookeeper exception
-    * @throws KeeperException.NoNodeException if node does not exist
-    */
-  public static boolean deleteNode(ZooKeeperWatcher zkw, String regionName,
-      EventType expectedState, int expectedVersion, AssignmentManager assignmentManager)
+      EventType expectedState, int expectedVersion)
   throws KeeperException, KeeperException.NoNodeException {
     LOG.debug(zkw.prefix("Deleting existing unassigned " +
       "node for " + regionName + " that is in expected state " + expectedState));
@@ -430,13 +423,12 @@ public class ZKAssign {
         " the expected one. Got a version mismatch");
       return false;
     }
-    if(!ZKUtil.deleteNodeAS(zkw, node, stat.getVersion())) {
+    if(!ZKUtil.deleteNode(zkw, node, stat.getVersion())) {
       LOG.warn(zkw.prefix("Attempting to delete " +
           "unassigned node " + regionName + " in " + expectedState +
           " state but after verifying state, we got a version mismatch"));
       return false;
     }
-
     LOG.debug(zkw.prefix("Successfully deleted unassigned node for region " +
         regionName + " in expected state " + expectedState));
     return true;
