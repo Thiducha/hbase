@@ -196,13 +196,13 @@ public class AssignmentManager extends ZooKeeperListener {
     this.maximumAttempts =
       this.server.getConfiguration().getInt("hbase.assignment.maximum.attempts", 10);
     this.balancer = balancer;
-    int maxThreads = conf.getInt("hbase.assignment.threads.max", 30);
+    int maxThreads = conf.getInt("hbase.assignment.threads.max", 300);
     this.threadPoolExecutorService = Threads.getBoundedCachedThreadPool(
       maxThreads, 60L, TimeUnit.SECONDS, Threads.newDaemonThreadFactory("hbase-am"));
     this.metricsMaster = metricsMaster;// can be null only with tests.
     this.regionStates = new RegionStates(server, serverManager);
 
-    int workers = conf.getInt("hbase.assignment.zkevent.workers", 5);
+    int workers = conf.getInt("hbase.assignment.zkevent.workers", 50);
     zkEventWorkers = new java.util.concurrent.ExecutorService[workers];
     ThreadFactory threadFactory =
       Threads.newDaemonThreadFactory("am-zkevent-worker");
