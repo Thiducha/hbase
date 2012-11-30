@@ -1469,7 +1469,7 @@ public class  HRegionServer implements ClientProtocol,
     // Start executor services
     this.service = new ExecutorService(getServerName().toString());
     this.service.startExecutorService(ExecutorType.RS_OPEN_REGION,
-      conf.getInt("hbase.regionserver.executor.openregion.threads", 3));
+      conf.getInt("hbase.regionserver.executor.openregion.threads", 300));
     this.service.startExecutorService(ExecutorType.RS_OPEN_ROOT,
       conf.getInt("hbase.regionserver.executor.openroot.threads", 1));
     this.service.startExecutorService(ExecutorType.RS_OPEN_META,
