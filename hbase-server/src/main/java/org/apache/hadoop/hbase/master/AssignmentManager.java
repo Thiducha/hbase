@@ -982,12 +982,6 @@ public class AssignmentManager extends ZooKeeperListener {
    */
   @Override
   public void nodeChildrenChanged(String path) {
-    try {
-      ZKUtil.listChildrenAndWatchForNewChildren(
-          watcher, watcher.assignmentZNode);
-    } catch (KeeperException e) {
-
-    }
     if (true) return;
     if (path.equals(watcher.assignmentZNode)) {
       int wi = Math.abs(path.hashCode() % zkEventWorkers.length);
