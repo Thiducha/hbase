@@ -424,7 +424,6 @@ public class OpenRegionHandler extends EventHandler {
     // If previous checks failed... do not try again.
     if (!isGoodVersion()) return false;
 
-    if (true) return true;
     final int currentVersion = version;
     AsyncCallback.StatCallback cb = new AsyncCallback.StatCallback() {
       @Override

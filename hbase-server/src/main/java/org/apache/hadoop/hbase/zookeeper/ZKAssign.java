@@ -757,6 +757,7 @@ public class ZKAssign {
                                    )
       throws KeeperException {
 
+    if (true) return;
     final String encoded = region.getEncodedName();
     if(LOG.isDebugEnabled()) {
       LOG.debug(zkw.prefix("ping Opening for " + HRegionInfo.prettyPrint(encoded)));
