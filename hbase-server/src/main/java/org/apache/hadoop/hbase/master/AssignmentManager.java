@@ -148,7 +148,7 @@ public class AssignmentManager extends ZooKeeperListener {
   private java.util.concurrent.ExecutorService threadPoolExecutorService;
 
   // A bunch of ZK events workers. Each is a single thread executor service
-  private java.util.concurrent.ExecutorService zkEventWorkers;
+  private final java.util.concurrent.ExecutorService zkEventWorkers;
 
   private List<EventType> ignoreStatesRSOffline = Arrays.asList(
       EventType.RS_ZK_REGION_FAILED_OPEN, EventType.RS_ZK_REGION_CLOSED);
@@ -995,27 +995,27 @@ public class AssignmentManager extends ZooKeeperListener {
             HRegionInfo regionInfo = rs.getRegion();
             if (rs.isSplit()) {
               LOG.debug("Ephemeral node deleted, regionserver crashed?, " +
-                  "clearing from RIT; rs=" + rs);
+                "clearing from RIT; rs=" + rs);
               regionOffline(rs.getRegion());
             } else {
               String regionNameStr = regionInfo.getRegionNameAsString();
               LOG.debug("The znode of region " + regionNameStr
-                  + " has been deleted.");
+                + " has been deleted.");
               if (rs.isOpened()) {
                 ServerName serverName = rs.getServerName();
                 regionOnline(regionInfo, serverName);
                 LOG.info("The master has opened the region "
-                    + regionNameStr + " that was online on " + serverName);
+                  + regionNameStr + " that was online on " + serverName);
                 boolean disabled = getZKTable().isDisablingOrDisabledTable(
-                    regionInfo.getTableNameAsString());
+                  regionInfo.getTableNameAsString());
                 if (!serverManager.isServerOnline(serverName) && !disabled) {
                   LOG.info("Opened region " + regionNameStr
-                      + "but the region server is offline, reassign the region");
+                    + "but the region server is offline, reassign the region");
                   assign(regionInfo, true);
                 } else if (disabled) {
                   // if server is offline, no hurt to unassign again
                   LOG.info("Opened region " + regionNameStr
-                      + "but this table is disabled, triggering close of region");
+                    + "but this table is disabled, triggering close of region");
                   unassign(regionInfo);
                 }
               }
@@ -1049,8 +1049,8 @@ public class AssignmentManager extends ZooKeeperListener {
           try {
             // Just make sure we see the changes for the new znodes
             List<String> children =
-                ZKUtil.listChildrenAndWatchForNewChildren(
-                    watcher, watcher.assignmentZNode);
+              ZKUtil.listChildrenAndWatchForNewChildren(
+                watcher, watcher.assignmentZNode);
             if (children != null) {
               for (String child : children) {
                 // if region is in transition, we already have a watch
@@ -1058,7 +1058,7 @@ public class AssignmentManager extends ZooKeeperListener {
                 // this is needed to watch splitting nodes only.
                 if (!regionStates.isRegionInTransition(child)) {
                   ZKUtil.watchAndCheckExists(watcher,
-                      ZKUtil.joinZNode(watcher.assignmentZNode, child));
+                    ZKUtil.joinZNode(watcher.assignmentZNode, child));
                 }
               }
             }
