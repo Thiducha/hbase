@@ -746,6 +746,27 @@ public class ZKAssign {
     }
   }
 
+
+  /**
+   * Update asynchronously the znode to let any listener know that we're still opening the region.
+   *  This listener will typically be the master.
+   */
+  public static void pingOpening(ZooKeeperWatcher zkw, HRegionInfo region,
+                                   final int expectedVersion,
+                                   AsyncCallback.StatCallback cb
+                                   )
+      throws KeeperException {
+
+    final String encoded = region.getEncodedName();
+    if(LOG.isDebugEnabled()) {
+      LOG.debug(zkw.prefix("ping Opening for " + HRegionInfo.prettyPrint(encoded)));
+    }
+
+    final String node = getNodeName(zkw, encoded);
+    ZKUtil.asyncUpdateExistingNodeData(zkw, node, null, expectedVersion, cb, null);
+  }
+
+
   private static RegionTransition getRegionTransition(final byte [] bytes) throws KeeperException {
     try {
       return RegionTransition.parseFrom(bytes);

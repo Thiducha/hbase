@@ -635,6 +635,18 @@ public class ZKUtil {
     }
   }
 
+  /**
+   * Asynchronous version of {@link #updateExistingNodeData}
+   */
+  public static void asyncUpdateExistingNodeData(ZooKeeperWatcher zkw, String znode,
+                                                 byte[] data, int expectedVersion,
+                                                 final AsyncCallback.StatCallback cb,
+                                                 final Object ctx)
+      throws KeeperException {
+    zkw.getRecoverableZooKeeper().getZooKeeper().setData(znode, data, expectedVersion, cb, ctx);
+  }
+
+
   //
   // Data setting
   //

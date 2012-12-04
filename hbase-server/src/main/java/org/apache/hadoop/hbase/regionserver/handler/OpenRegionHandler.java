@@ -33,7 +33,9 @@ import org.apache.hadoop.hbase.regionserver.RegionServerAccounting;
 import org.apache.hadoop.hbase.regionserver.RegionServerServices;
 import org.apache.hadoop.hbase.util.CancelableProgressable;
 import org.apache.hadoop.hbase.zookeeper.ZKAssign;
+import org.apache.zookeeper.AsyncCallback;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.data.Stat;
 
 /**
  * Handles opening of a region on a region server.
@@ -92,9 +94,6 @@ public class OpenRegionHandler extends EventHandler {
       }
       final String encodedName = regionInfo.getEncodedName();
 
-      // Check that this region is not already online
-      HRegion region = this.rsServices.getFromOnlineRegions(encodedName);
-
       // If fails, just return.  Someone stole the region from under us.
       // Calling transitionZookeeperOfflineToOpening initalizes this.version.
       if (!transitionZookeeperOfflineToOpening(encodedName,
@@ -106,19 +105,16 @@ public class OpenRegionHandler extends EventHandler {
 
       // Open region.  After a successful open, failures in subsequent
       // processing needs to do a close as part of cleanup.
-      region = openRegion();
+      HRegion region = openRegion();
       if (region == null) {
         tryTransitionToFailedOpen(regionInfo);
         return;
       }
-      boolean failed = true;
-      if (tickleOpening("post_region_open")) {
-        if (updateMeta(region)) {
-          failed = false;
-        }
+      boolean success = tickleOpening("post_region_open");
+      if (success){
+        success = updateMeta(region);
       }
-      if (failed || this.server.isStopped() ||
-          this.rsServices.isStopping()) {
+      if (!success || this.server.isStopped() || this.rsServices.isStopping()) {
         cleanupFailedOpen(region);
         tryTransitionToFailedOpen(regionInfo);
         return;
@@ -175,16 +171,16 @@ public class OpenRegionHandler extends EventHandler {
       getInt("hbase.master.assignment.timeoutmonitor.period", 10000);
     // Total timeout for meta edit.  If we fail adding the edit then close out
     // the region and let it be assigned elsewhere.
-    long timeout = assignmentTimeout * 10;
+    final long timeout = assignmentTimeout * 10;
     long now = System.currentTimeMillis();
     long endTime = now + timeout;
     // Let our period at which we update OPENING state to be be 1/3rd of the
     // regions-in-transition timeout period.
-    long period = Math.max(1, assignmentTimeout/ 3);
+    final long period = assignmentTimeout / 3;
     long lastUpdate = now;
     boolean tickleOpening = true;
     while (!signaller.get() && t.isAlive() && !this.server.isStopped() &&
-        !this.rsServices.isStopping() && (endTime > now)) {
+        !this.rsServices.isStopping() && (endTime > now) && tickleOpening) {
       long elapsed = now - lastUpdate;
       if (elapsed > period) {
         // Only tickle OPENING if postOpenDeployTasks is taking some time.
@@ -220,7 +216,7 @@ public class OpenRegionHandler extends EventHandler {
     // Was there an exception opening the region?  This should trigger on
     // InterruptedException too.  If so, we failed.  Even if tickle opening fails
     // then it is a failure.
-    return ((!Thread.interrupted() && t.getException() == null) && tickleOpening);
+    return (tickleOpening && (!Thread.interrupted() && t.getException() == null));
   }
 
   /**
@@ -379,7 +375,7 @@ public class OpenRegionHandler extends EventHandler {
   private boolean isRegionStillOpening() {
     byte[] encodedName = regionInfo.getEncodedNameAsBytes();
     Boolean action = rsServices.getRegionsInTransitionInRS().get(encodedName);
-    return action != null && action.booleanValue();
+    return action != null && action;
   }
 
   /**
@@ -427,11 +423,20 @@ public class OpenRegionHandler extends EventHandler {
     }
     // If previous checks failed... do not try again.
     if (!isGoodVersion()) return false;
-    String encodedName = this.regionInfo.getEncodedName();
+
+
+    AsyncCallback.StatCallback cb = new AsyncCallback.StatCallback(){
+      @Override
+      public void processResult(int i, String s, Object o, Stat stat) {
+        if (stat == null ||stat.getVersion() != version){
+          version = -1;
+        }
+      }
+    };
+
+    final String encodedName = this.regionInfo.getEncodedName();
     try {
-      this.version =
-        ZKAssign.retransitionNodeOpening(server.getZooKeeper(),
-          this.regionInfo, this.server.getServerName(), this.version);
+        ZKAssign.pingOpening(server.getZooKeeper(), this.regionInfo, this.version, cb);
     } catch (KeeperException e) {
       server.abort("Exception refreshing OPENING; region=" + encodedName +
         ", context=" + context, e);
