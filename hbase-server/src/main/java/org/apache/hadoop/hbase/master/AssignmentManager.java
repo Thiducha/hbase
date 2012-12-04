@@ -21,6 +21,7 @@ package org.apache.hadoop.hbase.master;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -39,6 +40,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Multimap;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -145,7 +148,7 @@ public class AssignmentManager extends ZooKeeperListener {
   private java.util.concurrent.ExecutorService threadPoolExecutorService;
 
   // A bunch of ZK events workers. Each is a single thread executor service
-  private java.util.concurrent.ExecutorService[] zkEventWorkers;
+  private java.util.concurrent.ExecutorService zkEventWorkers;
 
   private List<EventType> ignoreStatesRSOffline = Arrays.asList(new EventType[]{
       EventType.RS_ZK_REGION_FAILED_OPEN, EventType.RS_ZK_REGION_CLOSED });
@@ -203,13 +206,9 @@ public class AssignmentManager extends ZooKeeperListener {
     this.regionStates = new RegionStates(server, serverManager);
 
     int workers = conf.getInt("hbase.assignment.zkevent.workers", 5);
-    zkEventWorkers = new java.util.concurrent.ExecutorService[workers];
-    ThreadFactory threadFactory =
-      Threads.newDaemonThreadFactory("am-zkevent-worker");
-    for (int i = 0; i < workers; i++) {
-      zkEventWorkers[i] = Threads.getBoundedCachedThreadPool(
-        1, 60L, TimeUnit.SECONDS, threadFactory);
-    }
+    ThreadFactory threadFactory = Threads.newDaemonThreadFactory("am-zkevent-worker");
+    zkEventWorkers = Threads.getBoundedCachedThreadPool(
+        workers, 60L, TimeUnit.SECONDS, threadFactory);
   }
 
   void startTimeOutMonitor() {
@@ -919,14 +918,69 @@ public class AssignmentManager extends ZooKeeperListener {
     handleAssignmentEvent(path);
   }
 
+
+  // We want don't want to have two events on the same region managed simultaneously.
+  // For this reason, we need to wait if an event on the same region is currently in progress.
+  // So we track the region names of the events in progress, and we keep a waiting list.
+  private final Set<String> inProgress = new HashSet<String>();
+  // In a multimap, the put order is kept when we retrieve the collection back. We need this
+  //  as we want the events to be managed in the same order as we received them.
+  private final Multimap<String, ZkRunnable> todo =  HashMultimap.create();
+
+  static interface ZkRunnable extends Runnable{
+    public String getRegionName();
+  }
+
+  /**
+   *
+   * @param ZkRunnable
+   */
+  protected void submit(final ZkRunnable ZkRunnable) {
+    synchronized (inProgress) {
+      if (inProgress.contains(ZkRunnable.getRegionName())) {
+        synchronized (todo){
+          todo.put(ZkRunnable.getRegionName(), ZkRunnable);
+        }
+      } else {
+        inProgress.add(ZkRunnable.getRegionName());
+        zkEventWorkers.submit(new Runnable() {
+          @Override
+          public void run() {
+            try {
+              ZkRunnable.run();
+            } finally {
+              // now that we have finished, let see if there is an event for the same region in the
+              //  waiting list. If it's the case, we can now submit it to the pool.
+              synchronized (inProgress) {
+                inProgress.remove(ZkRunnable.getRegionName());
+                synchronized (todo) {
+                  Collection<ZkRunnable> waiting = todo.get(ZkRunnable.getRegionName());
+                  if (!waiting.isEmpty()) {
+                    ZkRunnable next = waiting.iterator().next();
+                    todo.remove(next.getRegionName(), next);
+                    submit(next);
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+  }
+
   @Override
   public void nodeDeleted(final String path) {
     if (path.startsWith(watcher.assignmentZNode)) {
-      int wi = Math.abs(path.hashCode() % zkEventWorkers.length);
-      zkEventWorkers[wi].submit(new Runnable() {
+      final String regionName = ZKAssign.getRegionName(watcher, path);
+      submit(new ZkRunnable() {
+        @Override
+        public String getRegionName() {
+          return regionName;
+        }
+
         @Override
         public void run() {
-          String regionName = ZKAssign.getRegionName(watcher, path);
           Lock lock = locker.acquireLock(regionName);
           try {
             RegionState rs = regionStates.getRegionTransitionState(regionName);
@@ -935,27 +989,27 @@ public class AssignmentManager extends ZooKeeperListener {
             HRegionInfo regionInfo = rs.getRegion();
             if (rs.isSplit()) {
               LOG.debug("Ephemeral node deleted, regionserver crashed?, " +
-                "clearing from RIT; rs=" + rs);
+                  "clearing from RIT; rs=" + rs);
               regionOffline(rs.getRegion());
             } else {
               String regionNameStr = regionInfo.getRegionNameAsString();
               LOG.debug("The znode of region " + regionNameStr
-                + " has been deleted.");
+                  + " has been deleted.");
               if (rs.isOpened()) {
                 ServerName serverName = rs.getServerName();
                 regionOnline(regionInfo, serverName);
                 LOG.info("The master has opened the region "
-                  + regionNameStr + " that was online on " + serverName);
+                    + regionNameStr + " that was online on " + serverName);
                 boolean disabled = getZKTable().isDisablingOrDisabledTable(
-                  regionInfo.getTableNameAsString());
+                    regionInfo.getTableNameAsString());
                 if (!serverManager.isServerOnline(serverName) && !disabled) {
                   LOG.info("Opened region " + regionNameStr
-                    + "but the region server is offline, reassign the region");
+                      + "but the region server is offline, reassign the region");
                   assign(regionInfo, true);
                 } else if (disabled) {
                   // if server is offline, no hurt to unassign again
                   LOG.info("Opened region " + regionNameStr
-                    + "but this table is disabled, triggering close of region");
+                      + "but this table is disabled, triggering close of region");
                   unassign(regionInfo);
                 }
               }
@@ -983,15 +1037,14 @@ public class AssignmentManager extends ZooKeeperListener {
   @Override
   public void nodeChildrenChanged(String path) {
     if (path.equals(watcher.assignmentZNode)) {
-      int wi = Math.abs(path.hashCode() % zkEventWorkers.length);
-      zkEventWorkers[wi].submit(new Runnable() {
+      zkEventWorkers.submit(new Runnable() {
         @Override
         public void run() {
           try {
             // Just make sure we see the changes for the new znodes
             List<String> children =
-              ZKUtil.listChildrenAndWatchForNewChildren(
-                watcher, watcher.assignmentZNode);
+                ZKUtil.listChildrenAndWatchForNewChildren(
+                    watcher, watcher.assignmentZNode);
             if (children != null) {
               for (String child : children) {
                 // if region is in transition, we already have a watch
@@ -999,11 +1052,11 @@ public class AssignmentManager extends ZooKeeperListener {
                 // this is needed to watch splitting nodes only.
                 if (!regionStates.isRegionInTransition(child)) {
                   ZKUtil.watchAndCheckExists(watcher,
-                    ZKUtil.joinZNode(watcher.assignmentZNode, child));
+                      ZKUtil.joinZNode(watcher.assignmentZNode, child));
                 }
               }
             }
-          } catch(KeeperException e) {
+          } catch (KeeperException e) {
             server.abort("Unexpected ZK exception reading unassigned children", e);
           }
         }
@@ -1043,8 +1096,13 @@ public class AssignmentManager extends ZooKeeperListener {
    */
   private void handleAssignmentEvent(final String path) {
     if (path.startsWith(watcher.assignmentZNode)) {
-      int wi = Math.abs(path.hashCode() % zkEventWorkers.length);
-      zkEventWorkers[wi].submit(new Runnable() {
+      final String regionName = ZKAssign.getRegionName(watcher, path);
+      submit(new ZkRunnable() {
+        @Override
+        public String getRegionName() {
+          return regionName;
+        }
+
         @Override
         public void run() {
           try {
@@ -2679,9 +2737,7 @@ public class AssignmentManager extends ZooKeeperListener {
    */
   public void shutdown() {
     threadPoolExecutorService.shutdownNow();
-    for (int i = 0, n = zkEventWorkers.length; i < n; i++) {
-      zkEventWorkers[i].shutdownNow();
-    }
+    zkEventWorkers.shutdownNow();
   }
 
   protected void setEnabledTable(String tableName) {
