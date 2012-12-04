@@ -763,7 +763,7 @@ public class ZKAssign {
     //}
 
     final String node = getNodeName(zkw, encoded);
-    if (true) return;
+  //  if (true) return;
 
     ZKUtil.asyncUpdateExistingNodeData(zkw, node, null, expectedVersion, cb, null);
   }

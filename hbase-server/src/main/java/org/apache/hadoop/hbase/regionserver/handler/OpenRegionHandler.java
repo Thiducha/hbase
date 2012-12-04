@@ -425,6 +425,7 @@ public class OpenRegionHandler extends EventHandler {
     if (!isGoodVersion()) return false;
 
     final int currentVersion = version;
+    version++;
     AsyncCallback.StatCallback cb = new AsyncCallback.StatCallback() {
       @Override
       public void processResult(int i, String s, Object o, Stat stat) {
