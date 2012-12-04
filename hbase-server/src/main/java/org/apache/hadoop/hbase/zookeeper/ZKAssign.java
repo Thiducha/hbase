@@ -757,13 +757,14 @@ public class ZKAssign {
                                    )
       throws KeeperException {
 
-    if (true) return;
     final String encoded = region.getEncodedName();
-    if(LOG.isDebugEnabled()) {
-      LOG.debug(zkw.prefix("ping Opening for " + HRegionInfo.prettyPrint(encoded)));
-    }
+    //if(LOG.isDebugEnabled()) {
+      LOG.warn(zkw.prefix("ping Opening for " + HRegionInfo.prettyPrint(encoded)));
+    //}
 
     final String node = getNodeName(zkw, encoded);
+    if (true) return;
+
     ZKUtil.asyncUpdateExistingNodeData(zkw, node, null, expectedVersion, cb, null);
   }
 
