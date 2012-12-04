@@ -430,7 +430,7 @@ public class OpenRegionHandler extends EventHandler {
       @Override
       public void processResult(int i, String s, Object o, Stat stat) {
         if (stat == null || stat.getVersion() != currentVersion) {
-          //version = -1;
+          version = -1;
         }
       }
     };
@@ -442,13 +442,10 @@ public class OpenRegionHandler extends EventHandler {
       server.abort("Exception refreshing OPENING; region=" + encodedName +
         ", context=" + context, e);
       this.version = -1;
+      return false;
     }
-    boolean b = isGoodVersion();
-    if (!b) {
-      LOG.warn("Failed refreshing OPENING; region=" + encodedName +
-        ", context=" + context);
-    }
-    return b;
+
+    return true;
   }
 
   private boolean isGoodVersion() {
