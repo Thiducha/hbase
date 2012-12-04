@@ -150,8 +150,8 @@ public class AssignmentManager extends ZooKeeperListener {
   // A bunch of ZK events workers. Each is a single thread executor service
   private java.util.concurrent.ExecutorService zkEventWorkers;
 
-  private List<EventType> ignoreStatesRSOffline = Arrays.asList(new EventType[]{
-      EventType.RS_ZK_REGION_FAILED_OPEN, EventType.RS_ZK_REGION_CLOSED });
+  private List<EventType> ignoreStatesRSOffline = Arrays.asList(
+      EventType.RS_ZK_REGION_FAILED_OPEN, EventType.RS_ZK_REGION_CLOSED);
 
   // metrics instance to send metrics for RITs
   MetricsMaster metricsMaster;
@@ -205,7 +205,7 @@ public class AssignmentManager extends ZooKeeperListener {
     this.metricsMaster = metricsMaster;// can be null only with tests.
     this.regionStates = new RegionStates(server, serverManager);
 
-    int workers = conf.getInt("hbase.assignment.zkevent.workers", 500);
+    int workers = conf.getInt("hbase.assignment.zkevent.workers", 20);
     ThreadFactory threadFactory = Threads.newDaemonThreadFactory("am-zkevent-worker");
     zkEventWorkers = Threads.getBoundedCachedThreadPool(
         workers, 60L, TimeUnit.SECONDS, threadFactory);
@@ -925,40 +925,46 @@ public class AssignmentManager extends ZooKeeperListener {
   private final Set<String> inProgress = new HashSet<String>();
   // In a multimap, the put order is kept when we retrieve the collection back. We need this
   //  as we want the events to be managed in the same order as we received them.
-  private final Multimap<String, ZkRunnable> todo =  HashMultimap.create();
+  private final Multimap<String, RegionRunnable> todo =  HashMultimap.create();
 
-  static interface ZkRunnable extends Runnable{
+  /**
+   * A specific runnable that works only on a region.
+   */
+  static interface RegionRunnable extends Runnable{
+    /**
+     * @return - the name of the region it works on.
+     */
     public String getRegionName();
   }
 
   /**
-   *
-   * @param ZkRunnable
+   * Submit a task, ensuring that there is only one task at a time that working on a given region.
+   * Order is respected.
    */
-  protected void submit(final ZkRunnable ZkRunnable) {
+  protected void zkEventWorkersSubmit(final RegionRunnable regRunnable) {
     synchronized (inProgress) {
-      if (inProgress.contains(ZkRunnable.getRegionName())) {
+      if (inProgress.contains(regRunnable.getRegionName())) {
         synchronized (todo){
-          todo.put(ZkRunnable.getRegionName(), ZkRunnable);
+          todo.put(regRunnable.getRegionName(), regRunnable);
         }
       } else {
-        inProgress.add(ZkRunnable.getRegionName());
+        inProgress.add(regRunnable.getRegionName());
         zkEventWorkers.submit(new Runnable() {
           @Override
           public void run() {
             try {
-              ZkRunnable.run();
+              regRunnable.run();
             } finally {
               // now that we have finished, let see if there is an event for the same region in the
               //  waiting list. If it's the case, we can now submit it to the pool.
               synchronized (inProgress) {
-                inProgress.remove(ZkRunnable.getRegionName());
+                inProgress.remove(regRunnable.getRegionName());
                 synchronized (todo) {
-                  Collection<ZkRunnable> waiting = todo.get(ZkRunnable.getRegionName());
+                  Collection<RegionRunnable> waiting = todo.get(regRunnable.getRegionName());
                   if (!waiting.isEmpty()) {
-                    ZkRunnable next = waiting.iterator().next();
+                    RegionRunnable next = waiting.iterator().next();
                     todo.remove(next.getRegionName(), next);
-                    submit(next);
+                    zkEventWorkersSubmit(next);
                   }
                 }
               }
@@ -973,7 +979,7 @@ public class AssignmentManager extends ZooKeeperListener {
   public void nodeDeleted(final String path) {
     if (path.startsWith(watcher.assignmentZNode)) {
       final String regionName = ZKAssign.getRegionName(watcher, path);
-      submit(new ZkRunnable() {
+      zkEventWorkersSubmit(new RegionRunnable() {
         @Override
         public String getRegionName() {
           return regionName;
@@ -1097,7 +1103,8 @@ public class AssignmentManager extends ZooKeeperListener {
   private void handleAssignmentEvent(final String path) {
     if (path.startsWith(watcher.assignmentZNode)) {
       final String regionName = ZKAssign.getRegionName(watcher, path);
-      submit(new ZkRunnable() {
+
+      zkEventWorkersSubmit(new RegionRunnable() {
         @Override
         public String getRegionName() {
           return regionName;
@@ -2736,6 +2743,10 @@ public class AssignmentManager extends ZooKeeperListener {
    * Shutdown the threadpool executor service
    */
   public void shutdown() {
+    // It's an immediate shutdown, so we're clearing the remaining tasks.
+    synchronized (todo){
+      todo.clear();
+    }
     threadPoolExecutorService.shutdownNow();
     zkEventWorkers.shutdownNow();
   }
