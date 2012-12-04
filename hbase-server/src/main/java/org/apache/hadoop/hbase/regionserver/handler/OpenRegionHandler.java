@@ -430,7 +430,7 @@ public class OpenRegionHandler extends EventHandler {
       @Override
       public void processResult(int i, String s, Object o, Stat stat) {
         if (stat == null || stat.getVersion() != currentVersion) {
-          version = -1;
+          //version = -1;
         }
       }
     };
