@@ -205,7 +205,7 @@ public class AssignmentManager extends ZooKeeperListener {
     this.metricsMaster = metricsMaster;// can be null only with tests.
     this.regionStates = new RegionStates(server, serverManager);
 
-    int workers = conf.getInt("hbase.assignment.zkevent.workers", 5);
+    int workers = conf.getInt("hbase.assignment.zkevent.workers", 500);
     ThreadFactory threadFactory = Threads.newDaemonThreadFactory("am-zkevent-worker");
     zkEventWorkers = Threads.getBoundedCachedThreadPool(
         workers, 60L, TimeUnit.SECONDS, threadFactory);
