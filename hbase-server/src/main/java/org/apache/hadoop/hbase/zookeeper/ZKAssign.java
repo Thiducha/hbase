@@ -567,6 +567,8 @@ public class ZKAssign {
    * <p>Does not transition nodes from other states.  If for some reason the
    * node could not be transitioned, the method returns -1.  If the transition
    * is successful, the version of the node rewritten as OPENING is returned.
+   * If the znode was updated less than notificationPeriod ago, the version is checked,
+   * but we don't write the znode again: this decrease latency, zookeeper load, and master load.
    *
    * <p>This method can fail and return -1 for three different reasons:
    * <ul><li>Unassigned node for this region does not exist</li>
@@ -583,6 +585,8 @@ public class ZKAssign {
    * @param zkw zk reference
    * @param region region to be transitioned to opening
    * @param serverName server transition happens on
+   * @param expectedVersion the version we expect the node to be in
+   * @param notificationPeriod the time, in ms, between two writes.
    * @return version of node after transition, -1 if unsuccessful transition
    * @throws KeeperException if unexpected zookeeper exception
    */
@@ -625,17 +629,14 @@ public class ZKAssign {
       return -1;
     }
 
-    // If it was already updated recently, no need to rewrite it again.
+    // If it was already updated recently, no need to rewrite it again: the write is used to tell
+    //  the master we're still there.
     if ((stat.getMtime() + notificationPeriod) > System.currentTimeMillis() ){
-      //if(LOG.isDebugEnabled()) {
-        LOG.warn(zkw.prefix("AAAAAAAAA Not updating znode for " + HRegionInfo.prettyPrint(encoded)));
-      //}
+      if(LOG.isDebugEnabled()) {
+        LOG.warn(zkw.prefix("Not updating znode for " + HRegionInfo.prettyPrint(encoded)));
+      }
       return expectedVersion;
     }
-    LOG.warn(zkw.prefix("AAAA updating znode for " + HRegionInfo.prettyPrint(encoded)
-    + "notificationPeriod="+notificationPeriod+"; stat.getMtime()="+stat.getMtime() + "; time="+System.currentTimeMillis()
-    ));
-
 
     // Write new data, ensuring data has not changed since we last read it
     try {
