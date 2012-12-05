@@ -425,14 +425,12 @@ public class OpenRegionHandler extends EventHandler {
     if (!isGoodVersion()) return false;
 
     // Update the znode. Set a watcher to check that the write succeeded.
-    final int currentVersion = version++;
+    final int currentVersion = version;
     AsyncCallback.StatCallback cb = new AsyncCallback.StatCallback() {
       @Override
       public void processResult(int i, String s, Object o, Stat stat) {
-        if (stat == null || stat.getVersion() != currentVersion) {
+        if (stat == null || stat.getVersion() != currentVersion + 1) {
           version = -1;
-        }else{
-          version++;
         }
       }
     };
