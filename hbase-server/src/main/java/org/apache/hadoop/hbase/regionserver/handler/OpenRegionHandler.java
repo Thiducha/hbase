@@ -418,29 +418,29 @@ public class OpenRegionHandler extends EventHandler {
    */
   boolean tickleOpening(final String context) {
     if (!isRegionStillOpening()) {
-      LOG.warn("Open region aborted since it isn't opening any more");
+      LOG.warn("Open region aborted since it isn't opening any more; region=" +
+          this.regionInfo.getEncodedName());
       return false;
     }
     // If previous checks failed... do not try again.
     if (!isGoodVersion()) return false;
 
     // Update the znode. Set a watcher to check that the write succeeded.
-    // We expect the version to be increased by one.
-    final int currentVersion = ++version;
+    // The version to be increased by one.
+    final int expectedVersion = ++version;
     AsyncCallback.StatCallback cb = new AsyncCallback.StatCallback() {
       @Override
       public void processResult(int i, String s, Object o, Stat stat) {
-        if (stat == null || stat.getVersion() != currentVersion + 1) {
+        if (stat == null || stat.getVersion() != expectedVersion) {
           version = -1;
         }
       }
     };
 
-    final String encodedName = this.regionInfo.getEncodedName();
     try {
         ZKAssign.pingOpening(server.getZooKeeper(), this.regionInfo, this.version, cb);
     } catch (KeeperException e) {
-      server.abort("Exception refreshing OPENING; region=" + encodedName +
+      server.abort("Exception refreshing OPENING; region=" + this.regionInfo.getEncodedName() +
         ", context=" + context, e);
       this.version = -1;
       return false;
