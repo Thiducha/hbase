@@ -625,13 +625,16 @@ public class ZKAssign {
       return -1;
     }
 
+    // If it was already updated recently, no need to rewrite it again.
     if ((stat.getCtime() + notificationPeriod) < System.currentTimeMillis() ){
       //if(LOG.isDebugEnabled()) {
-        LOG.warn(zkw.prefix("AAAA Not updating znode for " + HRegionInfo.prettyPrint(encoded)));
+        LOG.warn(zkw.prefix("AAAAAAAAA Not updating znode for " + HRegionInfo.prettyPrint(encoded)));
       //}
       return expectedVersion;
     }
-    LOG.warn(zkw.prefix("AAAA updating znode for " + HRegionInfo.prettyPrint(encoded)));
+    LOG.warn(zkw.prefix("AAAA updating znode for " + HRegionInfo.prettyPrint(encoded)
+    + "notificationPeriod="+notificationPeriod+"; stat.getCtime()="+stat.getCtime()
+    ));
 
 
     // Write new data, ensuring data has not changed since we last read it
