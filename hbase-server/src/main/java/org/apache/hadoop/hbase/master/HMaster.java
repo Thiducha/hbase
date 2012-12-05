@@ -197,6 +197,7 @@ import org.apache.hadoop.hbase.util.FSUtils;
 
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
+import sun.util.LocaleServiceProviderPool;
 
 /**
  * HMaster is the "master server" for HBase. An HBase cluster has one active
@@ -248,11 +249,6 @@ Server {
   // Set after we've called HBaseServer#openServer and ready to receive RPCs.
   // Set back to false after we stop rpcServer.  Used by tests.
   private volatile boolean rpcServerOpen = false;
-
-  /**
-   * This servers address.
-   */
-  private final InetSocketAddress isa;
 
   // Metrics for the HMaster
   private final MetricsMaster metricsMaster;
@@ -363,15 +359,23 @@ Server {
         conf.getBoolean("hbase.rpc.verbose", false), conf,
         0); // this is a DNC w/o high priority handlers
     // Set our address.
-    this.isa = this.rpcServer.getListenerAddress();
-    this.serverName = new ServerName(this.isa.getHostName(),
-      this.isa.getPort(), System.currentTimeMillis());
+
+
+    final InetSocketAddress isa = this.rpcServer.getListenerAddress();
+    final String listenerHN = isa.getHostName();
+
+    LOG.warn(listenerHN + " AAAAA "+initialIsa.getHostName());
+
+
+    this.serverName = new ServerName(listenerHN, isa.getPort(), System.currentTimeMillis());
+
+
     this.rsFatals = new MemoryBoundedLogMessageBuffer(
         conf.getLong("hbase.master.buffer.for.rs.fatals", 1*1024*1024));
 
     // initialize server principal (if using secure Hadoop)
     User.login(conf, "hbase.master.keytab.file",
-      "hbase.master.kerberos.principal", this.isa.getHostName());
+      "hbase.master.kerberos.principal", listenerHN);
 
     // set the thread name now we have an address
     setName(MASTER + "-" + this.serverName.toString());
