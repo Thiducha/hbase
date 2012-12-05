@@ -633,7 +633,7 @@ public class ZKAssign {
       return expectedVersion;
     }
     LOG.warn(zkw.prefix("AAAA updating znode for " + HRegionInfo.prettyPrint(encoded)
-    + "notificationPeriod="+notificationPeriod+"; stat.getCtime()="+stat.getCtime()
+    + "notificationPeriod="+notificationPeriod+"; stat.getCtime()="+stat.getCtime() + "; time="+System.currentTimeMillis()
     ));
 
 
