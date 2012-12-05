@@ -450,10 +450,12 @@ public class OpenRegionHandler extends EventHandler {
         if (stat == null || stat.getVersion() != expectedVersion) {
           version = -1;
         }
+        tickleInProgress= false;
       }
     };
 
     try {
+      tickleInProgress= true;
         ZKAssign.pingOpening(server.getZooKeeper(), this.regionInfo, this.version, cb);
     } catch (KeeperException e) {
       server.abort("Exception refreshing OPENING; region=" + this.regionInfo.getEncodedName() +
