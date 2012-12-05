@@ -587,11 +587,73 @@ public class ZKAssign {
    * @throws KeeperException if unexpected zookeeper exception
    */
   public static int retransitionNodeOpening(ZooKeeperWatcher zkw,
-      HRegionInfo region, ServerName serverName, int expectedVersion)
+      HRegionInfo region, ServerName serverName, int expectedVersion, int notificationPeriod)
   throws KeeperException {
-    return transitionNode(zkw, region, serverName,
-        EventType.RS_ZK_REGION_OPENING,
-        EventType.RS_ZK_REGION_OPENING, expectedVersion);
+    final String encoded = region.getEncodedName();
+    if(LOG.isDebugEnabled()) {
+      LOG.debug(zkw.prefix("Attempting to retransitionNodeOpening node " +
+          HRegionInfo.prettyPrint(encoded)));
+    }
+
+    final String node = getNodeName(zkw, encoded);
+    zkw.sync(node);
+
+    // Read existing data of the node
+    Stat stat = new Stat();
+    byte [] existingBytes = ZKUtil.getDataNoWatch(zkw, node, stat);
+    if (existingBytes == null) {
+      // Node no longer exists.  Return -1. It means unsuccessful transition.
+      return -1;
+    }
+    RegionTransition rt = getRegionTransition(existingBytes);
+
+    // Verify it is the expected version
+    if (expectedVersion != -1 && stat.getVersion() != expectedVersion) {
+      LOG.warn(zkw.prefix("Attempt to retransition the " +
+          "unassigned node for " + HRegionInfo.prettyPrint(encoded) + " failed, " +
+          "the node existed but was version " + stat.getVersion() +
+          " not the expected version " + expectedVersion));
+      return -1;
+    }
+
+    // Verify it is in expected state
+    EventType et = rt.getEventType();
+    if (!et.equals(EventType.RS_ZK_REGION_OPENING)) {
+      LOG.warn(zkw.prefix("Attempt to retransition the " +
+          "unassigned node for " + HRegionInfo.prettyPrint(encoded) + " failed, " +
+          "the node existed but was in the state " + et + " set by the server " + serverName));
+      return -1;
+    }
+
+    if ((stat.getCtime() + notificationPeriod) < System.currentTimeMillis() ){
+      if(LOG.isDebugEnabled()) {
+        LOG.debug(zkw.prefix("Not updating znode for " + HRegionInfo.prettyPrint(encoded)));
+      }
+      return expectedVersion;
+    }
+
+    // Write new data, ensuring data has not changed since we last read it
+    try {
+      rt = RegionTransition.createRegionTransition(
+          EventType.RS_ZK_REGION_OPENING, region.getRegionName(), serverName, null);
+      if(!ZKUtil.setData(zkw, node, rt.toByteArray(), stat.getVersion())) {
+        LOG.warn(zkw.prefix("Attempt to retransition the " +
+            "unassigned node for " + HRegionInfo.prettyPrint(encoded) + " failed, " +
+            "the node existed and was in the expected state but then when " +
+            "setting data we got a version mismatch"));
+        return -1;
+      }
+      if(LOG.isDebugEnabled()) {
+        LOG.debug(zkw.prefix("Successfully retransitioned node " + HRegionInfo.prettyPrint(encoded)));
+      }
+      return stat.getVersion() + 1;
+    } catch (KeeperException.NoNodeException nne) {
+      LOG.warn(zkw.prefix("Attempt to retransition the " +
+          "unassigned node for " + HRegionInfo.prettyPrint(encoded) + " failed, " +
+          "the node existed and was in the expected state but then when " +
+          "setting data it no longer existed"));
+      return -1;
+    }
   }
 
   /**

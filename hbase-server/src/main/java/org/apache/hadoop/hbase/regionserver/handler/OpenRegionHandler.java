@@ -49,6 +49,8 @@ public class OpenRegionHandler extends EventHandler {
   private final HRegionInfo regionInfo;
   private final HTableDescriptor htd;
 
+  private final int zkNotificationPeriod;
+
   // We get version of our znode at start of open process and monitor it across
   // the total open. We'll fail the open if someone hijacks our znode; we can
   // tell this has happened if version is not as expected.
@@ -77,6 +79,8 @@ public class OpenRegionHandler extends EventHandler {
     this.regionInfo = regionInfo;
     this.htd = htd;
     this.versionOfOfflineNode = versionOfOfflineNode;
+    this.zkNotificationPeriod =   getAssignmentTimeout() / 3;
+
   }
 
   public HRegionInfo getRegionInfo() {
@@ -154,6 +158,12 @@ public class OpenRegionHandler extends EventHandler {
     }
   }
 
+
+  private int getAssignmentTimeout(){
+    return this.server.getConfiguration().
+        getInt("hbase.master.assignment.timeoutmonitor.period", 10000);
+  }
+
   /**
    * Update ZK, ROOT or META.  This can take a while if for example the
    * .META. is not available -- if server hosting .META. crashed and we are
@@ -171,29 +181,29 @@ public class OpenRegionHandler extends EventHandler {
     PostOpenDeployTasksThread t = new PostOpenDeployTasksThread(r,
       this.server, this.rsServices, signaller);
     t.start();
-    int assignmentTimeout = this.server.getConfiguration().
-      getInt("hbase.master.assignment.timeoutmonitor.period", 10000);
     // Total timeout for meta edit.  If we fail adding the edit then close out
     // the region and let it be assigned elsewhere.
-    long timeout = assignmentTimeout * 10;
+    long timeout = getAssignmentTimeout() * 10;
     long now = System.currentTimeMillis();
     long endTime = now + timeout;
     // Let our period at which we update OPENING state to be be 1/3rd of the
     // regions-in-transition timeout period.
-    long period = Math.max(1, assignmentTimeout/ 3);
     long lastUpdate = now;
     boolean tickleOpening = true;
     while (!signaller.get() && t.isAlive() && !this.server.isStopped() &&
         !this.rsServices.isStopping() && (endTime > now)) {
       long elapsed = now - lastUpdate;
-      if (elapsed > period) {
+      if (elapsed > zkNotificationPeriod) {
         // Only tickle OPENING if postOpenDeployTasks is taking some time.
         lastUpdate = now;
         tickleOpening = tickleOpening("post_open_deploy");
+        if (!tickleOpening){
+          break;
+        }
       }
       synchronized (signaller) {
         try {
-          signaller.wait(period);
+          signaller.wait(zkNotificationPeriod);
         } catch (InterruptedException e) {
           // Go to the loop check.
         }
@@ -379,7 +389,7 @@ public class OpenRegionHandler extends EventHandler {
   private boolean isRegionStillOpening() {
     byte[] encodedName = regionInfo.getEncodedNameAsBytes();
     Boolean action = rsServices.getRegionsInTransitionInRS().get(encodedName);
-    return action != null && action.booleanValue();
+    return action != null && action;
   }
 
   /**
@@ -431,7 +441,7 @@ public class OpenRegionHandler extends EventHandler {
     try {
       this.version =
         ZKAssign.retransitionNodeOpening(server.getZooKeeper(),
-          this.regionInfo, this.server.getServerName(), this.version);
+          this.regionInfo, this.server.getServerName(), this.version, zkNotificationPeriod);
     } catch (KeeperException e) {
       server.abort("Exception refreshing OPENING; region=" + encodedName +
         ", context=" + context, e);
