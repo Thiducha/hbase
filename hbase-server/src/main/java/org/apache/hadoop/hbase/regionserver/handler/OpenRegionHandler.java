@@ -41,7 +41,7 @@ import org.apache.zookeeper.KeeperException;
  * This is executed after receiving an OPEN RPC from the master or client.
  */
 @InterfaceAudience.Private
-public class OpenRegionHandler extends EventHandler {
+  public class OpenRegionHandler extends EventHandler {
   private static final Log LOG = LogFactory.getLog(OpenRegionHandler.class);
 
   private final RegionServerServices rsServices;
@@ -79,7 +79,7 @@ public class OpenRegionHandler extends EventHandler {
     this.regionInfo = regionInfo;
     this.htd = htd;
     this.versionOfOfflineNode = versionOfOfflineNode;
-    this.zkNotificationPeriod =   getAssignmentTimeout() / 3;
+    this.zkNotificationPeriod = getAssignmentTimeout() / 3;
 
   }
 
@@ -96,9 +96,6 @@ public class OpenRegionHandler extends EventHandler {
       }
       final String encodedName = regionInfo.getEncodedName();
 
-      // Check that this region is not already online
-      HRegion region = this.rsServices.getFromOnlineRegions(encodedName);
-
       // If fails, just return.  Someone stole the region from under us.
       // Calling transitionZookeeperOfflineToOpening initalizes this.version.
       if (!transitionZookeeperOfflineToOpening(encodedName,
@@ -110,7 +107,7 @@ public class OpenRegionHandler extends EventHandler {
 
       // Open region.  After a successful open, failures in subsequent
       // processing needs to do a close as part of cleanup.
-      region = openRegion();
+      HRegion region = openRegion();
       if (region == null) {
         tryTransitionToFailedOpen(regionInfo);
         return;
@@ -159,10 +156,11 @@ public class OpenRegionHandler extends EventHandler {
   }
 
 
-  private int getAssignmentTimeout(){
+  private int getAssignmentTimeout() {
     return this.server.getConfiguration().
         getInt("hbase.master.assignment.timeoutmonitor.period", 10000);
   }
+
 
   /**
    * Update ZK, ROOT or META.  This can take a while if for example the
@@ -197,7 +195,7 @@ public class OpenRegionHandler extends EventHandler {
         // Only tickle OPENING if postOpenDeployTasks is taking some time.
         lastUpdate = now;
         tickleOpening = tickleOpening("post_open_deploy");
-        if (!tickleOpening){
+        if (!tickleOpening) {
           break;
         }
       }
@@ -439,8 +437,7 @@ public class OpenRegionHandler extends EventHandler {
     if (!isGoodVersion()) return false;
     String encodedName = this.regionInfo.getEncodedName();
     try {
-      this.version =
-        ZKAssign.retransitionNodeOpening(server.getZooKeeper(),
+      this.version = ZKAssign.retransitionNodeOpening(server.getZooKeeper(),
           this.regionInfo, this.server.getServerName(), this.version, zkNotificationPeriod);
     } catch (KeeperException e) {
       server.abort("Exception refreshing OPENING; region=" + encodedName +

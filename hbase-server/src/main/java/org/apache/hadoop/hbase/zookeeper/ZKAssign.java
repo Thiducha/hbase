@@ -650,7 +650,8 @@ public class ZKAssign {
         return -1;
       }
       if(LOG.isDebugEnabled()) {
-        LOG.debug(zkw.prefix("Successfully retransitioned node " + HRegionInfo.prettyPrint(encoded)));
+        LOG.debug(zkw.prefix("Successfully retransitioned node " +
+            HRegionInfo.prettyPrint(encoded)));
       }
       return stat.getVersion() + 1;
     } catch (KeeperException.NoNodeException nne) {
