@@ -273,6 +273,7 @@ public class OpenRegionHandler extends EventHandler {
    * @throws IOException
    */
   private boolean transitionToOpened(final HRegion r) throws IOException {
+    while (tickleInProgress);
     if (!isRegionStillOpening()) {
       LOG.warn("Open region aborted since it isn't opening any more");
       return false;
@@ -282,6 +283,7 @@ public class OpenRegionHandler extends EventHandler {
     final String name = hri.getRegionNameAsString();
     // Finally, Transition ZK node to OPENED
     try {
+      while (tickleInProgress);
       if (ZKAssign.transitionNodeOpened(this.server.getZooKeeper(), hri,
           this.server.getServerName(), this.version) == -1) {
         LOG.warn("Completed the OPEN of region " + name +
@@ -311,6 +313,7 @@ public class OpenRegionHandler extends EventHandler {
     final String name = hri.getRegionNameAsString();
     try {
       LOG.info("Opening of region " + hri + " failed, marking as FAILED_OPEN in ZK");
+      while (tickleInProgress);
       if (ZKAssign.transitionNode(
           this.server.getZooKeeper(), hri,
           this.server.getServerName(),
@@ -388,6 +391,7 @@ public class OpenRegionHandler extends EventHandler {
    */
   boolean transitionZookeeperOfflineToOpening(final String encodedName,
       int versionOfOfflineNode) {
+    while (tickleInProgress);
     if (!isRegionStillOpening()) {
       LOG.warn("Open region aborted since it isn't opening any more");
       return false;
@@ -410,6 +414,9 @@ public class OpenRegionHandler extends EventHandler {
     return b;
   }
 
+
+   volatile boolean tickleInProgress = false;
+
   /**
    * Update our OPENING state in zookeeper.
    * Do this so master doesn't timeout this region-in-transition.
@@ -424,6 +431,15 @@ public class OpenRegionHandler extends EventHandler {
     }
     // If previous checks failed... do not try again.
     if (!isGoodVersion()) return false;
+
+    if (tickleInProgress){
+      // That seems to be bad: another tickle while we haven't received the confirmation of the
+      //  previous one. Let's not hammer the system and ignore it. But cluster could be in a bad
+      //  shape.
+      LOG.warn("Another tickle requested while the other is not yet done. Ignoring; region=" +
+          this.regionInfo.getEncodedName());
+      return true;
+    }
 
     // Update the znode. Set a watcher to check that the write succeeded.
     // The version to be increased by one.
