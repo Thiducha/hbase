@@ -626,11 +626,13 @@ public class ZKAssign {
     }
 
     if ((stat.getCtime() + notificationPeriod) < System.currentTimeMillis() ){
-      if(LOG.isDebugEnabled()) {
-        LOG.debug(zkw.prefix("Not updating znode for " + HRegionInfo.prettyPrint(encoded)));
-      }
+      //if(LOG.isDebugEnabled()) {
+        LOG.warn(zkw.prefix("AAAA Not updating znode for " + HRegionInfo.prettyPrint(encoded)));
+      //}
       return expectedVersion;
     }
+    LOG.warn(zkw.prefix("AAAA updating znode for " + HRegionInfo.prettyPrint(encoded)));
+
 
     // Write new data, ensuring data has not changed since we last read it
     try {
