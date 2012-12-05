@@ -626,7 +626,7 @@ public class ZKAssign {
     }
 
     // If it was already updated recently, no need to rewrite it again.
-    if ((stat.getMtime() + notificationPeriod) < System.currentTimeMillis() ){
+    if ((stat.getMtime() + notificationPeriod) > System.currentTimeMillis() ){
       //if(LOG.isDebugEnabled()) {
         LOG.warn(zkw.prefix("AAAAAAAAA Not updating znode for " + HRegionInfo.prettyPrint(encoded)));
       //}
