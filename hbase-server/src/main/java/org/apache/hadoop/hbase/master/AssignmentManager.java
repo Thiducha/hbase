@@ -40,8 +40,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.Multimap;
+import com.google.common.collect.LinkedHashMultimap;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -919,18 +918,19 @@ public class AssignmentManager extends ZooKeeperListener {
   }
 
 
-  // We want don't want to have two events on the same region managed simultaneously.
+  // We  don't want to have two events on the same region managed simultaneously.
   // For this reason, we need to wait if an event on the same region is currently in progress.
   // So we track the region names of the events in progress, and we keep a waiting list.
-  private final Set<String> inProgress = new HashSet<String>();
-  // In a multimap, the put order is kept when we retrieve the collection back. We need this
-  //  as we want the events to be managed in the same order as we received them.
-  private final Multimap<String, RegionRunnable> todo =  HashMultimap.create();
+  private final Set<String> regionsInProgress = new HashSet<String>();
+  // In a LinkedHashMultimap, the put order is kept when we retrieve the collection back. We need
+  //  this as we want the events to be managed in the same order as we received them.
+  private final LinkedHashMultimap <String, RegionRunnable>
+      zkEventWorkerWaitingList = LinkedHashMultimap.create();
 
   /**
    * A specific runnable that works only on a region.
    */
-  static interface RegionRunnable extends Runnable{
+  private static interface RegionRunnable extends Runnable{
     /**
      * @return - the name of the region it works on.
      */
@@ -942,36 +942,42 @@ public class AssignmentManager extends ZooKeeperListener {
    * Order is respected.
    */
   protected void zkEventWorkersSubmit(final RegionRunnable regRunnable) {
-    synchronized (inProgress) {
-      if (inProgress.contains(regRunnable.getRegionName())) {
-        synchronized (todo){
-          todo.put(regRunnable.getRegionName(), regRunnable);
+
+    synchronized (regionsInProgress) {
+      // If we're there is already a task with this region, we add it to the
+      //  waiting list and return.
+      if (regionsInProgress.contains(regRunnable.getRegionName())) {
+        synchronized (zkEventWorkerWaitingList){
+          zkEventWorkerWaitingList.put(regRunnable.getRegionName(), regRunnable);
         }
-      } else {
-        inProgress.add(regRunnable.getRegionName());
-        zkEventWorkers.submit(new Runnable() {
-          @Override
-          public void run() {
-            try {
-              regRunnable.run();
-            } finally {
-              // now that we have finished, let see if there is an event for the same region in the
-              //  waiting list. If it's the case, we can now submit it to the pool.
-              synchronized (inProgress) {
-                inProgress.remove(regRunnable.getRegionName());
-                synchronized (todo) {
-                  Collection<RegionRunnable> waiting = todo.get(regRunnable.getRegionName());
-                  if (!waiting.isEmpty()) {
-                    RegionRunnable next = waiting.iterator().next();
-                    todo.remove(next.getRegionName(), next);
-                    zkEventWorkersSubmit(next);
-                  }
+        return;
+      }
+
+      // No event in progress on this region => we can submit a new task immediately.
+      regionsInProgress.add(regRunnable.getRegionName());
+      zkEventWorkers.submit(new Runnable() {
+        @Override
+        public void run() {
+          try {
+            regRunnable.run();
+          } finally {
+            // now that we have finished, let see if there is an event for the same region in the
+            //  waiting list. If it's the case, we can now submit it to the pool.
+            synchronized (regionsInProgress) {
+              regionsInProgress.remove(regRunnable.getRegionName());
+              synchronized (zkEventWorkerWaitingList) {
+                Collection<RegionRunnable> waiting = zkEventWorkerWaitingList.get(
+                    regRunnable.getRegionName());
+                if (!waiting.isEmpty()) {
+                  RegionRunnable next = waiting.iterator().next();
+                  zkEventWorkerWaitingList.remove(next.getRegionName(), next);
+                  zkEventWorkersSubmit(next);
                 }
               }
             }
           }
-        });
-      }
+        }
+      });
     }
   }
 
@@ -1917,8 +1923,7 @@ public class AssignmentManager extends ZooKeeperListener {
                 + "can't be created.");
             return;
           }
-        } catch (KeeperException ee) {
-          Exception e = ee;
+        } catch (KeeperException e) {
           if (e instanceof NodeExistsException) {
             // Handle race between master initiated close and regionserver
             // orchestrated splitting. See if existing node is in a
@@ -2660,8 +2665,7 @@ public class AssignmentManager extends ZooKeeperListener {
     ServerName addressFromZK = rt != null? rt.getServerName():  null;
     if (addressFromZK != null) {
       // if we get something from ZK, we will use the data
-      boolean matchZK = (addressFromZK != null &&
-        addressFromZK.equals(serverName));
+      boolean matchZK = addressFromZK.equals(serverName);
       LOG.debug("based on ZK, current region=" + hri.getRegionNameAsString() +
           " is on server=" + addressFromZK +
           " server being checked=: " + serverName);
@@ -2744,8 +2748,8 @@ public class AssignmentManager extends ZooKeeperListener {
    */
   public void shutdown() {
     // It's an immediate shutdown, so we're clearing the remaining tasks.
-    synchronized (todo){
-      todo.clear();
+    synchronized (zkEventWorkerWaitingList){
+      zkEventWorkerWaitingList.clear();
     }
     threadPoolExecutorService.shutdownNow();
     zkEventWorkers.shutdownNow();
