@@ -83,10 +83,10 @@
   <profiles>
     <!-- Skip the tests in this module -->
     <profile>
-      <id>skip-common-tests</id>
+      <id>skipCommonTests</id>
       <activation>
         <property>
-          <name>skip-common-tests</name>
+          <name>skipCommonTests</name>
         </property>
       </activation>
       <properties>
@@ -108,10 +108,6 @@
         <dependency>
           <groupId>org.apache.hadoop</groupId>
           <artifactId>hadoop-core</artifactId>
-        </dependency>
-        <dependency>
-          <groupId>org.apache.hadoop</groupId>
-          <artifactId>hadoop-test</artifactId>
         </dependency>
       </dependencies>
     </profile>
@@ -136,10 +132,6 @@
         <dependency>
           <groupId>org.apache.hadoop</groupId>
           <artifactId>hadoop-annotations</artifactId>
-        </dependency>
-        <dependency>
-          <groupId>org.apache.hadoop</groupId>
-          <artifactId>hadoop-minicluster</artifactId>
         </dependency>
       </dependencies>
       <build>
@@ -190,10 +182,6 @@
         <dependency>
           <groupId>org.apache.hadoop</groupId>
           <artifactId>hadoop-annotations</artifactId>
-        </dependency>
-        <dependency>
-          <groupId>org.apache.hadoop</groupId>
-          <artifactId>hadoop-minicluster</artifactId>
         </dependency>
       </dependencies>
       <build>
