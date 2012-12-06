@@ -18,11 +18,15 @@
  */
 package org.apache.hadoop.hbase.client;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -44,8 +48,18 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.*;
+import org.apache.hadoop.hbase.Abortable;
+import org.apache.hadoop.hbase.DoNotRetryIOException;
+import org.apache.hadoop.hbase.HBaseTestingUtility;
+import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.HRegionInfo;
+import org.apache.hadoop.hbase.HRegionLocation;
+import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.LargeTests;
+import org.apache.hadoop.hbase.MiniHBaseCluster;
+import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.metrics.ScanMetrics;
 import org.apache.hadoop.hbase.coprocessor.CoprocessorHost;
 import org.apache.hadoop.hbase.coprocessor.MultiRowMutationEndpoint;
@@ -85,8 +99,6 @@ import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
-
-import static org.junit.Assert.*;
 
 /**
  * Run tests that use the HBase clients; {@link HTable} and {@link HTablePool}.
@@ -290,77 +302,6 @@ public class TestFromClientSide {
        assertTrue("We should not have a valid connection for z4", false);
      } catch (Exception e){
      }
-   }
-
-
-   /**
-   * HBASE-2468 use case 1 and 2: region info de/serialization
-   */
-   @Test
-   public void testRegionCacheDeSerialization() throws Exception {
-     // 1. test serialization.
-     LOG.info("Starting testRegionCacheDeSerialization");
-     final byte[] TABLENAME = Bytes.toBytes("testCachePrewarm2");
-     final byte[] FAMILY = Bytes.toBytes("family");
-     Configuration conf = TEST_UTIL.getConfiguration();
-     TEST_UTIL.createTable(TABLENAME, FAMILY);
-
-     // Set up test table:
-     // Create table:
-     HTable table = new HTable(conf, TABLENAME);
-
-     // Create multiple regions for this table
-     TEST_UTIL.createMultiRegions(table, FAMILY);
-     Scan s = new Scan();
-     ResultScanner scanner = table.getScanner(s);
-     while (scanner.next() != null) continue;
-
-     Path tempPath = new Path(TEST_UTIL.getDataTestDir(), "regions.dat");
-
-     final String tempFileName = tempPath.toString();
-
-     FileOutputStream fos = new FileOutputStream(tempFileName);
-     DataOutputStream dos = new DataOutputStream(fos);
-
-     // serialize the region info and output to a local file.
-     table.serializeRegionInfo(dos);
-     dos.flush();
-     dos.close();
-
-     // read a local file and deserialize the region info from it.
-     FileInputStream fis = new FileInputStream(tempFileName);
-     DataInputStream dis = new DataInputStream(fis);
-
-     Map<HRegionInfo, HServerAddress> deserRegions =
-       table.deserializeRegionInfo(dis);
-     dis.close();
-
-     // regions obtained from meta scanner.
-     Map<HRegionInfo, HServerAddress> loadedRegions =
-       table.getRegionsInfo();
-
-     // set the deserialized regions to the global cache.
-     table.getConnection().clearRegionCache();
-
-     table.getConnection().prewarmRegionCache(table.getTableName(),
-         deserRegions);
-
-     // verify whether the 2 maps are identical or not.
-     assertEquals("Number of cached region is incorrect",
-         HConnectionManager.getCachedRegionCount(conf, TABLENAME),
-         loadedRegions.size());
-
-     // verify each region is prefetched or not.
-     for (Map.Entry<HRegionInfo, HServerAddress> e: loadedRegions.entrySet()) {
-       HRegionInfo hri = e.getKey();
-       assertTrue(HConnectionManager.isRegionCached(conf,
-           hri.getTableName(), hri.getStartKey()));
-     }
-
-     // delete the temp file
-     File f = new java.io.File(tempFileName);
-     f.delete();
-     LOG.info("Finishing testRegionCacheDeSerialization");
    }
 
   /**
@@ -600,7 +541,7 @@ public class TestFromClientSide {
     int rowCount = TEST_UTIL.loadTable(t, FAMILY);
     assertRowCount(t, rowCount);
     // Split the table.  Should split on a reasonable key; 'lqj'
-    Map<HRegionInfo, HServerAddress> regions  = splitTable(t);
+    Map<HRegionInfo, ServerName> regions  = splitTable(t);
     assertRowCount(t, rowCount);
     // Get end key of first region.
     byte [] endKey = regions.keySet().iterator().next().getEndKey();
@@ -702,12 +643,13 @@ public class TestFromClientSide {
    * @return Map of regions to servers.
    * @throws IOException
    */
-  private Map<HRegionInfo, HServerAddress> splitTable(final HTable t)
+  private Map<HRegionInfo, ServerName> splitTable(final HTable t)
   throws IOException, InterruptedException {
     // Split this table in two.
     HBaseAdmin admin = new HBaseAdmin(TEST_UTIL.getConfiguration());
     admin.split(t.getTableName());
-    Map<HRegionInfo, HServerAddress> regions = waitOnSplit(t);
+    admin.close();
+    Map<HRegionInfo, ServerName> regions = waitOnSplit(t);
     assertTrue(regions.size() > 1);
     return regions;
   }
@@ -718,9 +660,9 @@ public class TestFromClientSide {
    * @param t
    * @return Map of table regions; caller needs to check table actually split.
    */
-  private Map<HRegionInfo, HServerAddress> waitOnSplit(final HTable t)
+  private Map<HRegionInfo, ServerName> waitOnSplit(final HTable t)
   throws IOException {
-    Map<HRegionInfo, HServerAddress> regions = t.getRegionsInfo();
+    Map<HRegionInfo, ServerName> regions = t.getRegionLocations();
     int originalCount = regions.size();
     for (int i = 0; i < TEST_UTIL.getConfiguration().getInt("hbase.test.retries", 30); i++) {
       Thread.currentThread();
@@ -729,7 +671,7 @@ public class TestFromClientSide {
       } catch (InterruptedException e) {
         e.printStackTrace();
       }
-      regions = t.getRegionsInfo();
+      regions = t.getRegionLocations();
       if (regions.size() > originalCount) break;
     }
     return regions;
@@ -4721,7 +4663,20 @@ public class TestFromClientSide {
     // turn on scan metrics
     Scan scan = new Scan();
     scan.setAttribute(Scan.SCAN_ATTRIBUTES_METRICS_ENABLE, Bytes.toBytes(Boolean.TRUE));
+    scan.setCaching(numRecords+1);
     ResultScanner scanner = ht.getScanner(scan);
+    for (Result result : scanner.next(numRecords - 1)) {
+    }
+    scanner.close();
+    // need to have at one next roundtrip in order to collect metrics
+    // here we have less than <numRecord>+1 KVs, so no metrics were collected
+    assertNull(scan.getAttribute(Scan.SCAN_ATTRIBUTES_METRICS_DATA));
+
+    // set caching to 1, becasue metrics are collected in each roundtrip only
+    scan = new Scan();
+    scan.setAttribute(Scan.SCAN_ATTRIBUTES_METRICS_ENABLE, Bytes.toBytes(Boolean.TRUE));
+    scan.setCaching(1);
+    scanner = ht.getScanner(scan);
     // per HBASE-5717, this should still collect even if you don't run all the way to
     // the end of the scanner. So this is asking for 2 of the 3 rows we inserted.
     for (Result result : scanner.next(numRecords - 1)) {
@@ -4735,6 +4690,7 @@ public class TestFromClientSide {
     // now, test that the metrics are still collected even if you don't call close, but do
     // run past the end of all the records
     Scan scanWithoutClose = new Scan();
+    scanWithoutClose.setCaching(1);
     scanWithoutClose.setAttribute(Scan.SCAN_ATTRIBUTES_METRICS_ENABLE, Bytes.toBytes(Boolean.TRUE));
     ResultScanner scannerWithoutClose = ht.getScanner(scanWithoutClose);
     for (Result result : scannerWithoutClose.next(numRecords + 1)) {
@@ -4746,6 +4702,8 @@ public class TestFromClientSide {
     // finally, test that the metrics are collected correctly if you both run past all the records,
     // AND close the scanner
     Scan scanWithClose = new Scan();
+    // make sure we can set caching up to the number of a scanned values
+    scanWithClose.setCaching(numRecords);
     scanWithClose.setAttribute(Scan.SCAN_ATTRIBUTES_METRICS_ENABLE, Bytes.toBytes(Boolean.TRUE));
     ResultScanner scannerWithClose = ht.getScanner(scanWithClose);
     for (Result result : scannerWithClose.next(numRecords + 1)) {
@@ -4902,11 +4860,8 @@ public class TestFromClientSide {
     HRegionInfo regionInfo = regionsMap.keySet().iterator().next();
     ServerName addrBefore = regionsMap.get(regionInfo);
     // Verify region location before move.
-    HServerAddress addrCache =
-      table.getRegionLocation(regionInfo.getStartKey(), false).getServerAddress();
-    HServerAddress addrNoCache =
-      table.getRegionLocation(regionInfo.getStartKey(),
-          true).getServerAddress();
+    HRegionLocation addrCache = table.getRegionLocation(regionInfo.getStartKey(), false);
+    HRegionLocation addrNoCache = table.getRegionLocation(regionInfo.getStartKey(),  true);
 
     assertEquals(addrBefore.getPort(), addrCache.getPort());
     assertEquals(addrBefore.getPort(), addrNoCache.getPort());
@@ -4927,11 +4882,8 @@ public class TestFromClientSide {
     }
 
     // Verify the region was moved.
-    addrCache =
-      table.getRegionLocation(regionInfo.getStartKey(), false).getServerAddress();
-    addrNoCache =
-      table.getRegionLocation(regionInfo.getStartKey(),
-          true).getServerAddress();
+    addrCache = table.getRegionLocation(regionInfo.getStartKey(), false);
+    addrNoCache = table.getRegionLocation(regionInfo.getStartKey(), true);
     assertNotNull(addrAfter);
     assertTrue(addrAfter.getPort() != addrCache.getPort());
     assertEquals(addrAfter.getPort(), addrNoCache.getPort());

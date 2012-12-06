@@ -300,7 +300,7 @@ try {
       <title>Versions<indexterm><primary>Versions</primary></indexterm></title>
 
       <para>A <emphasis>{row, column, version} </emphasis>tuple exactly
-      specifies a <literal>cell</literal> in HBase. Its possible to have an
+      specifies a <literal>cell</literal> in HBase. It's possible to have an
       unbounded number of cells where the row and column are the same but the
       cell address differs only in its version dimension.</para>
 
@@ -633,7 +633,7 @@ admin.enableTable(table);
     <para>
       In the HBase chapter of Tom White's book <link xlink:url="http://oreilly.com/catalog/9780596521981">Hadoop: The Definitive Guide</link> (O'Reilly) there is a an optimization note on watching out for a phenomenon where an import process walks in lock-step with all clients in concert pounding one of the table's regions (and thus, a single node), then moving onto the next region, etc.  With monotonically increasing row-keys (i.e., using a timestamp), this will happen.  See this comic by IKai Lan on why monotonically increasing row keys are problematic in BigTable-like datastores:
       <link xlink:href="http://ikaisays.com/2011/01/25/app-engine-datastore-tip-monotonically-increasing-values-are-bad/">monotonically increasing values are bad</link>.  The pile-up on a single region brought on
-      by monotonically increasing keys can be mitigated by randomizing the input records to not be in sorted order, but in general its best to avoid using a timestamp or a sequence (e.g. 1, 2, 3) as the row-key.
+      by monotonically increasing keys can be mitigated by randomizing the input records to not be in sorted order, but in general it's best to avoid using a timestamp or a sequence (e.g. 1, 2, 3) as the row-key.
     </para>
 
 
@@ -738,6 +738,71 @@ System.out.println("md5 digest as string length: " + sbDigest.length);    // ret
     This is a fairly common question on the HBase dist-list so it pays to get the rowkeys right the first time (and/or before you've
     inserted a lot of data).
     </para>
+    </section>
+    <section xml:id="rowkey.regionsplits"><title>Relationship Between RowKeys and Region Splits</title>
+    <para>If you pre-split your table, it is <emphasis>critical</emphasis> to understand how your rowkey will be distributed across
+    the region boundaries.  As an example of why this is important, consider the example of using displayable hex characters as the
+    lead position of the key (e.g., ""0000000000000000" to "ffffffffffffffff").  Running those key ranges through <code>Bytes.split</code>
+    (which is the split strategy used when creating regions in <code>HBaseAdmin.createTable(byte[] startKey, byte[] endKey, numRegions)</code>
+    for 10 regions will generate the following splits...
+    </para>
+    <para>
+    <programlisting>
+48 48 48 48 48 48 48 48 48 48 48 48 48 48 48 48                                // 0
+54 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10                 // 6
+61 -67 -67 -67 -67 -67 -67 -67 -67 -67 -67 -67 -67 -67 -67 -68                 // =
+68 -124 -124 -124 -124 -124 -124 -124 -124 -124 -124 -124 -124 -124 -124 -126  // D
+75 75 75 75 75 75 75 75 75 75 75 75 75 75 75 72                                // K
+82 18 18 18 18 18 18 18 18 18 18 18 18 18 18 14                                // R
+88 -40 -40 -40 -40 -40 -40 -40 -40 -40 -40 -40 -40 -40 -40 -44                 // X
+95 -97 -97 -97 -97 -97 -97 -97 -97 -97 -97 -97 -97 -97 -97 -102                // _
+102 102 102 102 102 102 102 102 102 102 102 102 102 102 102 102                // f
+    </programlisting>
+    ... (note:  the lead byte is listed to the right as a comment.)  Given that the first split is a '0' and the last split is an 'f',
+    everything is great, right?  Not so fast.
+    </para>
+    <para>The problem is that all the data is going to pile up in the first 2 regions and the last region thus creating a "lumpy" (and
+    possibly "hot") region problem.  To understand why, refer to an  <link xlink:href="http://www.asciitable.com">ASCII Table</link>.
+    '0' is byte 48, and 'f' is byte 102, but there is a huge gap in byte values (bytes 58 to 96) that will <emphasis>never appear in this
+    keyspace</emphasis> because the only values are [0-9] and [a-f].  Thus, the middle regions regions will
+    never be used.  To make pre-spliting work with this example keyspace, a custom definition of splits (i.e., and not relying on the
+    built-in split method) is required.
+    </para>
+    <para>Lesson #1:  Pre-splitting tables is generally a best practice, but you need to pre-split them in such a way that all the
+    regions are accessible in the keyspace.  While this example demonstrated the problem with a hex-key keyspace, the same problem can happen
+     with <emphasis>any</emphasis> keyspace.  Know your data.
+    </para>
+    <para>Lesson #2:  While generally not advisable, using hex-keys (and more generally, displayable data) can still work with pre-split
+    tables as long as all the created regions are accessible in the keyspace.
+    </para>
+	 <para>To conclude this example, the following is an example of  how appropriate splits can be pre-created for hex-keys:.
+	    </para>
+<programlisting>public static boolean createTable(HBaseAdmin admin, HTableDescriptor table, byte[][] splits)
+throws IOException {
+  try {
+    admin.createTable( table, splits );
+    return true;
+  } catch (TableExistsException e) {
+    logger.info("table " + table.getNameAsString() + " already exists");
+    // the table already exists...
+    return false;
+  }
+}
+
+public static byte[][] getHexSplits(String startKey, String endKey, int numRegions) {
+  byte[][] splits = new byte[numRegions-1][];
+  BigInteger lowestKey = new BigInteger(startKey, 16);
+  BigInteger highestKey = new BigInteger(endKey, 16);
+  BigInteger range = highestKey.subtract(lowestKey);
+  BigInteger regionIncrement = range.divide(BigInteger.valueOf(numRegions));
+  lowestKey = lowestKey.add(regionIncrement);
+  for(int i=0; i &lt; numRegions-1;i++) {
+    BigInteger key = lowestKey.add(regionIncrement.multiply(BigInteger.valueOf(i)));
+    byte[] b = String.format("%016x", key).getBytes();
+    splits[i] = b;
+  }
+  return splits;
+}</programlisting>
     </section>
     </section>  <!--  rowkey design -->
     <section xml:id="schema.versions">
@@ -905,9 +970,20 @@ System.out.println("md5 digest as string length: " + sbDigest.length);    // ret
       tables, such as having 1 row with 1 million attributes, or 1 million rows with 1 columns apiece.
       </para>
       <para>Preference:  Rows (generally speaking).  To be clear, this guideline is in the context is in extremely wide cases, not in the
-      standard use-case where one needs to store a few dozen or hundred columns.
+      standard use-case where one needs to store a few dozen or hundred columns.  But there is also a middle path between these two
+      options, and that is "Rows as Columns."
       </para>
     </section>
+    <section xml:id="schema.smackdown.rowsascols"><title>Rows as Columns</title>
+      <para>The middle path between Rows vs. Columns is packing data that would be a separate row into columns, for certain rows.
+      OpenTSDB is the best example of this case where a single row represents a defined time-range, and then discrete events are treated as
+      columns.  This approach is often more complex, and may require the additional complexity of re-writing your data, but has the
+      advantage of being I/O efficient.  For an overview of this approach, see
+      <link xlink:href="http://www.cloudera.com/content/cloudera/en/resources/library/hbasecon/video-hbasecon-2012-lessons-learned-from-opentsdb.html">Lessons Learned from OpenTSDB</link>
+      from HBaseCon2012.
+      </para>
+    </section>
+
   </section>
   <section xml:id="schema.ops"><title>Operational and Performance Configuration Options</title>
     <para>See the Performance section <xref linkend="perf.schema"/> for more information operational and performance
@@ -1372,7 +1448,7 @@ if (!b) {
        After the region has been split eventually this row will be deleted.
        </para>
        <para>Notes on HRegionInfo:  the empty key is used to denote table start and table end.  A region with an empty start key
-       is the first region in a table.  If region has both an empty start and an empty end key, its the only region in the table
+       is the first region in a table.  If region has both an empty start and an empty end key, it's the only region in the table
        </para>
        <para>In the (hopefully unlikely) event that programmatic processing of catalog metadata is required, see the
          <link xlink:href="http://hbase.apache.org/apidocs/org/apache/hadoop/hbase/util/Writables.html#getHRegionInfo%28byte[]%29">Writables</link> utility.
@@ -1961,7 +2037,7 @@ rs.close();
         </listitem>
       </itemizedlist>
 
-      <para>When starting off, its probably best to stick to the default region-size, perhaps going
+      <para>When starting off, it's probably best to stick to the default region-size, perhaps going
       smaller for hot tables (or manually split hot regions to spread the load over
       the cluster), or go with larger region sizes if your cell sizes tend to be
       largish (100k and up).</para>
@@ -2954,7 +3030,7 @@ This option should not normally be used, and it is not in <code>-fixAll</code>.
             <listitem>
                 <para>
                     Build and install <link xlink:href="http://code.google.com/p/snappy/">snappy</link> on all nodes
-                    of your cluster.
+                    of your cluster (see below)
                 </para>
             </listitem>
             <listitem>
@@ -2975,6 +3051,38 @@ hbase> describe 't1'</programlisting>
         </orderedlist>
 
     </para>
+    <section xml:id="snappy.compression.installation">
+    <title>
+    Installation
+    </title>
+    <para>
+        You will find the snappy library file under the .libs directory from your Snappy build (For example
+        /home/hbase/snappy-1.0.5/.libs/). The file is called libsnappy.so.1.x.x where 1.x.x is the version of the snappy
+        code you are building. You can either copy this file into your hbase directory under libsnappy.so name, or simply
+        create a symbolic link to it.
+    </para>
+
+    <para>
+        The second file you need is the hadoop native library. You will find this file in your hadoop installation directory
+        under lib/native/Linux-amd64-64/ or lib/native/Linux-i386-32/. The file you are looking for is libhadoop.so.1.x.x.
+        Again, you can simply copy this file or link to it, under the name libhadoop.so.
+    </para>
+
+    <para>
+        At the end of the installation, you should have both libsnappy.so and libhadoop.so links or files present into
+        lib/native/Linux-amd64-64 or into lib/native/Linux-i386-32
+    </para>
+    <para>To point hbase at snappy support, in hbase-env.sh set
+        <programlisting>export HBASE_LIBRARY_PATH=/pathtoyourhadoop/lib/native/Linux-amd64-64</programlisting>
+        In <filename>/pathtoyourhadoop/lib/native/Linux-amd64-64</filename> you should have something like:
+        <programlisting>
+        libsnappy.a
+        libsnappy.so
+        libsnappy.so.1
+        libsnappy.so.1.1.2
+    </programlisting>
+    </para>
+    </section>
     </section>
     <section xml:id="changing.compression">
       <title>Changing Compression Schemes</title>
@@ -2990,7 +3098,7 @@ hbase> describe 't1'</programlisting>
       <title xml:id="ycsb"><link xlink:href="https://github.com/brianfrankcooper/YCSB/">YCSB: The Yahoo! Cloud Serving Benchmark</link> and HBase</title>
       <para>TODO: Describe how YCSB is poor for putting up a decent cluster load.</para>
       <para>TODO: Describe setup of YCSB for HBase</para>
-      <para>Ted Dunning redid YCSB so its mavenized and added facility for verifying workloads.  See <link xlink:href="https://github.com/tdunning/YCSB">Ted Dunning's YCSB</link>.</para>
+      <para>Ted Dunning redid YCSB so it's mavenized and added facility for verifying workloads.  See <link xlink:href="https://github.com/tdunning/YCSB">Ted Dunning's YCSB</link>.</para>
 
   </appendix>
 
