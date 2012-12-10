@@ -146,7 +146,7 @@ add_maven_deps_to_classpath() {
   f="${HBASE_HOME}/target/cached_classpath.txt"
   if [ ! -f "${f}" ]
   then
-      echo "As this is the developement environment, we need ${f} to be generated from maven"
+      echo "As this is a development environment, we need ${f} to be generated from maven (command: mvn compile)"
       exit 1
   fi
   CLASSPATH=${CLASSPATH}:`cat "${f}"`
@@ -302,7 +302,7 @@ elif [ "$COMMAND" = "thrift2" ] ; then
     HBASE_OPTS="$HBASE_OPTS $HBASE_THRIFT_OPTS"
   fi
 elif [ "$COMMAND" = "rest" ] ; then
-  CLASS='org.apache.hadoop.hbase.rest.Main'
+  CLASS='org.apache.hadoop.hbase.rest.RESTServer'
   if [ "$1" != "stop" ] ; then
     HBASE_OPTS="$HBASE_OPTS $HBASE_REST_OPTS"
   fi
