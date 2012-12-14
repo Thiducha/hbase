@@ -93,7 +93,7 @@ public class CompactionRequest implements Comparable<CompactionRequest>,
      */
     public static CompactionState getCompactionState(
         final long regionId) {
-      Long key = Long.valueOf(regionId);
+      Long key = regionId;
       AtomicInteger major = majorCompactions.get(key);
       AtomicInteger minor = minorCompactions.get(key);
       int state = 0;
@@ -116,7 +116,7 @@ public class CompactionRequest implements Comparable<CompactionRequest>,
     }
 
     public static void preRequest(final CompactionRequest cr){
-      Long key = Long.valueOf(cr.getHRegion().getRegionId());
+      Long key = cr.getHRegion().getRegionId();
       ConcurrentHashMap<Long, AtomicInteger> compactions =
         cr.isMajor() ? majorCompactions : minorCompactions;
       AtomicInteger count = compactions.get(key);
@@ -128,7 +128,7 @@ public class CompactionRequest implements Comparable<CompactionRequest>,
     }
 
     public static void postRequest(final CompactionRequest cr){
-      Long key = Long.valueOf(cr.getHRegion().getRegionId());
+      Long key = cr.getHRegion().getRegionId();
       ConcurrentHashMap<Long, AtomicInteger> compactions =
         cr.isMajor() ? majorCompactions : minorCompactions;
       AtomicInteger count = compactions.get(key);

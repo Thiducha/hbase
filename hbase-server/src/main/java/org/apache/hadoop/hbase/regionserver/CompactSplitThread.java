@@ -122,13 +122,13 @@ public class CompactSplitThread implements CompactionRequestor {
   }
   
   public String dumpQueue() {
-    StringBuffer queueLists = new StringBuffer();
+    StringBuilder queueLists = new StringBuilder();
     queueLists.append("Compaction/Split Queue dump:\n");
     queueLists.append("  LargeCompation Queue:\n");
     BlockingQueue<Runnable> lq = largeCompactions.getQueue();
     Iterator it = lq.iterator();
     while(it.hasNext()){
-      queueLists.append("    "+it.next().toString());
+      queueLists.append("    ").append(it.next().toString());
       queueLists.append("\n");
     }
     
@@ -138,7 +138,7 @@ public class CompactSplitThread implements CompactionRequestor {
       lq = smallCompactions.getQueue();
       it = lq.iterator();
       while(it.hasNext()){
-        queueLists.append("    "+it.next().toString());
+        queueLists.append("    ").append(it.next().toString());
         queueLists.append("\n");
       }
     }
@@ -148,7 +148,7 @@ public class CompactSplitThread implements CompactionRequestor {
     lq = splits.getQueue();
     it = lq.iterator();
     while(it.hasNext()){
-      queueLists.append("    "+it.next().toString());
+      queueLists.append("    ").append(it.next().toString());
       queueLists.append("\n");
     }
     

@@ -167,7 +167,6 @@ import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.Regio
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupResponse;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorRequest;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorResponse;
-import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.replication.regionserver.Replication;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -560,7 +559,7 @@ Server {
    * Create CatalogTracker.
    * In its own method so can intercept and mock it over in tests.
    * @param zk If zk is null, we'll create an instance (and shut it down
-   * when {@link #stop()} is called) else we'll use what is passed.
+   * when {@link #stop(String why)} is called) else we'll use what is passed.
    * @param conf
    * @param abortable If fatal exception we'll call abort on this.  May be null.
    * If it is we'll use the Connection associated with the passed
@@ -1412,7 +1411,7 @@ Server {
    * @param b If false, the catalog janitor won't do anything.
    */
   public void setCatalogJanitorEnabled(final boolean b) {
-    ((CatalogJanitor)this.catalogJanitorChore).setEnabled(b);
+    this.catalogJanitorChore.setEnabled(b);
   }
 
   @Override

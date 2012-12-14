@@ -266,10 +266,10 @@ public class Leases extends HasThread {
       if (obj == null) {
         return false;
       }
-      if (getClass() != obj.getClass()) {
+      if (obj instanceof Leases) {
         return false;
       }
-      return this.hashCode() == ((Lease) obj).hashCode();
+      return this.hashCode() == obj.hashCode();
     }
 
     @Override

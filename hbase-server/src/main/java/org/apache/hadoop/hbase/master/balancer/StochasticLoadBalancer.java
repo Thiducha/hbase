@@ -665,22 +665,20 @@ public class StochasticLoadBalancer extends BaseLoadBalancer {
   private double getRegionLoadCost(List<RegionLoad> regionLoadList, RegionLoadCostType type) {
     double cost = 0;
 
-    int size = regionLoadList.size();
-    for(int i =0; i< size; i++) {
-      RegionLoad rl = regionLoadList.get(i);
+    for (RegionLoad rl : regionLoadList) {
       double toAdd = 0;
       switch (type) {
         case READ_REQUEST:
-          toAdd =  rl.getReadRequestsCount();
+          toAdd = rl.getReadRequestsCount();
           break;
         case WRITE_REQUEST:
-          toAdd =  rl.getWriteRequestsCount();
+          toAdd = rl.getWriteRequestsCount();
           break;
         case MEMSTORE_SIZE:
-          toAdd =  rl.getMemStoreSizeMB();
+          toAdd = rl.getMemStoreSizeMB();
           break;
         case STOREFILE_SIZE:
-          toAdd =  rl.getStorefileSizeMB();
+          toAdd = rl.getStorefileSizeMB();
           break;
         default:
           assert false : "RegionLoad cost type not supported.";

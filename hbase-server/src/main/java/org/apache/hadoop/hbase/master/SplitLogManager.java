@@ -26,6 +26,7 @@ import static org.apache.hadoop.hbase.master.SplitLogManager.TerminationStatus.S
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -124,8 +125,9 @@ public class SplitLogManager extends ZooKeeperListener {
   private final Object deadWorkersLock = new Object();
 
   /**
-   * Wrapper around {@link #SplitLogManager(ZooKeeperWatcher, Configuration,
-   * Stoppable, String, TaskFinisher)} that provides a task finisher for
+   * Wrapper around {@link #SplitLogManager(ZooKeeperWatcher zkw, Configuration conf,
+   * Stoppable stopper, MasterServices master, ServerName serverName, TaskFinisher tf)}
+   * that provides a task finisher for
    * copying recovered edits to their final destination. The task finisher
    * has to be robust because it can be arbitrarily restarted or called
    * multiple times.
@@ -207,8 +209,7 @@ public class SplitLogManager extends ZooKeeperListener {
       if (logfiles == null || logfiles.length == 0) {
         LOG.info(hLogDir + " is empty dir, no logs to split");
       } else {
-        for (FileStatus status : logfiles)
-          fileStatus.add(status);
+        Collections.addAll(fileStatus, logfiles);
       }
     }
     FileStatus[] a = new FileStatus[fileStatus.size()];
@@ -256,7 +257,7 @@ public class SplitLogManager extends ZooKeeperListener {
       // recover-lease is done. totalSize will be under in most cases and the
       // metrics that it drives will also be under-reported.
       totalSize += lf.getLen();
-      if (enqueueSplitTask(lf.getPath().toString(), batch) == false) {
+      if (!enqueueSplitTask(lf.getPath().toString(), batch)) {
         throw new IOException("duplicate log split scheduled for " + lf.getPath());
       }
     }
@@ -423,14 +424,12 @@ public class SplitLogManager extends ZooKeeperListener {
     // task names are unique (log.<timestamp>) there is no risk of deleting
     // a future task.
     deleteNode(path, Long.MAX_VALUE);
-    return;
   }
 
   private void createNode(String path, Long retry_count) {
     SplitLogTask slt = new SplitLogTask.Unassigned(serverName);
     ZKUtil.asyncCreate(this.watcher, path, slt.toByteArray(), new CreateAsyncCallback(), retry_count);
     SplitLogCounters.tot_mgr_node_create_queued.incrementAndGet();
-    return;
   }
 
   private void createNodeSuccess(String path) {
@@ -457,7 +456,7 @@ public class SplitLogManager extends ZooKeeperListener {
     // A negative retry count will lead to ignoring all error processing.
     this.watcher.getRecoverableZooKeeper().getZooKeeper().
         getData(path, this.watcher,
-        new GetDataAsyncCallback(), Long.valueOf(-1) /* retry count */);
+        new GetDataAsyncCallback(), (long) -1 /* retry count */);
     SplitLogCounters.tot_mgr_get_data_queued.incrementAndGet();
   }
 
@@ -545,7 +544,6 @@ public class SplitLogManager extends ZooKeeperListener {
       // getDataSetWatch() just to check whether a node still
       // exists or not
     }
-    return;
   }
 
   private boolean resubmit(String path, Task task, ResubmitDirective directive) {
@@ -588,7 +586,7 @@ public class SplitLogManager extends ZooKeeperListener {
     try {
       // blocking zk call but this is done from the timeout thread
       SplitLogTask slt = new SplitLogTask.Unassigned(this.serverName);
-      if (ZKUtil.setData(this.watcher, path, slt.toByteArray(), version) == false) {
+      if (!ZKUtil.setData(this.watcher, path, slt.toByteArray(), version)) {
         LOG.debug("failed to resubmit task " + path +
             " version changed");
         task.heartbeatNoDetails(EnvironmentEdgeManager.currentTimeMillis());
@@ -625,7 +623,7 @@ public class SplitLogManager extends ZooKeeperListener {
   }
 
   private void resubmitOrFail(String path, ResubmitDirective directive) {
-    if (resubmit(path, findOrCreateOrphanTask(path), directive) == false) {
+    if (!resubmit(path, findOrCreateOrphanTask(path), directive)) {
       setDone(path, FAILURE);
     }
   }
@@ -664,7 +662,6 @@ public class SplitLogManager extends ZooKeeperListener {
   private void deleteNodeFailure(String path) {
     LOG.fatal("logic failure, failing to delete a node should never happen " +
         "because delete has infinite retries");
-    return;
   }
 
   /**
@@ -684,7 +681,7 @@ public class SplitLogManager extends ZooKeeperListener {
     this.watcher.getRecoverableZooKeeper().getZooKeeper().
       create(ZKSplitLog.getRescanNode(watcher), slt.toByteArray(),
         Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL,
-        new CreateRescanAsyncCallback(), Long.valueOf(retries));
+        new CreateRescanAsyncCallback(), retries);
   }
 
   private void createRescanSuccess(String path) {
@@ -1098,7 +1095,6 @@ public class SplitLogManager extends ZooKeeperListener {
       } catch (DeserializationException e) {
         LOG.warn("Deserialization problem", e);
       }
-      return;
     }
   }
 
@@ -1129,7 +1125,7 @@ public class SplitLogManager extends ZooKeeperListener {
         LOG.debug(path +
             " does not exist. Either was created but deleted behind our" +
             " back by another pending delete OR was deleted" +
-            " in earlier retry rounds. zkretries = " + (Long) ctx);
+            " in earlier retry rounds. zkretries = " + ctx);
         }
       } else {
         LOG.debug("deleted " + path);
@@ -1188,7 +1184,7 @@ public class SplitLogManager extends ZooKeeperListener {
       /**
        * task completed with error
        */
-      ERR();
+      ERR()
     }
     /**
      * finish the partially done task. workername provides clue to where the
@@ -1204,7 +1200,7 @@ public class SplitLogManager extends ZooKeeperListener {
 
   enum ResubmitDirective {
     CHECK(),
-    FORCE();
+    FORCE()
   }
 
   enum TerminationStatus {

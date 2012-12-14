@@ -25,7 +25,6 @@ import java.io.IOException;
 
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.io.WritableUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -58,7 +57,6 @@ public class Compressor {
     System.err.println("usage: Compressor <input> <output>");
     System.err.println("If <input> HLog is compressed, <output> will be decompressed.");
     System.err.println("If <input> HLog is uncompressed, <output> will be compressed.");
-    return;
   }
 
   private static void transformFile(Path input, Path output)
@@ -91,8 +89,7 @@ public class Compressor {
    * 
    * @param in the DataInput to read from
    * @param dict the dictionary we use for our read.
-   * 
-   * @param the uncompressed array.
+   * @return the uncompressed array.
    */
   static byte[] readCompressed(DataInput in, Dictionary dict)
       throws IOException {

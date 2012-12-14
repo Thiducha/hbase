@@ -21,7 +21,6 @@ package org.apache.hadoop.hbase.master;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -2000,7 +1999,6 @@ public class AssignmentManager extends ZooKeeperListener {
       server.abort(
         "Unexpected ZK exception deleting node CLOSING/CLOSED for the region "
           + encodedName, ke);
-      return;
     }
   }
 
@@ -2617,12 +2615,9 @@ public class AssignmentManager extends ZooKeeperListener {
       invokeAssign(regionInfo);
     } catch (KeeperException ke) {
       LOG.error("Unexpected ZK exception timing out CLOSING region", ke);
-      return;
     } catch (DeserializationException e) {
       LOG.error("Unexpected exception parsing CLOSING region", e);
-      return;
     }
-    return;
   }
 
   void invokeAssign(HRegionInfo regionInfo) {

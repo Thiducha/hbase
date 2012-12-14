@@ -36,7 +36,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.Coprocessor;
 import org.apache.hadoop.hbase.CoprocessorEnvironment;
-import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
@@ -74,7 +73,7 @@ public class RegionCoprocessorHost
 
   private static final Log LOG = LogFactory.getLog(RegionCoprocessorHost.class);
   // The shared data map
-  private static ReferenceMap sharedDataMap =
+  private final static ReferenceMap sharedDataMap =
       new ReferenceMap(AbstractReferenceMap.HARD, AbstractReferenceMap.WEAK);
 
   /**
@@ -251,8 +250,8 @@ public class RegionCoprocessorHost
    * org.apache.hadoop.hbase.regionserver.RegionCoprocessorHost#preOpen()} and
    * {@link org.apache.hadoop.hbase.regionserver.RegionCoprocessorHost#postOpen()} are such hooks.
    *
-   * See also {@link org.apache.hadoop.hbase.master.MasterCoprocessorHost#handleCoprocessorThrowable()}
-   * @param env The coprocessor that threw the exception.
+   * See also {@link org.apache.hadoop.hbase.master.MasterCoprocessorHost#handleCoprocessorThrowable(CoprocessorEnvironment, Throwable}
+   * @param env The coprocessor that threw the exception.                                                                             )
    * @param e The exception that was thrown.
    */
   private void handleCoprocessorThrowableNoRethrow(
@@ -522,7 +521,7 @@ public class RegionCoprocessorHost
 
   /**
    * See
-   * {@link RegionObserver#preFlush(ObserverContext, HStore, KeyValueScanner)}
+   * {@link RegionObserver#preFlush(ObserverContext<RegionCoprocessorEnvironment>, HStore, KeyValueScanner)}
    */
   public InternalScanner preFlushScannerOpen(HStore store, KeyValueScanner memstoreScanner) throws IOException {
     ObserverContext<RegionCoprocessorEnvironment> ctx = null;

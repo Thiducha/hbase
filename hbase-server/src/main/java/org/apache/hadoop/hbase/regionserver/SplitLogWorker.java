@@ -29,9 +29,7 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.DeserializationException;
-import org.apache.hadoop.hbase.RegionServerStatusProtocol;
-import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.DeserializationException;import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.SplitLogCounters;
 import org.apache.hadoop.hbase.SplitLogTask;
 import org.apache.hadoop.hbase.master.SplitLogManager;
@@ -75,12 +73,12 @@ public class SplitLogWorker extends ZooKeeperListener implements Runnable {
   private final ServerName serverName;
   private final TaskExecutor splitTaskExecutor;
 
-  private Object taskReadyLock = new Object();
+  private final Object taskReadyLock = new Object();
   volatile int taskReadySeq = 0;
   private volatile String currentTask = null;
   private int currentVersion;
   private volatile boolean exitWorker;
-  private Object grabTaskLock = new Object();
+  private final Object grabTaskLock = new Object();
   private boolean workerInGrabTask = false;
 
 
@@ -109,8 +107,8 @@ public class SplitLogWorker extends ZooKeeperListener implements Runnable {
         // interrupted or has encountered a transient error and when it has
         // encountered a bad non-retry-able persistent error.
         try {
-          if (HLogSplitter.splitLogFile(rootdir,
-              fs.getFileStatus(new Path(filename)), fs, conf, p, sequenceIdChecker) == false) {
+          if (!HLogSplitter.splitLogFile(rootdir,
+              fs.getFileStatus(new Path(filename)), fs, conf, p, sequenceIdChecker)) {
             return Status.PREEMPTED;
           }
         } catch (InterruptedIOException iioe) {
@@ -176,7 +174,7 @@ public class SplitLogWorker extends ZooKeeperListener implements Runnable {
    * one at a time. This policy puts an upper-limit on the number of
    * simultaneous log splitting that could be happening in a cluster.
    * <p>
-   * Synchronization using {@link #task_ready_signal_seq} ensures that it will
+   * Synchronization using {@link #taskReadyLock} ensures that it will
    * try to grab every task that has been put up
    */
   private void taskLoop() {
@@ -249,13 +247,13 @@ public class SplitLogWorker extends ZooKeeperListener implements Runnable {
         SplitLogCounters.tot_wkr_failed_to_grab_task_exception.incrementAndGet();
         return;
       }
-      if (slt.isUnassigned() == false) {
+      if (!slt.isUnassigned()) {
         SplitLogCounters.tot_wkr_failed_to_grab_task_owned.incrementAndGet();
         return;
       }
 
       currentVersion = stat.getVersion();
-      if (attemptToOwnTask(true) == false) {
+      if (!attemptToOwnTask(true)) {
         SplitLogCounters.tot_wkr_failed_to_grab_task_lost_race.incrementAndGet();
         return;
       }
@@ -277,7 +275,7 @@ public class SplitLogWorker extends ZooKeeperListener implements Runnable {
 
         @Override
         public boolean progress() {
-          if (attemptToOwnTask(false) == false) {
+          if (!attemptToOwnTask(false)) {
             LOG.warn("Failed to heartbeat the task" + currentTask);
             return false;
           }
@@ -323,7 +321,6 @@ public class SplitLogWorker extends ZooKeeperListener implements Runnable {
         Thread.interrupted();
       }
     }
-    return;
   }
 
   /**
@@ -371,7 +368,7 @@ public class SplitLogWorker extends ZooKeeperListener implements Runnable {
   /**
    * endTask() can fail and the only way to recover out of it is for the
    * {@link SplitLogManager} to timeout the task node.
-   * @param ts
+   * @param slt
    * @param ctr
    */
   private void endTask(SplitLogTask slt, AtomicLong ctr) {
@@ -396,7 +393,6 @@ public class SplitLogWorker extends ZooKeeperListener implements Runnable {
       LOG.warn("failed to end task, " + path + " " + slt, e);
     }
     SplitLogCounters.tot_wkr_final_transistion_failed.incrementAndGet();
-    return;
   }
 
   void getDataSetWatchAsync() {
@@ -531,7 +527,6 @@ public class SplitLogWorker extends ZooKeeperListener implements Runnable {
     worker = new Thread(null, this, "SplitLogWorker-" + serverName);
     exitWorker = false;
     worker.start();
-    return;
   }
 
   /**
@@ -558,7 +553,6 @@ public class SplitLogWorker extends ZooKeeperListener implements Runnable {
       }
       data = watcher.getRecoverableZooKeeper().removeMetaData(data);
       getDataSetWatchSuccess(path, data);
-      return;
     }
   }
 
@@ -574,7 +568,7 @@ public class SplitLogWorker extends ZooKeeperListener implements Runnable {
       DONE(),
       ERR(),
       RESIGNED(),
-      PREEMPTED();
+      PREEMPTED()
     }
     public Status exec(String name, CancelableProgressable p);
   }

@@ -107,7 +107,6 @@ public class TimeRangeTracker implements Writable {
     else if (maximumTimestamp < timestamp) {
       maximumTimestamp = timestamp;
     }
-    return;
   }
 
   /**

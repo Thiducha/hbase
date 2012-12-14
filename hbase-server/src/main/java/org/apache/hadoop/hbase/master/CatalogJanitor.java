@@ -318,8 +318,7 @@ class CatalogJanitor extends Chore {
         break;
       }
     }
-    return new Pair<Boolean, Boolean>(Boolean.valueOf(exists),
-      Boolean.valueOf(references));
+    return new Pair<Boolean, Boolean>(exists, references);
   }
 
   private HTableDescriptor getTableDescriptor(byte[] tableName)

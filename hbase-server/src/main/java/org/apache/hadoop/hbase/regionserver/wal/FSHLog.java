@@ -249,7 +249,6 @@ class FSHLog implements HLog, Syncable {
    * @param fs filesystem handle
    * @param root path for stored and archived hlogs
    * @param logName dir where hlogs are stored
-   * @param oldLogName dir where hlogs are archived
    * @param conf configuration to use
    * @param listeners Listeners on WAL events. Listeners passed here will
    * be registered before we do anything else; e.g. the
@@ -275,7 +274,7 @@ class FSHLog implements HLog, Syncable {
    *
    * @param fs filesystem handle
    * @param root path to where logs and oldlogs
-   * @param oldLogDir path to where hlogs are archived
+   * @param oldLogName path to where hlogs are archived
    * @param conf configuration to use
    * @param listeners Listeners on WAL events. Listeners passed here will
    * be registered before we do anything else; e.g. the
@@ -366,8 +365,7 @@ class FSHLog implements HLog, Syncable {
     Method m = null;
     Class<? extends FileSystem> cls = this.fs.getClass();
     try {
-      m = cls.getMethod("getDefaultBlockSize",
-          new Class<?>[] { Path.class });
+      m = cls.getMethod("getDefaultBlockSize");
     } catch (NoSuchMethodException e) {
       LOG.info("FileSystem doesn't support getDefaultBlockSize");
     } catch (SecurityException e) {
@@ -397,8 +395,7 @@ class FSHLog implements HLog, Syncable {
       Class<? extends OutputStream> wrappedStreamClass = os.getWrappedStream()
           .getClass();
       try {
-        m = wrappedStreamClass.getDeclaredMethod("getNumCurrentReplicas",
-            new Class<?>[] {});
+        m = wrappedStreamClass.getDeclaredMethod("getNumCurrentReplicas");
         m.setAccessible(true);
       } catch (NoSuchMethodException e) {
         LOG.info("FileSystem's output stream doesn't support"
@@ -682,7 +679,7 @@ class FSHLog implements HLog, Syncable {
       }
       if (currentfilenum >= 0) {
         oldFile = computeFilename(currentfilenum);
-        this.outputfiles.put(Long.valueOf(this.logSeqNum.get()), oldFile);
+        this.outputfiles.put(this.logSeqNum.get(), oldFile);
       }
     }
     return oldFile;
@@ -825,8 +822,7 @@ class FSHLog implements HLog, Syncable {
       // memstore). When the cache is flushed, the entry for the
       // region being flushed is removed if the sequence number of the flush
       // is greater than or equal to the value in lastSeqWritten.
-      this.lastSeqWritten.putIfAbsent(regionInfo.getEncodedNameAsBytes(),
-        Long.valueOf(seqNum));
+      this.lastSeqWritten.putIfAbsent(regionInfo.getEncodedNameAsBytes(), seqNum);
       doWrite(regionInfo, logKey, logEdit, htd);
       txid = this.unflushedEntries.incrementAndGet();
       this.numEntries.incrementAndGet();
@@ -882,7 +878,7 @@ class FSHLog implements HLog, Syncable {
   private long append(HRegionInfo info, byte [] tableName, WALEdit edits, UUID clusterId,
       final long now, HTableDescriptor htd, boolean doSync)
     throws IOException {
-      if (edits.isEmpty()) return this.unflushedEntries.get();;
+      if (edits.isEmpty()) return this.unflushedEntries.get();
       if (this.closed) {
         throw new IOException("Cannot append; log is closed");
       }
@@ -943,7 +939,7 @@ class FSHLog implements HLog, Syncable {
 
     private final long optionalFlushInterval;
 
-    private AtomicBoolean closeLogSyncer = new AtomicBoolean(false);
+    private final AtomicBoolean closeLogSyncer = new AtomicBoolean(false);
 
     // List of pending writes to the HLog. There corresponds to transactions
     // that have not yet returned to the client. We keep them cached here
@@ -1243,9 +1239,7 @@ class FSHLog implements HLog, Syncable {
     // and therefore snapshot-names will never collide with
     // encoded-region-names
     snp[0] = 's'; snp[1] = 'n'; snp[2] = 'p';
-    for (int i = 0; i < encodedRegionName.length; i++) {
-      snp[i+3] = encodedRegionName[i];
-    }
+    System.arraycopy(encodedRegionName, 0, snp, 3, encodedRegionName.length);
     return snp;
   }
 
