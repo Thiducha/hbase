@@ -19,7 +19,6 @@
 package org.apache.hadoop.hbase.regionserver;
 
 import java.io.IOException;
-import java.io.StringWriter;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -44,6 +43,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -108,7 +108,7 @@ import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.ipc.CoprocessorProtocol;
 import org.apache.hadoop.hbase.ipc.HBaseRPC;
 import org.apache.hadoop.hbase.ipc.HBaseRPCErrorHandler;
-import org.apache.hadoop.hbase.ipc.HBaseRpcMetrics;
+import org.apache.hadoop.hbase.ipc.MetricsHBaseServer;
 import org.apache.hadoop.hbase.ipc.ProtocolSignature;
 import org.apache.hadoop.hbase.ipc.RpcServer;
 import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
@@ -216,7 +216,6 @@ import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.zookeeper.KeeperException;
 import org.cliffc.high_scale_lib.Counter;
-import org.codehaus.jackson.map.ObjectMapper;
 
 import com.google.common.base.Function;
 import com.google.protobuf.ByteString;
@@ -1622,14 +1621,6 @@ public class  HRegionServer implements ClientProtocol,
 
   }
 
-  /**
-   * Return a reference to the metrics instance used for counting RPC calls.
-   * @return Metrics instance.
-   */
-  public HBaseRpcMetrics getRpcMetrics() {
-    return rpcServer.getRpcMetrics();
-  }
-
   @Override
   public RpcServer getRpcServer() {
     return rpcServer;
@@ -2263,10 +2254,13 @@ public class  HRegionServer implements ClientProtocol,
 
   // used by org/apache/hbase/tmpl/regionserver/RSStatusTmpl.jamon (HBASE-4070).
   public String[] getCoprocessors() {
-    // passing fake times to buildServerLoad is okay, because we only care about the coprocessor part.
-    HBaseProtos.ServerLoad sl = buildServerLoad(0, 0);
-    return sl == null? null:
-      new ServerLoad(sl).getRegionServerCoprocessors();
+    TreeSet<String> coprocessors = new TreeSet<String>(
+        this.hlog.getCoprocessorHost().getCoprocessors());
+    Collection<HRegion> regions = getOnlineRegionsLocalContext();
+    for (HRegion region: regions) {
+      coprocessors.addAll(region.getCoprocessorHost().getCoprocessors());
+    }
+    return coprocessors.toArray(new String[0]);
   }
 
   /**
@@ -2922,20 +2916,30 @@ public class  HRegionServer implements ClientProtocol,
                 maxResultSize = maxScannerResultSize;
               }
               List<KeyValue> values = new ArrayList<KeyValue>();
-              for (int i = 0; i < rows
-                  && currentScanResultSize < maxResultSize; i++) {
-                // Collect values to be returned here
-                boolean moreRows = scanner.next(values);
-                if (!values.isEmpty()) {
-                  for (KeyValue kv : values) {
-                    currentScanResultSize += kv.heapSize();
+              MultiVersionConsistencyControl.setThreadReadPoint(scanner.getMvccReadPoint());
+              region.startRegionOperation();
+              try {
+                int i = 0;
+                synchronized(scanner) {
+                  for (; i < rows
+                      && currentScanResultSize < maxResultSize; i++) {
+                    // Collect values to be returned here
+                    boolean moreRows = scanner.nextRaw(values);
+                    if (!values.isEmpty()) {
+                      for (KeyValue kv : values) {
+                        currentScanResultSize += kv.heapSize();
+                      }
+                      results.add(new Result(values));
+                    }
+                    if (!moreRows) {
+                      break;
+                    }
+                    values.clear();
                   }
-                  results.add(new Result(values));
                 }
-                if (!moreRows) {
-                  break;
-                }
-                values.clear();
+                region.readRequestsCount.add(i);
+              } finally {
+                region.closeRegionOperation();
               }
 
               // coprocessor postNext hook
