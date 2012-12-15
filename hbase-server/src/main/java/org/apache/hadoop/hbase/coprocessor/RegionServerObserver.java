@@ -1,4 +1,5 @@
 /**
+ *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -15,27 +16,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.hadoop.hbase.coprocessor;
 
-package org.apache.hadoop.hbase.regionserver;
+import java.io.IOException;
 
-/**
- * Interface of a factory to create Metrics Sources used inside of regionservers.
- */
-public interface MetricsRegionServerSourceFactory {
+import org.apache.hadoop.hbase.Coprocessor;
 
-  /**
-   * Given a wrapper create a MetricsRegionServerSource.
-   *
-   * @param regionServerWrapper The wrapped region server
-   * @return a Metrics Source.
-   */
-  MetricsRegionServerSource createServer(MetricsRegionServerWrapper regionServerWrapper);
+public interface RegionServerObserver extends Coprocessor {
 
   /**
-   * Create a MetricsRegionSource from a MetricsRegionWrapper.
-   *
-   * @param wrapper
-   * @return A metrics region source
+   * Called before stopping region server.
+   * @param env An instance of RegionServerCoprocessorEnvironment
+   * @throws IOException Signals that an I/O exception has occurred.
    */
-  MetricsRegionSource createRegion(MetricsRegionWrapper wrapper);
+  void preStopRegionServer(
+    final ObserverContext<RegionServerCoprocessorEnvironment> env)
+    throws IOException;
 }
