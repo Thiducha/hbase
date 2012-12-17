@@ -282,7 +282,8 @@ public class HLogPrettyPrinter {
           out.println("Sequence " + txn.get("sequence") + " "
               + "from region " + txn.get("region") + " " + "in table "
               + txn.get("table") + " at write timestamp: " + new Date(writeTime));
-          for (Map op : actions) {
+          for (int i = 0; i < actions.size(); i++) {
+            Map op = actions.get(i);
             out.println("  Action:");
             out.println("    row: " + op.get("row"));
             out.println("    column: " + op.get("family") + ":"

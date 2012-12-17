@@ -96,14 +96,8 @@ public class DeadServer implements Set<ServerName> {
     return numProcessing != 0;
   }
 
-  @Override
-  public final synchronized DeadServer clone() {
-    DeadServer clone = null;
-    try {
-      clone = (DeadServer)super.clone();
-    } catch (CloneNotSupportedException e) {
-      throw new RuntimeException(e);
-    }
+  public synchronized Set<ServerName> clone() {
+    Set<ServerName> clone = new HashSet<ServerName>(this.deadServers.size());
     clone.addAll(this.deadServers);
     return clone;
   }
@@ -166,7 +160,6 @@ public class DeadServer implements Set<ServerName> {
   }
 
   public synchronized boolean equals(Object o) {
-    if (o==null || !(o instanceof DeadServer))  return false;
     return deadServers.equals(o);
   }
 

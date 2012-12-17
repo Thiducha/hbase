@@ -26,6 +26,7 @@ import java.util.List;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.regionserver.wal.HLog.Reader;
@@ -107,7 +108,7 @@ public class HLogFactory {
           logWriterClass = conf.getClass("hbase.regionserver.hlog.writer.impl",
               SequenceFileLogWriter.class, Writer.class);
         }
-        HLog.Writer writer = logWriterClass.newInstance();
+        HLog.Writer writer = (HLog.Writer) logWriterClass.newInstance();
         writer.init(fs, path, conf);
         return writer;
       } catch (Exception e) {

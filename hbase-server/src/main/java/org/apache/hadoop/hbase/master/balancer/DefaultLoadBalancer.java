@@ -436,7 +436,7 @@ public class DefaultLoadBalancer extends BaseLoadBalancer {
    */
   private void addRegionPlan(final MinMaxPriorityQueue<RegionPlan> regionsToMove,
       final boolean fetchFromTail, final ServerName sn, List<RegionPlan> regionsToReturn) {
-    RegionPlan rp;
+    RegionPlan rp = null;
     if (!fetchFromTail) rp = regionsToMove.remove();
     else rp = regionsToMove.removeLast();
     rp.setDestination(sn);

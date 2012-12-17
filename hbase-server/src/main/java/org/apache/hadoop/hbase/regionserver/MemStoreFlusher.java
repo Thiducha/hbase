@@ -247,8 +247,10 @@ class MemStoreFlusher extends HasThread implements FlushRequester {
         if (!flushRegion(fre)) {
           break;
         }
-      } catch (InterruptedException ignored) {
-      } catch (ConcurrentModificationException ignored) {
+      } catch (InterruptedException ex) {
+        continue;
+      } catch (ConcurrentModificationException ex) {
+        continue;
       } catch (Exception ex) {
         LOG.error("Cache flusher failed for entry " + fqe, ex);
         if (!server.checkFileSystem()) {
@@ -503,9 +505,10 @@ class MemStoreFlusher extends HasThread implements FlushRequester {
     StringBuilder queueList = new StringBuilder();
     queueList.append("Flush Queue Queue dump:\n");
     queueList.append("  Flush Queue:\n");
-
-    for (FlushQueueEntry aFlushQueue : flushQueue) {
-      queueList.append("    ").append(aFlushQueue.toString());
+    java.util.Iterator<FlushQueueEntry> it = flushQueue.iterator();
+    
+    while(it.hasNext()){
+      queueList.append("    "+it.next().toString());
       queueList.append("\n");
     }
     
@@ -559,7 +562,7 @@ class MemStoreFlusher extends HasThread implements FlushRequester {
     }
 
     /**
-     * @return Count of times {@link #requeue(long when)} was called; i.e this is
+     * @return Count of times {@link #resetDelay()} was called; i.e this is
      * number of times we've been requeued.
      */
     public int getRequeueCount() {

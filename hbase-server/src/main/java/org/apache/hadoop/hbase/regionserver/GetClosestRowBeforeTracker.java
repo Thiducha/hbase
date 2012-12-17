@@ -164,7 +164,7 @@ class GetClosestRowBeforeTracker {
       switch (KeyValue.Type.codeToType(d.getType())) {
         case Delete: return kvts == dts;
         case DeleteColumn: return true;
-        default:
+        default: continue;
       }
     }
     return false;
@@ -222,7 +222,8 @@ class GetClosestRowBeforeTracker {
 
   /**
    * @param kv Current kv
-   * @param firstOnRow on row kv.
+   * @param First on row kv.
+   * @param state
    * @return True if we went too far, past the target key.
    */
   boolean isTooFar(final KeyValue kv, final KeyValue firstOnRow) {

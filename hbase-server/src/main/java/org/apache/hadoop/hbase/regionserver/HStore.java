@@ -19,11 +19,13 @@
 package org.apache.hadoop.hbase.regionserver;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.NavigableSet;
+import java.util.Random;
 import java.util.SortedSet;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionService;
@@ -133,7 +135,7 @@ public class HStore implements Store, StoreConfiguration {
    */
   private volatile ImmutableList<StoreFile> storefiles = null;
 
-  final List<StoreFile> filesCompacting = Lists.newArrayList();
+  List<StoreFile> filesCompacting = Lists.newArrayList();
 
   // All access must be synchronized.
   private final CopyOnWriteArraySet<ChangedReadersObserver> changedReaderObservers =
@@ -400,12 +402,12 @@ public class HStore implements Store, StoreConfiguration {
       new ExecutorCompletionService<StoreFile>(storeFileOpenerThreadPool);
 
     int totalValidStoreFile = 0;
-    for (FileStatus file : files) {
+    for (int i = 0; i < files.length; i++) {
       // Skip directories.
-      if (file.isDir()) {
+      if (files[i].isDir()) {
         continue;
       }
-      final Path p = file.getPath();
+      final Path p = files[i].getPath();
       // Check for empty hfile. Should never be the case but can happen
       // after data loss in hdfs for whatever reason (upgrade, etc.): HBASE-646
       // NOTE: that the HFileLink is just a name, so it's an empty file.
@@ -798,11 +800,9 @@ public class HStore implements Store, StoreConfiguration {
     return pathName;
   }
 
-  /**
+  /*
    * @param path The pathname of the tmp file into which the store was flushed
    * @param logCacheFlushId
-   * @param snapshotTimeRangeTracker - not used
-   * @param flushedSize - not used
    * @return StoreFile created.
    * @throws IOException
    */

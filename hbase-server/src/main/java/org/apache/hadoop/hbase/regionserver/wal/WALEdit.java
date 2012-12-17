@@ -185,13 +185,13 @@ public class WALEdit implements Writable, HeapSize {
   public String toString() {
     StringBuilder sb = new StringBuilder();
 
-    sb.append("[#edits: ").append(kvs.size()).append(" = <");
+    sb.append("[#edits: " + kvs.size() + " = <");
     for (KeyValue kv : kvs) {
       sb.append(kv.toString());
       sb.append("; ");
     }
     if (scopes != null) {
-      sb.append(" scopes: ").append(scopes.toString());
+      sb.append(" scopes: " + scopes.toString());
     }
     sb.append(">]");
     return sb.toString();

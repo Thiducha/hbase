@@ -512,6 +512,7 @@ public class SplitTransaction {
   /**
    * Open daughter regions, add them to online list and update meta.
    * @param server
+   * @param services Can be null when testing.
    * @param daughter
    * @throws IOException
    * @throws KeeperException
@@ -691,10 +692,10 @@ public class SplitTransaction {
 
   /**
    * @param hri Spec. for daughter region to open.
-   * @param rsServices RegionServerServices this region should use.
+   * @param flusher Flusher this region should use.
    * @return Created daughter HRegion.
    * @throws IOException
-   * @see #cleanupDaughterRegion(final FileSystem fs, final Path tabledir, final String encodedName)
+   * @see #cleanupDaughterRegion(FileSystem, Path, HRegionInfo)
    */
   HRegion createDaughterRegion(final HRegionInfo hri,
       final RegionServerServices rsServices)
@@ -849,9 +850,9 @@ public class SplitTransaction {
     // the creation of region b.  In this case, there'll be an orphan daughter
     // dir in the filesystem.  TOOD: Fix.
     FileStatus [] daughters = fs.listStatus(splitdir, new FSUtils.DirFilter(fs));
-    for (FileStatus daughter : daughters) {
+    for (int i = 0; i < daughters.length; i++) {
       cleanupDaughterRegion(fs, r.getTableDir(),
-          daughter.getPath().getName());
+        daughters[i].getPath().getName());
     }
     cleanupSplitDir(r.getFilesystem(), splitdir);
     LOG.info("Cleaned up old failed split transaction detritus: " + splitdir);

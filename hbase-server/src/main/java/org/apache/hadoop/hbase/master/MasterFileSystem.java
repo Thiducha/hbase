@@ -329,11 +329,11 @@ public class MasterFileSystem {
    * needed populating the directory with necessary bootup files).
    * @throws IOException
    */
-  private Path checkRootDir(final Path rd, final Configuration conf,
+  private Path checkRootDir(final Path rd, final Configuration c,
     final FileSystem fs)
   throws IOException {
     // If FS is in safe mode wait till out of it.
-    FSUtils.waitOnSafeMode(conf, conf.getInt(HConstants.THREAD_WAKE_FREQUENCY, 10 * 1000));
+    FSUtils.waitOnSafeMode(c, c.getInt(HConstants.THREAD_WAKE_FREQUENCY, 10 * 1000));
     // Filesystem is good. Go ahead and check for hbase.rootdir.
     try {
       if (!fs.exists(rd)) {
@@ -345,16 +345,16 @@ public class MasterFileSystem {
         // and simply retry file creation during bootstrap indefinitely. As soon as
         // there is one datanode it will succeed. Permission problems should have
         // already been caught by mkdirs above.
-        FSUtils.setVersion(fs, rd, conf.getInt(HConstants.THREAD_WAKE_FREQUENCY,
-          10 * 1000), conf.getInt(HConstants.VERSION_FILE_WRITE_ATTEMPTS,
+        FSUtils.setVersion(fs, rd, c.getInt(HConstants.THREAD_WAKE_FREQUENCY,
+          10 * 1000), c.getInt(HConstants.VERSION_FILE_WRITE_ATTEMPTS,
             HConstants.DEFAULT_VERSION_FILE_WRITE_ATTEMPTS));
       } else {
         if (!fs.isDirectory(rd)) {
           throw new IllegalArgumentException(rd.toString() + " is not a directory");
         }
         // as above
-        FSUtils.checkVersion(fs, rd, true, conf.getInt(HConstants.THREAD_WAKE_FREQUENCY,
-          10 * 1000), conf.getInt(HConstants.VERSION_FILE_WRITE_ATTEMPTS,
+        FSUtils.checkVersion(fs, rd, true, c.getInt(HConstants.THREAD_WAKE_FREQUENCY,
+          10 * 1000), c.getInt(HConstants.VERSION_FILE_WRITE_ATTEMPTS,
             HConstants.DEFAULT_VERSION_FILE_WRITE_ATTEMPTS));
       }
     } catch (DeserializationException de) {
@@ -368,15 +368,15 @@ public class MasterFileSystem {
       throw iae;
     }
     // Make sure cluster ID exists
-    if (!FSUtils.checkClusterIdExists(fs, rd, conf.getInt(
+    if (!FSUtils.checkClusterIdExists(fs, rd, c.getInt(
         HConstants.THREAD_WAKE_FREQUENCY, 10 * 1000))) {
-      FSUtils.setClusterId(fs, rd, new ClusterId(), conf.getInt(HConstants.THREAD_WAKE_FREQUENCY, 10 * 1000));
+      FSUtils.setClusterId(fs, rd, new ClusterId(), c.getInt(HConstants.THREAD_WAKE_FREQUENCY, 10 * 1000));
     }
     clusterId = FSUtils.getClusterId(fs, rd);
 
     // Make sure the root region directory exists!
     if (!FSUtils.rootRegionExists(fs, rd)) {
-      bootstrap(rd, conf);
+      bootstrap(rd, c);
     }
 
     // Create tableinfo-s for ROOT and META if not already there.
@@ -465,7 +465,7 @@ public class MasterFileSystem {
     // delete the family folder
     Path familyDir = new Path(tableDir,
       new Path(region.getEncodedName(), Bytes.toString(familyName)));
-    if (!fs.delete(familyDir, true)) {
+    if (fs.delete(familyDir, true) == false) {
       throw new IOException("Could not delete family "
           + Bytes.toString(familyName) + " from FileSystem for region "
           + region.getRegionNameAsString() + "(" + region.getEncodedName()

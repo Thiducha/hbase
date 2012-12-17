@@ -226,6 +226,7 @@ public class StoreFile {
    *
    * @param fs  The current file system to use.
    * @param p  The path of the file.
+   * @param blockcache  <code>true</code> if the block cache is enabled.
    * @param conf  The current configuration.
    * @param cacheConf  The cache configuration and block cache reference.
    * @param cfBloomType The bloom type to use for this store file as specified
@@ -523,7 +524,7 @@ public class StoreFile {
    * Opens reader on this store file.  Called by Constructor.
    * @return Reader for the store file.
    * @throws IOException
-   * @see #closeReader(boolean evictOnClose)
+   * @see #closeReader()
    */
   private Reader open() throws IOException {
     if (this.reader != null) {
@@ -1274,7 +1275,7 @@ public class StoreFile {
       writer.appendFileInfo(key, value);
     }
 
-    /** For use in testing, e.g. {@link #CreateRandomStoreFile} */
+    /** For use in testing, e.g. {@link CreateRandomStoreFile} */
     HFile.Writer getHFileWriter() {
       return writer;
     }

@@ -55,6 +55,7 @@ import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HDFSBlocksDistribution;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.HRegionInfo;
+import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.compactions.CompactionRequest;
 import org.apache.hadoop.hbase.mapreduce.JobUtil;
 import org.apache.hadoop.hbase.mapreduce.TableMapReduceUtil;
@@ -394,7 +395,8 @@ public class CompactionTool extends Configured implements Tool {
     FileSystem fs = FileSystem.get(conf);
 
     try {
-      for (String opt : args) {
+      for (int i = 0; i < args.length; ++i) {
+        String opt = args[i];
         if (opt.equals("-compactOnce")) {
           compactOnce = true;
         } else if (opt.equals("-mapred")) {

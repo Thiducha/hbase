@@ -152,14 +152,18 @@ public class SequenceFileLogWriter implements HLog.Writer {
             Configuration.class, Path.class, Class.class, Class.class,
             Integer.TYPE, Short.TYPE, Long.TYPE, Boolean.TYPE,
             CompressionType.class, CompressionCodec.class, Metadata.class})
-        .invoke(null, fs, conf, path, HLogUtil.getKeyClass(conf),
+        .invoke(null, new Object[] {fs, conf, path, HLogUtil.getKeyClass(conf),
             WALEdit.class,
-            fs.getConf().getInt("io.file.buffer.size", 4096),
-            (short) conf.getInt("hbase.regionserver.hlog.replication", fs.getDefaultReplication()),
-            conf.getLong("hbase.regionserver.hlog.blocksize", fs.getDefaultBlockSize()),
-            false /*createParent*/,
-            CompressionType.NONE, new DefaultCodec(),
-            createMetadata(conf, compress));
+            Integer.valueOf(fs.getConf().getInt("io.file.buffer.size", 4096)),
+            Short.valueOf((short)
+              conf.getInt("hbase.regionserver.hlog.replication",
+              fs.getDefaultReplication())),
+            Long.valueOf(conf.getLong("hbase.regionserver.hlog.blocksize",
+                fs.getDefaultBlockSize())),
+            Boolean.valueOf(false) /*createParent*/,
+            SequenceFile.CompressionType.NONE, new DefaultCodec(),
+            createMetadata(conf, compress)
+            });
     } catch (InvocationTargetException ite) {
       // function was properly called, but threw it's own exception
       throw new IOException(ite.getCause());
@@ -196,17 +200,18 @@ public class SequenceFileLogWriter implements HLog.Writer {
     FSDataOutputStream out = null;
     final Field fields [] = this.writer.getClass().getDeclaredFields();
     final String fieldName = "out";
-    for (Field field : fields) {
-      if (fieldName.equals(field.getName())) {
+    for (int i = 0; i < fields.length; ++i) {
+      if (fieldName.equals(fields[i].getName())) {
         try {
           // Make the 'out' field up in SF.Writer accessible.
-          field.setAccessible(true);
-          out = (FSDataOutputStream) field.get(this.writer);
+          fields[i].setAccessible(true);
+          out = (FSDataOutputStream)fields[i].get(this.writer);
           break;
         } catch (IllegalAccessException ex) {
           throw new IOException("Accessing " + fieldName, ex);
         } catch (SecurityException e) {
-          LOG.warn("Does not have access to out field from FSDataOutputStream", e);
+          LOG.warn("Does not have access to out field from FSDataOutputStream",
+              e);
         }
       }
     }

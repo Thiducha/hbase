@@ -107,7 +107,7 @@ public class OfflineCallback implements StringCallback {
       }
       HRegionInfo region = ((RegionState)ctx).getRegion();
       offlineNodesVersions.put(
-        region.getEncodedName(), stat.getVersion());
+        region.getEncodedName(), Integer.valueOf(stat.getVersion()));
       this.counter.addAndGet(1);
     }
   }

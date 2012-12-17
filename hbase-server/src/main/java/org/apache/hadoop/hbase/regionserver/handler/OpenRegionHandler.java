@@ -306,7 +306,7 @@ public class OpenRegionHandler extends EventHandler {
   }
 
   /**
-   * @param hri Region we're working on.
+   * @param  Region we're working on.
    * This is not guaranteed to succeed, we just do our best.
    * @return whether znode is successfully transitioned to FAILED_OPEN state.
    */

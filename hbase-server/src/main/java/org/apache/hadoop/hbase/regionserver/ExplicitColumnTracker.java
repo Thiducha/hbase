@@ -74,6 +74,7 @@ public class ExplicitColumnTracker implements ColumnTracker {
    * @param maxVersions maximum versions to return per column
    * @param oldestUnexpiredTS the oldest timestamp we are interested in,
    *  based on TTL 
+   * @param ttl The timeToLive to enforce
    */
   public ExplicitColumnTracker(NavigableSet<byte[]> columns, int minVersions,
       int maxVersions, long oldestUnexpiredTS) {

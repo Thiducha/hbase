@@ -54,7 +54,7 @@ public class ClosedRegionHandler extends EventHandler implements TotesHRegionInf
     public int getValue() {
       return value;
     }
-  }
+  };
 
   public ClosedRegionHandler(Server server, AssignmentManager assignmentManager,
       HRegionInfo regionInfo) {

@@ -115,10 +115,10 @@ public class SequenceFileLogReader implements HLog.Reader {
             // it was an inner class of DFSClient.
             if (realIn.getClass().getName().endsWith("DFSInputStream")) {
               Method getFileLength = realIn.getClass().
-                getDeclaredMethod("getFileLength");
+                getDeclaredMethod("getFileLength", new Class<?> []{});
               getFileLength.setAccessible(true);
               long realLength = ((Long)getFileLength.
-                invoke(realIn)).longValue();
+                invoke(realIn, new Object []{})).longValue();
               assert(realLength >= this.length);
               adjust = realLength - this.length;
             } else {

@@ -27,5 +27,5 @@ public enum RegionOpeningState {
 
   ALREADY_OPENED,
 
-  FAILED_OPENING
+  FAILED_OPENING;
 }

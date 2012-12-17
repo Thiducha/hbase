@@ -114,7 +114,7 @@ public class HLogSplitter {
 
   // Wait/notify for when data has been produced by the reader thread,
   // consumed by the reader thread, or an exception occurred
-  final Object dataAvailable = new Object();
+  Object dataAvailable = new Object();
 
   private MonitoredTask status;
 
@@ -481,7 +481,7 @@ public class HLogSplitter {
           + outputSink.getOutputCounts().size() + " regions; log file="
           + logPath + " is corrupted = " + isCorrupted + " progress failed = "
           + progress_failed;
-
+      ;
       LOG.info(msg);
       status.markComplete(msg);
     }
@@ -692,7 +692,7 @@ public class HLogSplitter {
    * @param conf
    * @return A new Reader instance
    * @throws IOException
-   * @throws CorruptedLogFileException
+   * @throws CorruptedLogFile
    */
   protected Reader getReader(FileSystem fs, FileStatus file, Configuration conf,
       boolean skipErrors)
@@ -1119,7 +1119,7 @@ public class HLogSplitter {
         long t = EnvironmentEdgeManager.currentTimeMillis();
         if ((t - last_report_at) > report_period) {
           last_report_at = t;
-          if (!this.splitReporter.progress()) {
+          if (this.splitReporter.progress() == false) {
             LOG.warn("Failed: reporter.progress asked us to terminate");
             return false;
           }

@@ -18,6 +18,8 @@
 package org.apache.hadoop.hbase.master;
 
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.master.HMaster;
+import org.apache.hadoop.hbase.master.MetricsMasterWrapper;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
 
 /**

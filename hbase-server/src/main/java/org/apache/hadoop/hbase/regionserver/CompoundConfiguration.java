@@ -172,10 +172,10 @@ class CompoundConfiguration extends Configuration {
 
   @Override
   public String toString() {
-    StringBuilder sb = new StringBuilder();
-    sb.append("CompoundConfiguration: ").append(this.configs.size()).append(" configs");
+    StringBuffer sb = new StringBuffer();
+    sb.append("CompoundConfiguration: " + this.configs.size() + " configs");
     for (ImmutableConfigMap m : this.configs) {
-      sb.append(m);
+      sb.append(this.configs);
     }
     return sb.toString();
   }
@@ -212,6 +212,7 @@ class CompoundConfiguration extends Configuration {
         }
       } catch (ClassNotFoundException e) {
         // don't propagate an exception until all configs fail
+        continue;
       }
     }
     throw new ClassNotFoundException();
@@ -462,4 +463,4 @@ class CompoundConfiguration extends Configuration {
   public void writeXml(OutputStream out) throws IOException {
     throw new UnsupportedOperationException("Immutable Configuration");
   }
-}
+};
