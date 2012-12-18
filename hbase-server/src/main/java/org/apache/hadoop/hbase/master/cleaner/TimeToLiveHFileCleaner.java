@@ -30,7 +30,7 @@ import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 
 /**
  * HFile cleaner that uses the timestamp of the hfile to determine if it should be deleted. By
- * default they are allowed to live for {@value TimeToLiveHFileCleaner#DEFAULT_TTL}
+ * default they are allowed to live for {@value #DEFAULT_TTL}
  */
 @InterfaceAudience.Private
 public class TimeToLiveHFileCleaner extends BaseHFileCleanerDelegate {

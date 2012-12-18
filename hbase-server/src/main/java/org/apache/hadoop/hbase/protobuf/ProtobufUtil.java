@@ -743,7 +743,7 @@ public final class ProtobufUtil {
    * Create a new protocol buffer Exec based on a client Exec
    *
    * @param exec
-   * @return
+   * @return a ClientProtos.Exec
    * @throws IOException
    */
   public static ClientProtos.Exec toExec(
@@ -1076,7 +1076,7 @@ public final class ProtobufUtil {
    * Convert a delete KeyValue type to protocol buffer DeleteType.
    *
    * @param type
-   * @return
+   * @return a DeleteType
    * @throws IOException
    */
   public static DeleteType toDeleteType(
