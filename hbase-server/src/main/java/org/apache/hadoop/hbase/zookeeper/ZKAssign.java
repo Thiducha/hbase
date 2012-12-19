@@ -258,14 +258,14 @@ public class ZKAssign {
    * of the specified regions transition.
    *
    * @param zkw zk reference
-   * @param regionName opened region to be deleted from zk
+   * @param encodedRegionName opened region to be deleted from zk
    * @throws KeeperException if unexpected zookeeper exception
    * @throws KeeperException.NoNodeException if node does not exist
    */
   public static boolean deleteOpenedNode(ZooKeeperWatcher zkw,
-      String regionName)
+      String encodedRegionName)
   throws KeeperException, KeeperException.NoNodeException {
-    return deleteNode(zkw, regionName, EventType.RS_ZK_REGION_OPENED);
+    return deleteNode(zkw, encodedRegionName, EventType.RS_ZK_REGION_OPENED);
   }
 
   /**
@@ -283,14 +283,14 @@ public class ZKAssign {
    * that has died are all set to OFFLINE before being processed.
    *
    * @param zkw zk reference
-   * @param regionName closed region to be deleted from zk
+   * @param encodedRegionName closed region to be deleted from zk
    * @throws KeeperException if unexpected zookeeper exception
    * @throws KeeperException.NoNodeException if node does not exist
    */
   public static boolean deleteOfflineNode(ZooKeeperWatcher zkw,
-      String regionName)
+      String encodedRegionName)
   throws KeeperException, KeeperException.NoNodeException {
-    return deleteNode(zkw, regionName, EventType.M_ZK_REGION_OFFLINE);
+    return deleteNode(zkw, encodedRegionName, EventType.M_ZK_REGION_OFFLINE);
   }
 
   /**
@@ -309,14 +309,14 @@ public class ZKAssign {
    * of the specified regions transition to being closed.
    *
    * @param zkw zk reference
-   * @param regionName closed region to be deleted from zk
+   * @param encodedRegionName closed region to be deleted from zk
    * @throws KeeperException if unexpected zookeeper exception
    * @throws KeeperException.NoNodeException if node does not exist
    */
   public static boolean deleteClosedNode(ZooKeeperWatcher zkw,
-      String regionName)
+      String encodedRegionName)
   throws KeeperException, KeeperException.NoNodeException {
-    return deleteNode(zkw, regionName, EventType.RS_ZK_REGION_CLOSED);
+    return deleteNode(zkw, encodedRegionName, EventType.RS_ZK_REGION_CLOSED);
   }
 
   /**
@@ -342,8 +342,8 @@ public class ZKAssign {
   public static boolean deleteClosingNode(ZooKeeperWatcher zkw,
       HRegionInfo region)
   throws KeeperException, KeeperException.NoNodeException {
-    String regionName = region.getEncodedName();
-    return deleteNode(zkw, regionName, EventType.M_ZK_REGION_CLOSING);
+    String encodedRegionName = region.getEncodedName();
+    return deleteNode(zkw, encodedRegionName, EventType.M_ZK_REGION_CLOSING);
   }
 
   /**
@@ -362,15 +362,15 @@ public class ZKAssign {
    * of the specified regions transition to being closed/opened.
    *
    * @param zkw zk reference
-   * @param regionName region to be deleted from zk
+   * @param encodedRegionName region to be deleted from zk
    * @param expectedState state region must be in for delete to complete
    * @throws KeeperException if unexpected zookeeper exception
    * @throws KeeperException.NoNodeException if node does not exist
    */
-  public static boolean deleteNode(ZooKeeperWatcher zkw, String regionName,
+  public static boolean deleteNode(ZooKeeperWatcher zkw, String encodedRegionName,
       EventType expectedState)
   throws KeeperException, KeeperException.NoNodeException {
-    return deleteNode(zkw, regionName, expectedState, -1);
+    return deleteNode(zkw, encodedRegionName, expectedState, -1);
   }
 
   /**
@@ -389,7 +389,7 @@ public class ZKAssign {
    * of the specified regions transition to being closed/opened.
    *
    * @param zkw zk reference
-   * @param regionName region to be deleted from zk
+   * @param encodedRegionName region to be deleted from zk
    * @param expectedState state region must be in for delete to complete
    * @param expectedVersion of the znode that is to be deleted.
    *        If expectedVersion need not be compared while deleting the znode
@@ -397,12 +397,12 @@ public class ZKAssign {
    * @throws KeeperException if unexpected zookeeper exception
    * @throws KeeperException.NoNodeException if node does not exist
    */
-  public static boolean deleteNode(ZooKeeperWatcher zkw, String regionName,
+  public static boolean deleteNode(ZooKeeperWatcher zkw, String encodedRegionName,
       EventType expectedState, int expectedVersion)
   throws KeeperException, KeeperException.NoNodeException {
     LOG.debug(zkw.prefix("Deleting existing unassigned " +
-      "node for " + regionName + " that is in expected state " + expectedState));
-    String node = getNodeName(zkw, regionName);
+      "node for " + encodedRegionName + " that is in expected state " + expectedState));
+    String node = getNodeName(zkw, encodedRegionName);
     zkw.sync(node);
     Stat stat = new Stat();
     byte [] bytes = ZKUtil.getDataNoWatch(zkw, node, stat);
@@ -413,24 +413,24 @@ public class ZKAssign {
     RegionTransition rt = getRegionTransition(bytes);
     EventType et = rt.getEventType();
     if (!et.equals(expectedState)) {
-      LOG.warn(zkw.prefix("Attempting to delete unassigned node " + regionName + " in " +
+      LOG.warn(zkw.prefix("Attempting to delete unassigned node " + encodedRegionName + " in " +
         expectedState + " state but node is in " + et + " state"));
       return false;
     }
     if (expectedVersion != -1
         && stat.getVersion() != expectedVersion) {
-      LOG.warn("The node " + regionName + " we are trying to delete is not" +
+      LOG.warn("The node " + encodedRegionName + " we are trying to delete is not" +
         " the expected one. Got a version mismatch");
       return false;
     }
     if(!ZKUtil.deleteNode(zkw, node, stat.getVersion())) {
       LOG.warn(zkw.prefix("Attempting to delete " +
-          "unassigned node " + regionName + " in " + expectedState +
+          "unassigned node " + encodedRegionName + " in " + expectedState +
           " state but after verifying state, we got a version mismatch"));
       return false;
     }
     LOG.debug(zkw.prefix("Successfully deleted unassigned node for region " +
-        regionName + " in expected state " + expectedState));
+        encodedRegionName + " in expected state " + expectedState));
     return true;
   }
 
