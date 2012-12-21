@@ -15,14 +15,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.hbase.coprocessor;
+// Coprocessor test
+option java_package = "org.apache.hadoop.hbase.coprocessor.protobuf.generated";
+option java_outer_classname = "ColumnAggregationProtos";
+option java_generic_services = true;
+option java_generate_equals_and_hash = true;
 
-public class GenericEndpoint extends BaseEndpointCoprocessor implements
-    GenericProtocol {
+message SumRequest {
+  required bytes family = 1;
+  optional bytes qualifier = 2;
+}
 
-  @Override
-  public <T> T doWork(T genericObject) {
-    return genericObject;
-  }
+message SumResponse {
+  required int64 sum = 1;
+}
 
+service ColumnAggregationService {
+  rpc sum(SumRequest) returns(SumResponse);
 }

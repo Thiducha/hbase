@@ -1,5 +1,4 @@
-/*
- *
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,23 +15,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.hbase.coprocessor;
 
-import org.apache.hadoop.hbase.ipc.CoprocessorProtocol;
-import java.io.IOException;
+package org.apache.hadoop.hbase.replication;
+
+import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.LargeTests;
+import org.junit.BeforeClass;
+import org.junit.experimental.categories.Category;
 
 /**
- * A sample protocol for performing aggregation at regions.
+ * Run the same test as TestReplication but with HLog compression enabled
  */
-public interface ColumnAggregationProtocol extends CoprocessorProtocol {
+@Category(LargeTests.class)
+public class TestReplicationWithCompression extends TestReplication {
+
   /**
-   * Perform aggregation for a given column at the region. The aggregation
-   * will include all the rows inside the region. It can be extended to
-   * allow passing start and end rows for a fine-grained aggregation.
-   * @param family family
-   * @param qualifier qualifier
-   * @return Aggregation of the column.
-   * @throws exception.
+   * @throws java.lang.Exception
    */
-  public long sum(byte[] family, byte[] qualifier) throws IOException;
+  @BeforeClass
+  public static void setUpBeforeClass() throws Exception {
+    conf1.setBoolean(HConstants.ENABLE_WAL_COMPRESSION, true);
+    TestReplication.setUpBeforeClass();
+  }
 }

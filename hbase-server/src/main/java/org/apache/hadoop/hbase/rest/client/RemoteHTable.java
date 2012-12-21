@@ -35,7 +35,6 @@ import org.apache.commons.logging.LogFactory;
 
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.client.coprocessor.Batch;
-import org.apache.hadoop.hbase.ipc.CoprocessorProtocol;
 import org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel;
 import org.apache.hadoop.util.StringUtils;
 
@@ -82,7 +81,7 @@ public class RemoteHTable implements HTableInterface {
   final long sleepTime;
 
   @SuppressWarnings("rawtypes")
-  protected String buildRowSpec(final byte[] row, final Map familyMap, 
+  protected String buildRowSpec(final byte[] row, final Map familyMap,
       final long startTime, final long endTime, final int maxVersions) {
     StringBuffer sb = new StringBuffer();
     sb.append('/');
@@ -174,7 +173,7 @@ public class RemoteHTable implements HTableInterface {
         byte[][] split = KeyValue.parseColumn(cell.getColumn());
         byte[] column = split[0];
         byte[] qualifier = split.length > 1 ? split[1] : null;
-        kvs.add(new KeyValue(row.getKey(), column, qualifier, 
+        kvs.add(new KeyValue(row.getKey(), column, qualifier,
           cell.getTimestamp(), cell.getValue()));
       }
       results.add(new Result(kvs));
@@ -252,7 +251,7 @@ public class RemoteHTable implements HTableInterface {
         TableSchemaModel schema = new TableSchemaModel();
         schema.getObjectFromMessage(response.getBody());
         return schema.getTableDescriptor();
-      case 509: 
+      case 509:
         try {
           Thread.sleep(sleepTime);
         } catch (InterruptedException e) { }
@@ -529,7 +528,7 @@ public class RemoteHTable implements HTableInterface {
       }
       return results[0];
     }
-    
+
     class Iter implements Iterator<Result> {
 
       Result cache;
@@ -563,7 +562,7 @@ public class RemoteHTable implements HTableInterface {
       public void remove() {
         throw new RuntimeException("remove() not supported");
       }
-      
+
     }
 
     @Override
@@ -723,29 +722,6 @@ public class RemoteHTable implements HTableInterface {
   public <R> Object[] batchCallback(List<? extends Row> actions, Batch.Callback<R> callback)
    throws IOException, InterruptedException {
     throw new IOException("batchCallback not supported");
-  }
-
-  @Override
-  public <T extends CoprocessorProtocol> T coprocessorProxy(Class<T> protocol,
-      byte[] row) {
-    throw new
-    UnsupportedOperationException("coprocessorProxy not implemented");
-  }
-
-  @Override
-  public <T extends CoprocessorProtocol, R> Map<byte[], R> coprocessorExec(
-      Class<T> protocol, byte[] startKey, byte[] endKey,
-      Batch.Call<T, R> callable)
-      throws IOException, Throwable {
-    throw new UnsupportedOperationException("coprocessorExec not implemented");
-  }
-
-  @Override
-  public <T extends CoprocessorProtocol, R> void coprocessorExec(
-      Class<T> protocol, byte[] startKey, byte[] endKey,
-      Batch.Call<T, R> callable, Batch.Callback<R> callback)
-      throws IOException, Throwable {
-    throw new UnsupportedOperationException("coprocessorExec not implemented");
   }
 
   @Override

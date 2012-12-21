@@ -36,7 +36,6 @@ import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.client.coprocessor.Batch;
-import org.apache.hadoop.hbase.ipc.CoprocessorProtocol;
 import org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.SortedCopyOnWriteSet;
@@ -131,7 +130,7 @@ public abstract class CoprocessorHost<E extends CoprocessorEnvironment> {
   protected void loadSystemCoprocessors(Configuration conf, String confKey) {
     Class<?> implClass = null;
 
-    // load default coprocessors from configure file    
+    // load default coprocessors from configure file
     String[] defaultCPClasses = conf.getStrings(confKey);
     if (defaultCPClasses == null || defaultCPClasses.length == 0)
       return;
@@ -175,7 +174,7 @@ public abstract class CoprocessorHost<E extends CoprocessorEnvironment> {
   public E load(Path path, String className, int priority,
       Configuration conf) throws IOException {
     Class<?> implClass = null;
-    LOG.debug("Loading coprocessor class " + className + " with path " + 
+    LOG.debug("Loading coprocessor class " + className + " with path " +
         path + " and priority " + priority);
 
     ClassLoader cl = null;
@@ -584,26 +583,6 @@ public abstract class CoprocessorHost<E extends CoprocessorEnvironment> {
       @Override
       public Result[] get(List<Get> gets) throws IOException {
         return table.get(gets);
-      }
-
-      @Override
-      public <T extends CoprocessorProtocol, R> void coprocessorExec(Class<T> protocol,
-          byte[] startKey, byte[] endKey, Batch.Call<T, R> callable,
-          Batch.Callback<R> callback) throws IOException, Throwable {
-        table.coprocessorExec(protocol, startKey, endKey, callable, callback);
-      }
-
-      @Override
-      public <T extends CoprocessorProtocol, R> Map<byte[], R> coprocessorExec(
-          Class<T> protocol, byte[] startKey, byte[] endKey, Batch.Call<T, R> callable)
-          throws IOException, Throwable {
-        return table.coprocessorExec(protocol, startKey, endKey, callable);
-      }
-
-      @Override
-      public <T extends CoprocessorProtocol> T coprocessorProxy(Class<T> protocol,
-          byte[] row) {
-        return table.coprocessorProxy(protocol, row);
       }
 
       @Override

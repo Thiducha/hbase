@@ -41,8 +41,8 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Row;
 import org.apache.hadoop.hbase.client.RowMutations;
 import org.apache.hadoop.hbase.client.Scan;
-import org.apache.hadoop.hbase.client.coprocessor.Exec;
 import org.apache.hadoop.hbase.filter.ByteArrayComparable;
+import org.apache.hadoop.hbase.protobuf.generated.AccessControlProtos;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CloseRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CompactRegionRequest;
@@ -66,7 +66,6 @@ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.BulkLoadHFileRequ
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.BulkLoadHFileRequest.FamilyPath;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Column;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Condition;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ExecCoprocessorRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.GetRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.LockRowRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiAction;
@@ -116,7 +115,6 @@ import com.google.protobuf.ByteString;
  * or build components for protocol buffer requests.
  */
 @InterfaceAudience.Private
-@SuppressWarnings("deprecation")
 public final class RequestConverter {
 
   private RequestConverter() {
@@ -496,24 +494,6 @@ public final class RequestConverter {
   }
 
   /**
-   * Create a protocol buffer coprocessor exec request
-   *
-   * @param regionName
-   * @param exec
-   * @return a coprocessor exec request
-   * @throws IOException
-   */
-  public static ExecCoprocessorRequest buildExecCoprocessorRequest(
-      final byte[] regionName, final Exec exec) throws IOException {
-    ExecCoprocessorRequest.Builder builder = ExecCoprocessorRequest.newBuilder();
-    RegionSpecifier region = buildRegionSpecifier(
-      RegionSpecifierType.REGION_NAME, regionName);
-    builder.setRegion(region);
-    builder.setCall(ProtobufUtil.toExec(exec));
-    return builder.build();
-  }
-
-  /**
    * Create a protocol buffer multi request for a list of actions.
    * RowMutations in the list (if any) will be ignored.
    *
@@ -538,8 +518,6 @@ public final class RequestConverter {
         protoAction.setMutate(ProtobufUtil.toMutate(MutateType.PUT, (Put)row));
       } else if (row instanceof Delete) {
         protoAction.setMutate(ProtobufUtil.toMutate(MutateType.DELETE, (Delete)row));
-      } else if (row instanceof Exec) {
-        protoAction.setExec(ProtobufUtil.toExec((Exec)row));
       } else if (row instanceof Append) {
         protoAction.setMutate(ProtobufUtil.toMutate(MutateType.APPEND, (Append)row));
       } else if (row instanceof Increment) {
@@ -1149,6 +1127,78 @@ public final class RequestConverter {
       byte[] regionName) {
     return GetLastFlushedSequenceIdRequest.newBuilder().setRegionName(
         ByteString.copyFrom(regionName)).build();
+  }
+
+  /**
+   * Create a request to grant user permissions.
+   *
+   * @param username the short user name who to grant permissions
+   * @param table optional table name the permissions apply
+   * @param family optional column family
+   * @param qualifier optional qualifier
+   * @param actions the permissions to be granted
+   * @return A {@link AccessControlProtos.GrantRequest)
+   */
+  public static AccessControlProtos.GrantRequest buildGrantRequest(
+      String username, byte[] table, byte[] family, byte[] qualifier,
+      AccessControlProtos.Permission.Action... actions) {
+    AccessControlProtos.Permission.Builder permissionBuilder =
+        AccessControlProtos.Permission.newBuilder();
+    for (AccessControlProtos.Permission.Action a : actions) {
+      permissionBuilder.addAction(a);
+    }
+    if (table != null) {
+      permissionBuilder.setTable(ByteString.copyFrom(table));
+    }
+    if (family != null) {
+      permissionBuilder.setFamily(ByteString.copyFrom(family));
+    }
+    if (qualifier != null) {
+      permissionBuilder.setQualifier(ByteString.copyFrom(qualifier));
+    }
+
+    return AccessControlProtos.GrantRequest.newBuilder()
+      .setPermission(
+          AccessControlProtos.UserPermission.newBuilder()
+              .setUser(ByteString.copyFromUtf8(username))
+              .setPermission(permissionBuilder.build())
+      ).build();
+  }
+
+  /**
+   * Create a request to revoke user permissions.
+   *
+   * @param username the short user name whose permissions to be revoked
+   * @param table optional table name the permissions apply
+   * @param family optional column family
+   * @param qualifier optional qualifier
+   * @param actions the permissions to be revoked
+   * @return A {@link AccessControlProtos.RevokeRequest)
+   */
+  public static AccessControlProtos.RevokeRequest buildRevokeRequest(
+      String username, byte[] table, byte[] family, byte[] qualifier,
+      AccessControlProtos.Permission.Action... actions) {
+    AccessControlProtos.Permission.Builder permissionBuilder =
+        AccessControlProtos.Permission.newBuilder();
+    for (AccessControlProtos.Permission.Action a : actions) {
+      permissionBuilder.addAction(a);
+    }
+    if (table != null) {
+      permissionBuilder.setTable(ByteString.copyFrom(table));
+    }
+    if (family != null) {
+      permissionBuilder.setFamily(ByteString.copyFrom(family));
+    }
+    if (qualifier != null) {
+      permissionBuilder.setQualifier(ByteString.copyFrom(qualifier));
+    }
+
+    return AccessControlProtos.RevokeRequest.newBuilder()
+      .setPermission(
+          AccessControlProtos.UserPermission.newBuilder()
+              .setUser(ByteString.copyFromUtf8(username))
+              .setPermission(permissionBuilder.build())
+      ).build();
   }
 
   /**

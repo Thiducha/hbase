@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,28 +16,20 @@
  * limitations under the License.
  */
 
-package org.apache.hadoop.hbase.security.token;
+package org.apache.hadoop.hbase.regionserver.wal;
 
-import java.io.IOException;
 
-import org.apache.hadoop.hbase.ipc.CoprocessorProtocol;
-import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.LargeTests;
+import org.junit.BeforeClass;
+import org.junit.experimental.categories.Category;
 
-/**
- * Defines a custom RPC protocol for obtaining authentication tokens
- */
-public interface AuthenticationProtocol extends CoprocessorProtocol {
-  /**
-   * Obtains a token capable of authenticating as the current user for future
-   * connections.
-   * @return an authentication token for the current user
-   * @throws IOException If obtaining a token is denied or encounters an error
-   */
-  public Token<AuthenticationTokenIdentifier> getAuthenticationToken()
-      throws IOException;
+@Category(LargeTests.class)
+public class TestHLogSplitCompressed extends TestHLogSplit {
 
-  /**
-   * Returns the currently authenticated username.
-   */
-  public String whoami();
+  @BeforeClass
+  public static void setUpBeforeClass() throws Exception {
+    TestHLogSplit.setUpBeforeClass();
+    TEST_UTIL.getConfiguration().setBoolean(HConstants.ENABLE_WAL_COMPRESSION, true);
+  }
 }
