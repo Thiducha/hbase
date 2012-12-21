@@ -245,7 +245,6 @@ public class HTable implements HTableInterface {
 
   /**
    * setup this HTable's parameter based on the passed configuration
-   * @param conf
    */
   private void finishSetup() throws IOException {
     this.connection.locateRegion(tableName, HConstants.EMPTY_START_ROW);
@@ -347,11 +346,10 @@ public class HTable implements HTableInterface {
   }
 
   /**
-   * Finds the region on which the given row is being served.
+   * Finds the region on which the given row is being served. Does not reload the cache.
    * @param row Row to find.
    * @return Location of the row.
    * @throws IOException if a remote or network exception occurs
-   * @deprecated use {@link #getRegionLocation(byte [], boolean)} instead
    */
   public HRegionLocation getRegionLocation(final byte [] row)
   throws IOException {
@@ -361,8 +359,7 @@ public class HTable implements HTableInterface {
   /**
    * Finds the region on which the given row is being served.
    * @param row Row to find.
-   * @param reload whether or not to reload information or just use cached
-   * information
+   * @param reload true to reload information or false to use cached information
    * @return Location of the row.
    * @throws IOException if a remote or network exception occurs
    */

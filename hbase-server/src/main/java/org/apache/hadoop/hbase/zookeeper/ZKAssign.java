@@ -631,6 +631,51 @@ public class ZKAssign {
   }
 
   /**
+   *
+   * @param zkw zk reference
+   * @param region region to be closed
+   * @param expectedVersion expected version of the znode
+   * @return true if the znode exists, has the right version and the right state. False otherwise.
+   * @throws KeeperException
+   */
+  public static boolean checkClosingState(ZooKeeperWatcher zkw, HRegionInfo region,
+                                          int expectedVersion) throws KeeperException {
+
+    final String encoded = getNodeName(zkw, region.getEncodedName());
+    zkw.sync(encoded);
+
+    // Read existing data of the node
+    Stat stat = new Stat();
+    byte[] existingBytes = ZKUtil.getDataNoWatch(zkw, encoded, stat);
+
+    if (existingBytes == null) {
+      LOG.warn(zkw.prefix("Attempt to check the " +
+          "closing node for " + encoded +
+          ". The node does not exist"));
+      return false;
+    }
+
+    if (expectedVersion != -1 && stat.getVersion() != expectedVersion) {
+      LOG.warn(zkw.prefix("Attempt to check the " +
+          "closing node for " + encoded +
+          ". The node existed but was version " + stat.getVersion() +
+          " not the expected version " + expectedVersion));
+      return false;
+    }
+
+    RegionTransition rt = getRegionTransition(existingBytes);
+
+    if (!EventType.M_ZK_REGION_CLOSING.equals(rt.getEventType())) {
+      LOG.warn(zkw.prefix("Attempt to check the " +
+          "closing node for " + encoded +
+          ". The node existed but was in an unexpected state: " + rt.getEventType()));
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
    * Method that actually performs unassigned node transitions.
    *
    * <p>Attempts to transition the unassigned node for the specified region

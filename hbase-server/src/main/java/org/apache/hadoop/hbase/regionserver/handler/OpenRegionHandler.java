@@ -83,6 +83,22 @@ public class OpenRegionHandler extends EventHandler {
     return regionInfo;
   }
 
+  private boolean checkAndCleanOpeningCanceled(){
+
+    if (isRegionStillOpening()) {
+      return true;
+    }
+
+    LOG.warn("Open region aborted since it isn't opening any more");
+
+    if (!tryTransitionToFailedOpen(regionInfo)){
+      LOG.error("Can't cleanup the znode after a canceled open for region="
+          + regionInfo.getEncodedName());
+    }
+
+    return false;
+  }
+
   @Override
   public void process() throws IOException {
     try {
@@ -92,21 +108,32 @@ public class OpenRegionHandler extends EventHandler {
       }
       final String encodedName = regionInfo.getEncodedName();
 
-      // Check that this region is not already online
-      HRegion region = this.rsServices.getFromOnlineRegions(encodedName);
+      // 3 different difficult situations can occur
+      // 1) The opening was cancelled. This is an expected situation
+      // 2) The region was hijacked, we no longer have the znode
+      // 3) The region is now marked as online while we're suppose to open. This would be a bug.
 
+      // Check that this region is not already online
+      if (this.rsServices.getFromOnlineRegions(encodedName) != null) {
+        LOG.error("Region " + encodedName +
+            " was already online when we started processing the opening. " +
+            "Marking this new attempt as failed");
+        tryTransitionToFailedOpen(regionInfo);
+        return;
+      }
+
+      // Check that we're still supposed to open the region and transition.
       // If fails, just return.  Someone stole the region from under us.
       // Calling transitionZookeeperOfflineToOpening initalizes this.version.
-      if (!transitionZookeeperOfflineToOpening(encodedName,
-          versionOfOfflineNode)) {
-        LOG.warn("Region was hijacked? It no longer exists, encodedName=" +
-          encodedName);
+      if (!checkAndCleanOpeningCanceled() ||
+          !transitionZookeeperOfflineToOpening(encodedName, versionOfOfflineNode)) {
+        LOG.warn("Region was hijacked? Opening cancelled for encodedName=" + encodedName);
         return;
       }
 
       // Open region.  After a successful open, failures in subsequent
       // processing needs to do a close as part of cleanup.
-      region = openRegion();
+      HRegion region = openRegion();
       if (region == null) {
         tryTransitionToFailedOpen(regionInfo);
         return;
@@ -124,7 +151,8 @@ public class OpenRegionHandler extends EventHandler {
         return;
       }
 
-      if (!transitionToOpened(region)) {
+
+      if (!checkAndCleanOpeningCanceled() || !transitionToOpened(region)) {
         // If we fail to transition to opened, it's because of one of two cases:
         //    (a) we lost our ZK lease
         // OR (b) someone else opened the region before us
@@ -136,7 +164,7 @@ public class OpenRegionHandler extends EventHandler {
       }
 
       // One more check to make sure we are opening instead of closing
-      if (!isRegionStillOpening()) {
+      if (!checkAndCleanOpeningCanceled()) {
         LOG.warn("Open region aborted since it isn't opening any more");
         cleanupFailedOpen(region);
         return;
@@ -277,10 +305,6 @@ public class OpenRegionHandler extends EventHandler {
    * @throws IOException
    */
   private boolean transitionToOpened(final HRegion r) throws IOException {
-    if (!isRegionStillOpening()) {
-      LOG.warn("Open region aborted since it isn't opening any more");
-      return false;
-    }
     boolean result = false;
     HRegionInfo hri = r.getRegionInfo();
     final String name = hri.getRegionNameAsString();
@@ -310,7 +334,7 @@ public class OpenRegionHandler extends EventHandler {
    * @param hri Region we're working on.
    * @return whether znode is successfully transitioned to FAILED_OPEN state.
    */
-  private boolean tryTransitionToFailedOpen(final HRegionInfo hri) {
+  public boolean tryTransitionToFailedOpen(final HRegionInfo hri) {
     boolean result = false;
     final String name = hri.getRegionNameAsString();
     try {
@@ -379,7 +403,7 @@ public class OpenRegionHandler extends EventHandler {
   private boolean isRegionStillOpening() {
     byte[] encodedName = regionInfo.getEncodedNameAsBytes();
     Boolean action = rsServices.getRegionsInTransitionInRS().get(encodedName);
-    return action != null && action.booleanValue();
+    return Boolean.TRUE.equals(action); // true means opening for RIT
   }
 
   /**
@@ -392,10 +416,6 @@ public class OpenRegionHandler extends EventHandler {
    */
   boolean transitionZookeeperOfflineToOpening(final String encodedName,
       int versionOfOfflineNode) {
-    if (!isRegionStillOpening()) {
-      LOG.warn("Open region aborted since it isn't opening any more");
-      return false;
-    }
     // TODO: should also handle transition from CLOSED?
     try {
       // Initialize the znode version.
@@ -405,6 +425,8 @@ public class OpenRegionHandler extends EventHandler {
     } catch (KeeperException e) {
       LOG.error("Error transition from OFFLINE to OPENING for region=" +
         encodedName, e);
+      this.version = -1;
+      return false;
     }
     boolean b = isGoodVersion();
     if (!b) {
@@ -436,6 +458,7 @@ public class OpenRegionHandler extends EventHandler {
       server.abort("Exception refreshing OPENING; region=" + encodedName +
         ", context=" + context, e);
       this.version = -1;
+      return false;
     }
     boolean b = isGoodVersion();
     if (!b) {
