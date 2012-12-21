@@ -3488,13 +3488,6 @@ public class  HRegionServer implements ClientProtocol,
       if ((region  != null) && (region .getCoprocessorHost() != null)) {
         region.getCoprocessorHost().preClose(false);
       }
-      Boolean openAction = regionsInTransitionInRS.get(encodedName);
-      if (openAction != null) {
-        if (openAction.booleanValue()) {
-          regionsInTransitionInRS.replace(encodedName, openAction, Boolean.FALSE);
-        }
-        checkIfRegionInTransition(encodedName, CLOSE);
-      }
            
       requestCount.increment();
       LOG.info("Received close region: " + encodedRegionName +
@@ -3503,8 +3496,7 @@ public class  HRegionServer implements ClientProtocol,
         ". Destination server:" + sn);
 
       boolean closed = closeRegion(encodedRegionName, false, zk, versionOfClosingNode, sn);
-      CloseRegionResponse.Builder builder =
-        CloseRegionResponse.newBuilder().setClosed(closed);
+      CloseRegionResponse.Builder builder = CloseRegionResponse.newBuilder().setClosed(closed);
       return builder.build();
     } catch (IOException ie) {
       throw new ServiceException(ie);
