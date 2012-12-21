@@ -73,6 +73,7 @@ import org.apache.hadoop.hbase.OutOfOrderScannerNextException;
 import org.apache.hadoop.hbase.RegionMovedException;
 import org.apache.hadoop.hbase.RegionServerStatusProtocol;
 import org.apache.hadoop.hbase.RemoteExceptionHandler;
+import org.apache.hadoop.hbase.ServerLoad;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.Stoppable;
 import org.apache.hadoop.hbase.TableDescriptors;
@@ -95,13 +96,11 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.RowMutations;
 import org.apache.hadoop.hbase.client.Scan;
-import org.apache.hadoop.hbase.client.coprocessor.Exec;
-import org.apache.hadoop.hbase.client.coprocessor.ExecResult;
 import org.apache.hadoop.hbase.coprocessor.CoprocessorHost;
 import org.apache.hadoop.hbase.executor.ExecutorService;
 import org.apache.hadoop.hbase.executor.ExecutorService.ExecutorType;
-import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp;
 import org.apache.hadoop.hbase.filter.ByteArrayComparable;
+import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp;
 import org.apache.hadoop.hbase.fs.HFileSystem;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.ipc.HBaseRPC;
@@ -145,8 +144,8 @@ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.BulkLoadHFileRequ
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.BulkLoadHFileRequest.FamilyPath;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.BulkLoadHFileResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Condition;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ExecCoprocessorRequest;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ExecCoprocessorResponse;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceRequest;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.GetRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.GetResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.LockRowRequest;
@@ -184,8 +183,8 @@ import org.apache.hadoop.hbase.regionserver.handler.OpenMetaHandler;
 import org.apache.hadoop.hbase.regionserver.handler.OpenRegionHandler;
 import org.apache.hadoop.hbase.regionserver.handler.OpenRootHandler;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
-import org.apache.hadoop.hbase.regionserver.wal.HLogUtil;
 import org.apache.hadoop.hbase.regionserver.wal.HLogFactory;
+import org.apache.hadoop.hbase.regionserver.wal.HLogUtil;
 import org.apache.hadoop.hbase.regionserver.wal.WALActionsListener;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -216,11 +215,9 @@ import org.cliffc.high_scale_lib.Counter;
 
 import com.google.common.base.Function;
 import com.google.protobuf.ByteString;
+import com.google.protobuf.Message;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
-
-import static org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceRequest;
-import static org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceResponse;
 
 /**
  * HRegionServer makes a set of HRegions available to clients. It checks in with
@@ -341,10 +338,10 @@ public class  HRegionServer implements ClientProtocol,
 
   /** region server process name */
   public static final String REGIONSERVER = "regionserver";
-  
+
   /** region server configuration name */
   public static final String REGIONSERVER_CONF = "regionserver_conf";
-  
+
   /*
    * Space is reserved in HRS constructor and then released when aborting to
    * recover from an OOME. See HBASE-706. TODO: Make this percentage of the heap
@@ -429,7 +426,7 @@ public class  HRegionServer implements ClientProtocol,
    * The reference to the QosFunction
    */
   private final QosFunction qosFunction;
-  
+
   private RegionServerCoprocessorHost rsHost;
 
   /**
@@ -624,7 +621,7 @@ public class  HRegionServer implements ClientProtocol,
             new HashMap<Class<? extends Message>, Method>());
       }
       if (methodMap.get("getRegion") == null) {
-        methodMap.put("getRegion", 
+        methodMap.put("getRegion",
             new HashMap<Class<? extends Message>, Method>());
       }
       for (Class<? extends Message> cls : knownArgumentClasses) {
@@ -1394,7 +1391,7 @@ public class  HRegionServer implements ClientProtocol,
     // Instantiate replication manager if replication enabled.  Pass it the
     // log directories.
     createNewReplicationInstance(conf, this, this.fs, logdir, oldLogDir);
-    
+
     return instantiateHLog(rootDir, logName);
   }
 
@@ -2105,7 +2102,7 @@ public class  HRegionServer implements ClientProtocol,
   public ZooKeeperWatcher getZooKeeperWatcher() {
     return this.zooKeeper;
   }
-  
+
   public RegionServerCoprocessorHost getCoprocessorHost(){
     return this.rsHost;
   }
@@ -3159,27 +3156,6 @@ public class  HRegionServer implements ClientProtocol,
     }
   }
 
-  /**
-   * Executes a single method using protobuff.
-   */
-  @Override
-  public ExecCoprocessorResponse execCoprocessor(final RpcController controller,
-      final ExecCoprocessorRequest request) throws ServiceException {
-    try {
-      requestCount.increment();
-      HRegion region = getRegion(request.getRegion());
-      ExecCoprocessorResponse.Builder
-        builder = ExecCoprocessorResponse.newBuilder();
-      ClientProtos.Exec call = request.getCall();
-      Exec clientCall = ProtobufUtil.toExec(call);
-      ExecResult result = region.exec(clientCall);
-      builder.setValue(ProtobufUtil.toParameter(result.getValue()));
-      return builder.build();
-    } catch (IOException ie) {
-      throw new ServiceException(ie);
-    }
-  }
-
   @Override
   public CoprocessorServiceResponse execService(final RpcController controller,
       final CoprocessorServiceRequest request) throws ServiceException {
@@ -3274,9 +3250,6 @@ public class  HRegionServer implements ClientProtocol,
               if (r != null) {
                 result = ProtobufUtil.toResult(r);
               }
-            } else if (actionUnion.hasExec()) {
-              Exec call = ProtobufUtil.toExec(actionUnion.getExec());
-              result = region.exec(call).getValue();
             } else {
               LOG.warn("Error: invalid action: " + actionUnion + ". "
                 + "it must be a Get, Mutate, or Exec.");
@@ -3515,7 +3488,14 @@ public class  HRegionServer implements ClientProtocol,
       if ((region  != null) && (region .getCoprocessorHost() != null)) {
         region.getCoprocessorHost().preClose(false);
       }
-
+      Boolean openAction = regionsInTransitionInRS.get(encodedName);
+      if (openAction != null) {
+        if (openAction.booleanValue()) {
+          regionsInTransitionInRS.replace(encodedName, openAction, Boolean.FALSE);
+        }
+        checkIfRegionInTransition(encodedName, CLOSE);
+      }
+           
       requestCount.increment();
       LOG.info("Received close region: " + encodedRegionName +
           "Transitioning in ZK: " + (zk ? "yes" : "no") +
@@ -4005,7 +3985,7 @@ public class  HRegionServer implements ClientProtocol,
   private String getMyEphemeralNodePath() {
     return ZKUtil.joinZNode(this.zooKeeper.rsZNode, getServerName().toString());
   }
-  
+
   /**
    * Holder class which holds the RegionScanner and nextCallSeq together.
    */
