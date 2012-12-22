@@ -834,7 +834,7 @@
     <commons-cli.version>1.2</commons-cli.version>
     <commons-codec.version>1.7</commons-codec.version>
     <!-- pretty outdated -->
-    <commons-io.version>2.5.2</commons-io.version>
+    <commons-io.version>2.4</commons-io.version>
     <commons-lang.version>2.6</commons-lang.version>
     <commons-logging.version>1.1.1</commons-logging.version>
     <commons-math.version>2.1</commons-math.version>
@@ -865,7 +865,7 @@
     <maven.assembly.version>2.3</maven.assembly.version>
     <maven.antrun.version>1.6</maven.antrun.version>
     <jamon.plugin.version>2.3.4</jamon.plugin.version>
-    <findbugs.version>2.4.0</findbugs.version>
+    <findbugs.version>2.5.2</findbugs.version>
     <maven.site.version>3.1</maven.site.version>
     <javadoc.version>2.9</javadoc.version>
     <maven.resources.plugin.version>2.5</maven.resources.plugin.version>
