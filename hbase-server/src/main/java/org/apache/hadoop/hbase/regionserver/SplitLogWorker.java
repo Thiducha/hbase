@@ -30,7 +30,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.DeserializationException;
-import org.apache.hadoop.hbase.RegionServerStatusProtocol;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.SplitLogCounters;
 import org.apache.hadoop.hbase.SplitLogTask;
@@ -395,7 +394,7 @@ public class SplitLogWorker extends ZooKeeperListener implements Runnable {
     } catch (KeeperException e) {
       LOG.warn("failed to end task, " + path + " " + slt, e);
     }
-    SplitLogCounters.tot_wkr_final_transistion_failed.incrementAndGet();
+    SplitLogCounters.tot_wkr_final_transition_failed.incrementAndGet();
     return;
   }
 
