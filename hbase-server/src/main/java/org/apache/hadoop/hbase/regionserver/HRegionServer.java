@@ -2383,31 +2383,41 @@ public class  HRegionServer implements ClientProtocol,
         LOG.warn("Failed to close " + region.getRegionNameAsString() +
             " - ignoring and continuing");
       }
-    } catch (RegionAlreadyInTransitionException e) {
-      LOG.warn("Failed to close " + region.getRegionNameAsString() +
-          " - ignoring and continuing", e);
     } catch (NotServingRegionException e) {
       LOG.warn("Failed to close " + region.getRegionNameAsString() +
           " - ignoring and continuing", e);
     }
   }
 
-    /**
+  /**
+   * Close asynchronously a region, can be called from the master or internally by the region server
+   * when stopping. If called from the master, the region will update the znode status.
+   *
+   * <p>
+   * If an opening was in progress, this method will cancel it, but will not start a new close. The
+   * coprocessors are not called in this case. A NotServingRegionException exception will be thrown.
+   * </p>
+
+   * <p>
+   *   If a close was in progress, this new request will be ignored, and an excpetion thrown.
+   * </p>
+   *
    * @param encodedName Region to close
    * @param abort True if we are aborting
    * @param zk True if we are to update zk about the region close; if the close
    * was orchestrated by master, then update zk.  If the close is being run by
    * the regionserver because its going down, don't update zk.
-   * @param versionOfClosingNode
-   *   the version of znode to compare when RS transitions the znode from
+   * @param versionOfClosingNode the version of znode to compare when RS transitions the znode from
    *   CLOSING state.
    * @return True if closed a region.
+   * @throws NotServingRegionException if the region is not online or if a close
+   * request in in progress.
    */
   protected boolean closeRegion(String encodedName, final boolean abort,
-      final boolean zk, final int versionOfClosingNode, ServerName sn)
-      throws RegionAlreadyInTransitionException, NotServingRegionException {
+      final boolean zk, final int versionOfClosingNode, final ServerName sn)
+      throws NotServingRegionException {
     //Check for permissions to close.
-    HRegion actualRegion = this.getFromOnlineRegions(encodedName);
+    final HRegion actualRegion = this.getFromOnlineRegions(encodedName);
     if ((actualRegion != null) && (actualRegion.getCoprocessorHost() != null)) {
       try {
         actualRegion.getCoprocessorHost().preClose(false);
@@ -2417,28 +2427,30 @@ public class  HRegionServer implements ClientProtocol,
       }
     }
 
-    Boolean previous = this.regionsInTransitionInRS.putIfAbsent(encodedName.getBytes(),
+    final Boolean previous = this.regionsInTransitionInRS.putIfAbsent(encodedName.getBytes(),
         Boolean.FALSE);
 
     if (Boolean.TRUE.equals(previous)) {
-      LOG.info("Received CLOSE for the region:" + " , which we are already trying to OPEN. "+
-          "Cancelling OPENING.");
+      LOG.info("Received CLOSE for the region:" + encodedName + " , which we are already " +
+          "trying to OPEN. Cancelling OPENING.");
       if (!regionsInTransitionInRS.replace(encodedName.getBytes(), previous, Boolean.FALSE)){
-        // the replace failed. We going to try to do a standard close then.
-        LOG.warn("The opening was done before we could cancel it. Doing a standard close now");
+        // The replace failed. That should be an exceptional case, but theoretically it can happen.
+        // We're going to try to do a standard close then.
+        LOG.warn("The opening for region " + encodedName + " was done before we could cancel it." +
+            " Doing a standard close now");
         return closeRegion(encodedName, abort, zk, versionOfClosingNode, sn);
       } else {
-        LOG.info("The opening previously in progress has been cancelled. We consider" +
-            " this close as successful.");
+        LOG.info("The opening previously in progress has been cancelled by a CLOSE request.");
         // The master deletes the znode when it receives this exception.
         throw new NotServingRegionException("The region " + encodedName +
-            " was opening but not yet served. Opening is cancelled");
+            " was opening but not yet served. Opening is cancelled.");
       }
-    }
-    if (Boolean.FALSE.equals(previous)) {
+    } else if (Boolean.FALSE.equals(previous)) {
       LOG.info("Received CLOSE for the region: " + encodedName +
           " ,which we are already trying to CLOSE");
-      return true;
+      // The master deletes the znode when it receives this exception.
+      throw new NotServingRegionException("The region " + encodedName +
+          " was already closing. New CLOSE request is ignored.");
     }
 
     if (actualRegion == null){
@@ -2446,7 +2458,7 @@ public class  HRegionServer implements ClientProtocol,
       this.regionsInTransitionInRS.remove(encodedName.getBytes());
       // The master deletes the znode when it receives this exception.
       throw new NotServingRegionException("The region " + encodedName +
-          " was opening but not yet served. Opening is cancelled");
+          " is not online, and is not opening.");
     }
 
     CloseRegionHandler crh;
@@ -3355,8 +3367,24 @@ public class  HRegionServer implements ClientProtocol,
   // Region open/close direct RPCs
 
   /**
-   * Open a region on the region server.
+   * Open asynchronously a region or a set of regions on the region server.
    *
+   * The opening is coordinated by ZooKeeper, and this method requires the znode to be created
+   *  before being called. As a consequence, this method should be called only from the master.
+   * <p>
+   * Different manages states for the region are:<ul>
+   *  <li>region not opened: the region opening will start asynchronously.</li>
+   *  <li>a close is already in progress: this is considered as an error.</li>
+   *  <li>an open is already in progress: this new open request will be ignored. This is important
+   *  because the Master can do multiple requests if it crashes.</li>
+   *  <li>the region is already opened:  this new open request will be ignored./li>
+   *  </ul>
+   * </p>
+   * <p>
+   * Bulk assign: If there are more than 1 region to open, it will be considered as a bulk assign.
+   * For a single region opening, errors are sent through a ServiceException. For bulk assign,
+   * errors are put in the response as FAILED_OPENING.
+   * </p>
    * @param controller the RPC controller
    * @param request the request
    * @throws ServiceException
@@ -3372,21 +3400,20 @@ public class  HRegionServer implements ClientProtocol,
     }
     requestCount.increment();
     OpenRegionResponse.Builder builder = OpenRegionResponse.newBuilder();
-    int regionCount = request.getOpenInfoCount();
-    Map<String, HTableDescriptor> htds =
-      new HashMap<String, HTableDescriptor>(regionCount);
-    boolean isBulkAssign = regionCount > 1;
+    final int regionCount = request.getOpenInfoCount();
+    final Map<String, HTableDescriptor> htds = new HashMap<String, HTableDescriptor>(regionCount);
+    final boolean isBulkAssign = regionCount > 1;
     for (RegionOpenInfo regionOpenInfo : request.getOpenInfoList()) {
-      HRegionInfo region = HRegionInfo.convert(regionOpenInfo.getRegion());
+      final HRegionInfo region = HRegionInfo.convert(regionOpenInfo.getRegion());
 
       int versionOfOfflineNode = -1;
       if (regionOpenInfo.hasVersionOfOfflineNode()) {
         versionOfOfflineNode = regionOpenInfo.getVersionOfOfflineNode();
       }
-      HTableDescriptor htd = null;
+      HTableDescriptor htd;
       try {
-        HRegion onlineRegion = getFromOnlineRegions(region.getEncodedName());
-        if (null != onlineRegion) {
+        final HRegion onlineRegion = getFromOnlineRegions(region.getEncodedName());
+        if (onlineRegion != null) {
           //Check if the region can actually be opened. 
           if (onlineRegion.getCoprocessorHost() != null) {
             onlineRegion.getCoprocessorHost().preOpen();
@@ -3401,8 +3428,8 @@ public class  HRegionServer implements ClientProtocol,
             builder.addOpeningState(RegionOpeningState.ALREADY_OPENED);
             continue;
           } else {
-            LOG.warn("The region " + region.getEncodedName()
-                + " is online on this server but META does not have this server.");
+            LOG.warn("The region " + region.getEncodedName() +
+                " is online on this server but META does not have this server - continue opening.");
             removeFromOnlineRegions(region.getEncodedName(), null);
           }
         }
@@ -3414,27 +3441,27 @@ public class  HRegionServer implements ClientProtocol,
           htds.put(region.getTableNameAsString(), htd);
         }
 
-        Boolean previous = this.regionsInTransitionInRS.putIfAbsent(
+        final Boolean previous = this.regionsInTransitionInRS.putIfAbsent(
             region.getEncodedNameAsBytes(), Boolean.TRUE);
 
         if (Boolean.FALSE.equals(previous)) {
-          // We need to mark this opening as failed in ZK
-          // A better solution would be to have a FailedOpenRegionHandler in ZK,
-          new OpenRegionHandler(this, this, region, htd, versionOfOfflineNode).
-              tryTransitionToFailedOpen(region);
+          // There is a close in progress. We need to mark this open as failed in ZK.
+          OpenRegionHandler.
+              tryTransitionFromOfflineToFailedOpen(this, this, region, htd, versionOfOfflineNode);
 
           throw new RegionAlreadyInTransitionException("Received OPEN for the region:" +
               region.getRegionNameAsString() + " , which we are already trying to CLOSE ");
         }
 
         if (Boolean.TRUE.equals(previous)) {
-          // This is supported, but let's log this.
+          // An open is in progress. This is supported, but let's log this.
           LOG.info("Receiving OPEN for the region:" +
               region.getRegionNameAsString() + " , which we are already trying to OPEN" +
-              " - continuing");
+              " - ignoring this new request for this region.");
         }
 
         if (previous == null) {
+          // If there is no action in progress, we can submit a specific handler.
           // Need to pass the expected version in the constructor.
           if (region.isRootRegion()) {
             this.service.submit(new OpenRootHandler(this, this, region, htd,

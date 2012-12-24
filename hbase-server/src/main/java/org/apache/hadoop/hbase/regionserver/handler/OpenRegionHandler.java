@@ -83,26 +83,12 @@ public class OpenRegionHandler extends EventHandler {
     return regionInfo;
   }
 
-  private boolean checkAndCleanOpeningCanceled(){
-
-    if (isRegionStillOpening()) {
-      return true;
-    }
-
-    LOG.warn("Open region aborted since it isn't opening any more");
-
-    if (!tryTransitionToFailedOpen(regionInfo)){
-      LOG.error("Can't cleanup the znode after a canceled open for region="
-          + regionInfo.getEncodedName());
-    }
-
-    return false;
-  }
-
   @Override
   public void process() throws IOException {
+    boolean openSuccessful = false;
+    final String regionName = regionInfo.getRegionNameAsString();
+
     try {
-      final String name = regionInfo.getRegionNameAsString();
       if (this.server.isStopped() || this.rsServices.isStopping()) {
         return;
       }
@@ -118,16 +104,23 @@ public class OpenRegionHandler extends EventHandler {
         LOG.error("Region " + encodedName +
             " was already online when we started processing the opening. " +
             "Marking this new attempt as failed");
-        tryTransitionToFailedOpen(regionInfo);
+        tryTransitionFromOfflineToFailedOpen(regionInfo);
         return;
       }
 
       // Check that we're still supposed to open the region and transition.
       // If fails, just return.  Someone stole the region from under us.
       // Calling transitionZookeeperOfflineToOpening initalizes this.version.
-      if (!checkAndCleanOpeningCanceled() ||
-          !transitionZookeeperOfflineToOpening(encodedName, versionOfOfflineNode)) {
+      if (!isRegionStillOpening()){
+        LOG.error("Region " + encodedName + " opening cancelled");
+        tryTransitionFromOfflineToFailedOpen(regionInfo);
+        return;
+      }
+
+      if (!transitionZookeeperOfflineToOpening(encodedName, versionOfOfflineNode)) {
         LOG.warn("Region was hijacked? Opening cancelled for encodedName=" + encodedName);
+        // This is a desperate attempt: the znode is unlikely to be ours. But we can't do more.
+        tryTransitionFromOfflineToFailedOpen(regionInfo);
         return;
       }
 
@@ -135,7 +128,7 @@ public class OpenRegionHandler extends EventHandler {
       // processing needs to do a close as part of cleanup.
       HRegion region = openRegion();
       if (region == null) {
-        tryTransitionToFailedOpen(regionInfo);
+        tryTransitionFromOpeningToFailedOpen(regionInfo);
         return;
       }
       boolean failed = true;
@@ -147,38 +140,61 @@ public class OpenRegionHandler extends EventHandler {
       if (failed || this.server.isStopped() ||
           this.rsServices.isStopping()) {
         cleanupFailedOpen(region);
-        tryTransitionToFailedOpen(regionInfo);
+        tryTransitionFromOpeningToFailedOpen(regionInfo);
         return;
       }
 
 
-      if (!checkAndCleanOpeningCanceled() || !transitionToOpened(region)) {
+      if (!isRegionStillOpening() || !transitionToOpened(region)) {
         // If we fail to transition to opened, it's because of one of two cases:
         //    (a) we lost our ZK lease
         // OR (b) someone else opened the region before us
-        // In either case, we don't need to transition to FAILED_OPEN state.
-        // In case (a), the Master will process us as a dead server. In case
-        // (b) the region is already being handled elsewhere anyway.
+        // OR (c) someone cancelled the close.
+        // In all cases, we try to transition to failed_open to be safe.
         cleanupFailedOpen(region);
+        tryTransitionFromOpeningToFailedOpen(regionInfo);
         return;
       }
 
-      // One more check to make sure we are opening instead of closing
-      if (!checkAndCleanOpeningCanceled()) {
-        LOG.warn("Open region aborted since it isn't opening any more");
-        cleanupFailedOpen(region);
-        return;
-      }
+      // We have a znode in the opened state now. We can't really delete it as the master job.
+      // Transitioning to failed open would create a race condition if the master has already
+      // acted the transition to opened.
+      // Cancelling the open is dangerous, because we would have a state where the master thinks
+      //  the region is opened while the region is actually closed. It seems to be a dangerous state
+      //  to be in. For this reason, from now on, we're not going back. There is a message in the
+      //  finally close to let the admin know where we stand.
+
 
       // Successful region open, and add it to OnlineRegions
       this.rsServices.addToOnlineRegions(region);
+      openSuccessful = true;
 
       // Done!  Successful region open
-      LOG.debug("Opened " + name + " on server:" +
+      LOG.debug("Opened " + regionName + " on server:" +
         this.server.getServerName());
+
+
     } finally {
-      this.rsServices.getRegionsInTransitionInRS().
+      final Boolean current = this.rsServices.getRegionsInTransitionInRS().
           remove(this.regionInfo.getEncodedNameAsBytes());
+
+      // Let's check if we have met a race condition on open cancellation....
+      // A better solution would be to not have any race condition.
+      // this.rsServices.getRegionsInTransitionInRS().remove(this.regionInfo.getEncodedNameAsBytes(), Boolean.TRUE);
+      // would help, but we would still have a consistency with
+      // this.rsServices.addToOnlineRegions(region); and the ZK state.
+      if (openSuccessful) {
+        if (current == null) {  // Should not happen, but let's be paranoid.
+          LOG.error("Bad state: we've just opened a region that was NOT in transition region=" +
+              regionName
+          );
+        } else if (Boolean.FALSE.equals(current)) { // Can happen, if we're really unlucky.
+          LOG.error("Race condition: we've finished to open a region, while a close was requested "
+              + " on region=" + regionName + ". It can be a critical error, as a region that should" +
+              " be closed is now opened."
+          );
+        }
+      }
     }
   }
 
@@ -334,11 +350,12 @@ public class OpenRegionHandler extends EventHandler {
    * @param hri Region we're working on.
    * @return whether znode is successfully transitioned to FAILED_OPEN state.
    */
-  public boolean tryTransitionToFailedOpen(final HRegionInfo hri) {
+  private boolean tryTransitionFromOpeningToFailedOpen(final HRegionInfo hri) {
     boolean result = false;
     final String name = hri.getRegionNameAsString();
     try {
-      LOG.info("Opening of region " + hri + " failed, marking as FAILED_OPEN in ZK");
+      LOG.info("Opening of region " + hri + " failed, transitioning" +
+          " from OPENING to FAILED_OPEN in ZK, expecting version " + this.version);
       if (ZKAssign.transitionNode(
           this.server.getZooKeeper(), hri,
           this.server.getServerName(),
@@ -356,6 +373,44 @@ public class OpenRegionHandler extends EventHandler {
         " from OPENING to FAILED_OPEN", e);
     }
     return result;
+  }
+
+  /**
+   * This is not guaranteed to succeed, we just do our best.
+   * @param hri Region we're working on.
+   * @return whether znode is successfully transitioned to FAILED_OPEN state.
+   */
+  protected boolean tryTransitionFromOfflineToFailedOpen(final HRegionInfo hri) {
+    boolean result = false;
+    final String name = hri.getRegionNameAsString();
+    try {
+      LOG.info("Opening of region " + hri + " failed, transitioning" +
+          " from OFFLINE to FAILED_OPEN in ZK, expecting version " + this.version);
+      if (ZKAssign.transitionNode(
+          this.server.getZooKeeper(), hri,
+          this.server.getServerName(),
+          EventType.M_ZK_REGION_OFFLINE,
+          EventType.RS_ZK_REGION_FAILED_OPEN,
+          this.version) == -1) {
+        LOG.warn("Unable to mark region " + hri + " as FAILED_OPEN. " +
+            "It's likely that the master already timed out this open " +
+            "attempt, and thus another RS already has the region.");
+      } else {
+        result = true;
+      }
+    } catch (KeeperException e) {
+      LOG.error("Failed transitioning node " + name + " from OFFLINE to FAILED_OPEN", e);
+    }
+    return result;
+  }
+
+
+  public static void tryTransitionFromOfflineToFailedOpen(final Server server,
+    final RegionServerServices rsServices, final HRegionInfo regionInfo, final HTableDescriptor htd,
+    final int versionOfOfflineNode) {
+
+    new OpenRegionHandler(server, rsServices, regionInfo, htd, versionOfOfflineNode).
+        tryTransitionFromOfflineToFailedOpen(regionInfo);
   }
 
   /**
