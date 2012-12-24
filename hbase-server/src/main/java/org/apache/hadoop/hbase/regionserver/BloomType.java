@@ -1,5 +1,4 @@
-/*
- * Copyright The Apache Software Foundation
+/**
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -18,21 +17,19 @@
  * limitations under the License.
  */
 
-$(document).ready(
-  function(){
-    var prefix = "tab_";
-	$('.tabbable .nav-pills a').click(function (e) {
-        e.preventDefault();
-        location.hash = $(e.target).attr('href').substr(1).replace(prefix, "");
-        $(this).tab('show');
-    });
-            
-    if (location.hash !== '') {
-      var tabItem = $('a[href="' + location.hash.replace("#", "#"+prefix) + '"]');
-      tabItem.tab('show');
-      $(document).scrollTop(0);  
-      return false;  
-    }
-    return true;
-  }
-);
+package org.apache.hadoop.hbase.regionserver;
+
+public enum BloomType {
+  /**
+   * Bloomfilters disabled
+   */
+  NONE,
+  /**
+   * Bloom enabled with Table row as Key
+   */
+  ROW,
+  /**
+   * Bloom enabled with Table row & column (family+qualifier) as Key
+   */
+  ROWCOL
+}

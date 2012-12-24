@@ -1,5 +1,4 @@
-/*
- * Copyright The Apache Software Foundation
+/**
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -18,21 +17,31 @@
  * limitations under the License.
  */
 
-$(document).ready(
-  function(){
-    var prefix = "tab_";
-	$('.tabbable .nav-pills a').click(function (e) {
-        e.preventDefault();
-        location.hash = $(e.target).attr('href').substr(1).replace(prefix, "");
-        $(this).tab('show');
-    });
-            
-    if (location.hash !== '') {
-      var tabItem = $('a[href="' + location.hash.replace("#", "#"+prefix) + '"]');
-      tabItem.tab('show');
-      $(document).scrollTop(0);  
-      return false;  
-    }
-    return true;
+package org.apache.hadoop.hbase.ipc;
+
+import org.apache.hadoop.hbase.DoNotRetryIOException;
+
+/**
+ * An error requesting an RPC protocol that the server is not serving.
+ */
+public class UnknownProtocolException extends DoNotRetryIOException {
+  private Class<?> protocol;
+
+  public UnknownProtocolException(String mesg) {
+    // required for unwrapping from a RemoteException
+    super(mesg);
   }
-);
+
+  public UnknownProtocolException(Class<?> protocol) {
+    this(protocol, "Server is not handling protocol "+protocol.getName());
+  }
+
+  public UnknownProtocolException(Class<?> protocol, String mesg) {
+    super(mesg);
+    this.protocol = protocol;
+  }
+
+  public Class getProtocol() {
+    return protocol;
+  }
+}
