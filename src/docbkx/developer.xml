@@ -308,6 +308,19 @@ What is the new development version for "HBase"? (org.apache.hbase:hbase) 0.92.3
 [INFO] -----------------------------------------------------------------------</programlisting>
         </para>
       </section>
+      <section xml:id="documentation">
+          <title>Generating the HBase Reference Guide</title>
+          <para>The manual is marked up using <link xlink:href="http://www.docbook.org/">docbook</link>.
+              We then use the <link xlink:href="http://code.google.com/p/docbkx-tools/">docbkx maven plugin</link>
+              to transform the markup to html.  This plugin is run when you specify the <command>site</command>
+              goal as in when you run <command>mvn site</command> or you can call the plugin explicitly to
+              just generate the manual by doing <command>mvn docbkx:generate-html</command>
+              (TODO: It looks like you have to run <command>mvn site</command> first because docbkx wants to
+              include a transformed <filename>hbase-default.xml</filename>.  Fix).
+              When you run mvn site, we do the document generation twice, once to generate the multipage
+              manual and then again for the single page manual (the single page version is easier to search).
+          </para>
+      </section>
     <section xml:id="hbase.org">
     <title>Updating hbase.apache.org</title>
       <section xml:id="hbase.org.site.contributing">
@@ -1101,6 +1114,18 @@ Bar bar = foo.getBar();     &lt;--- imagine there's an extra space(s) after the 
           </para>
           <para>Commiters will also resolve the Jira, typically after the patch passes a build.
           </para>
+          <section xml:id="committer.tests">
+              <title>Committers are responsible for making sure commits do not break the build or tests</title>
+          <para>
+              If a committer commits a patch it is their responsibility
+              to make sure it passes the test suite.  It is helpful
+              if contributors keep an eye out that their patch
+              does not break the hbase build and/or tests but ultimately,
+              a contributor cannot be expected to be up on the
+              particular vagaries and interconnections that occur
+              in a project like hbase.  A committer should.
+            </para>
+        </section>
         </section>
 
        </section>   <!--  submitting patches -->
