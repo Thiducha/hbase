@@ -66,12 +66,12 @@ public class TestDrainingServer {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     TEST_UTIL.startMiniCluster(NB_SLAVES);
+    TEST_UTIL.getHBaseCluster().waitForActiveAndReadyMaster();
     TEST_UTIL.getConfiguration().setBoolean("hbase.master.enabletable.roundrobin", true);
-    MiniHBaseCluster cluster = TEST_UTIL.getMiniHBaseCluster();
 
     final List<String> families = new ArrayList<String>(1);
     families.add("family");
-    TEST_UTIL.createRandomTable("table", families, 1, 1, 1, COUNT_OF_REGIONS, 1);
+    TEST_UTIL.createRandomTable("table", families, 1, 0, 0, COUNT_OF_REGIONS, 0);
 
     // Ensure a stable env
     TEST_UTIL.getHBaseAdmin().setBalancerRunning(false, false);
@@ -84,7 +84,7 @@ public class TestDrainingServer {
       int i = 0;
       ready = true;
       while (i < NB_SLAVES && ready){
-        HRegionServer hrs = cluster.getRegionServer(i);
+        HRegionServer hrs = TEST_UTIL.getMiniHBaseCluster().getRegionServer(i);
         if (ProtobufUtil.getOnlineRegions(hrs).isEmpty()){
           ready = false;
         }
