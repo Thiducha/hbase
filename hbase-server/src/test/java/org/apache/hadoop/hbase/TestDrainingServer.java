@@ -27,8 +27,6 @@ import junit.framework.Assert;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.master.ServerManager;
@@ -36,8 +34,6 @@ import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.hbase.util.FSUtils;
-import org.apache.hadoop.hbase.util.FSTableDescriptors;
 import org.apache.hadoop.hbase.util.JVMClusterUtil;
 import org.apache.hadoop.hbase.zookeeper.ZKAssign;
 import org.apache.hadoop.hbase.zookeeper.ZKUtil;
@@ -70,20 +66,14 @@ public class TestDrainingServer {
   public static void setUpBeforeClass() throws Exception {
     TEST_UTIL.startMiniCluster(NB_SLAVES);
     TEST_UTIL.getConfiguration().setBoolean("hbase.master.enabletable.roundrobin", true);
-    ZooKeeperWatcher zkw = HBaseTestingUtility.getZooKeeperWatcher(TEST_UTIL);
     HTableDescriptor htd = new HTableDescriptor(TABLENAME);
     htd.addFamily(new HColumnDescriptor(FAMILY));
     TEST_UTIL.createMultiRegionsInMeta(TEST_UTIL.getConfiguration(), htd,
         HBaseTestingUtility.KEYS);
-    // Make a mark for the table in the filesystem.
-    FileSystem fs = FileSystem.get(TEST_UTIL.getConfiguration());
-    FSTableDescriptors.
-      createTableDescriptor(fs, FSUtils.getRootDir(TEST_UTIL.getConfiguration()), htd);
-    // Assign out the regions we just created.
-    HBaseAdmin admin = new HBaseAdmin(TEST_UTIL.getConfiguration());
     MiniHBaseCluster cluster = TEST_UTIL.getMiniHBaseCluster();
-    admin.disableTable(TABLENAME);
-    admin.enableTable(TABLENAME);
+
+    // Ensure a stable env
+    TEST_UTIL.getHBaseAdmin().setBalancerRunning(false, false);
 
     boolean ready = false;
     while (!ready){
@@ -101,13 +91,12 @@ public class TestDrainingServer {
       }
 
       if (!ready){
-        admin.balancer();
+        TEST_UTIL.getHBaseAdmin().setBalancerRunning(true, true);
+        TEST_UTIL.getHBaseAdmin().balancer();
+        TEST_UTIL.getHBaseAdmin().setBalancerRunning(false, false);
         Thread.sleep(100);
       }
     }
-
-    // Ensure a stable env
-    TEST_UTIL.getHBaseAdmin().setBalancerRunning(false, false);
   }
 
   private static HRegionServer setDrainingServer(final HRegionServer hrs)
