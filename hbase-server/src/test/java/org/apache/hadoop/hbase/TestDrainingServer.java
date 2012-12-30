@@ -56,12 +56,9 @@ import org.junit.experimental.categories.Category;
 @Category(MediumTests.class)
 public class TestDrainingServer {
   private static final Log LOG = LogFactory.getLog(TestDrainingServer.class);
-  private static final HBaseTestingUtility TEST_UTIL =
-    new HBaseTestingUtility();
-  private static final byte [] TABLENAME = Bytes.toBytes("t");
-  private static final byte [] FAMILY = Bytes.toBytes("f");
-  private static final int COUNT_OF_REGIONS = HBaseTestingUtility.KEYS.length;
+  private static final HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
   private static final int NB_SLAVES = 5;
+  private static final int COUNT_OF_REGIONS = NB_SLAVES * 2;
 
   /**
    * Spin up a cluster with a bunch of regions on it.
@@ -70,11 +67,11 @@ public class TestDrainingServer {
   public static void setUpBeforeClass() throws Exception {
     TEST_UTIL.startMiniCluster(NB_SLAVES);
     TEST_UTIL.getConfiguration().setBoolean("hbase.master.enabletable.roundrobin", true);
-    HTableDescriptor htd = new HTableDescriptor(TABLENAME);
-    htd.addFamily(new HColumnDescriptor(FAMILY));
-    TEST_UTIL.createMultiRegionsInMeta(TEST_UTIL.getConfiguration(), htd,
-        HBaseTestingUtility.KEYS);
     MiniHBaseCluster cluster = TEST_UTIL.getMiniHBaseCluster();
+
+    final List<String> families = new ArrayList<String>(1);
+    families.add("family");
+    TEST_UTIL.createRandomTable("table", families, 1, 1, 1, COUNT_OF_REGIONS, 1);
 
     // Ensure a stable env
     TEST_UTIL.getHBaseAdmin().setBalancerRunning(false, false);
