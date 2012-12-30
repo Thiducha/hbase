@@ -38,6 +38,7 @@ import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.FSUtils;
 import org.apache.hadoop.hbase.util.FSTableDescriptors;
+import org.apache.hadoop.hbase.util.JVMClusterUtil;
 import org.apache.hadoop.hbase.zookeeper.ZKAssign;
 import org.apache.hadoop.hbase.zookeeper.ZKUtil;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
@@ -47,7 +48,6 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import com.google.protobuf.ServiceException;
 
 /**
  * Test the draining servers feature.
@@ -135,12 +135,12 @@ public class TestDrainingServer {
   /**
    * Test adding server to draining servers and then move regions off it.
    * Make sure that no regions are moved back to the draining server.
-   * @throws IOException 
-   * @throws KeeperException 
+   * @throws IOException
+   * @throws KeeperException
    */
   @Test  // (timeout=30000)
   public void testDrainingServerOffloading()
-  throws IOException, KeeperException, ServiceException, DeserializationException {
+  throws Exception {
     // I need master in the below.
     HMaster master = TEST_UTIL.getMiniHBaseCluster().getMaster();
     HRegionInfo hriToMoveBack = null;
@@ -215,7 +215,9 @@ public class TestDrainingServer {
       setDrainingServer(drainingServer);
 
       //wait for the master to receive and manage the event
-      while  (sm.createDestinationServersList().contains(drainingServer.getServerName())) ;
+      while  (sm.createDestinationServersList().contains(drainingServer.getServerName())) {
+        Thread.sleep(1);
+      }
 
       LOG.info("The available servers are: "+ sm.createDestinationServersList());
 
@@ -267,19 +269,29 @@ public class TestDrainingServer {
     }
   }
 
-  private void waitForAllRegionsOnline() {
+  private void waitForAllRegionsOnline() throws InterruptedException {
     // Wait for regions to come back on line again.
-    while (!isAllRegionsOnline()) {
-    }
 
-    while (TEST_UTIL.getMiniHBaseCluster().getMaster().
-      getAssignmentManager().getRegionStates().isRegionsInTransition()) {
+    boolean done = false;
+    while (!done) {
+      Thread.sleep(1);
+      if (!isAllRegionsOnline()) continue;
+      if (TEST_UTIL.getMiniHBaseCluster().getMaster().
+          getAssignmentManager().getRegionStates().isRegionsInTransition()) continue;
+
+      done = true;
+      for (JVMClusterUtil.RegionServerThread rs :
+          TEST_UTIL.getMiniHBaseCluster().getLiveRegionServerThreads()) {
+        if (!rs.getRegionServer().getRegionsInTransitionInRS().isEmpty()) {
+          done = false;
+        }
+      }
     }
   }
 
   private boolean isAllRegionsOnline() {
     return TEST_UTIL.getMiniHBaseCluster().countServedRegions() ==
-      (COUNT_OF_REGIONS + 2 /*catalog regions*/);
+        (COUNT_OF_REGIONS + 2 /*catalog regions*/);
   }
 
 }
