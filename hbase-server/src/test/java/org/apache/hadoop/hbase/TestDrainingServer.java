@@ -47,6 +47,10 @@ import org.junit.experimental.categories.Category;
 
 /**
  * Test the draining servers feature.
+ *
+ * This is typically an integration test: a unit test would be to check that the
+ * master does no assign regions to a regionserver marked as drained.
+ *
  * @see <a href="https://issues.apache.org/jira/browse/HBASE-4298">HBASE-4298</a>
  */
 @Category(MediumTests.class)
