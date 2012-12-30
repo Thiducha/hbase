@@ -96,7 +96,7 @@ public class TestDrainingServer {
 
       if (!ready){
         TEST_UTIL.getHBaseAdmin().setBalancerRunning(true, true);
-        TEST_UTIL.getHBaseAdmin().balancer();
+        Assert.assertTrue("Can't start a balance!", TEST_UTIL.getHBaseAdmin().balancer());
         TEST_UTIL.getHBaseAdmin().setBalancerRunning(false, false);
         Thread.sleep(100);
       }
