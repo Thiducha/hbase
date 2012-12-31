@@ -214,7 +214,6 @@ import org.cliffc.high_scale_lib.Counter;
 
 import com.google.common.base.Function;
 import com.google.protobuf.ByteString;
-import com.google.protobuf.Message;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
 
@@ -241,7 +240,7 @@ public class  HRegionServer implements ClientProtocol,
   //RegionName vs current action in progress
   //true - if open region action in progress
   //false - if close region action in progress
-  protected final ConcurrentSkipListMap<byte[], Boolean> regionsInTransitionInRS =
+  protected final ConcurrentMap<byte[], Boolean> regionsInTransitionInRS =
     new ConcurrentSkipListMap<byte[], Boolean>(Bytes.BYTES_COMPARATOR);
 
   protected long maxScannerResultSize;
@@ -444,7 +443,7 @@ public class  HRegionServer implements ClientProtocol,
     this.isOnline = false;
     checkCodecs(this.conf);
 
-    // do we use checksum verfication in the hbase? If hbase checksum verification
+    // do we use checksum verification in the hbase? If hbase checksum verification
     // is enabled, then we automatically switch off hdfs checksum verification.
     this.useHBaseChecksum = conf.getBoolean(
       HConstants.HBASE_CHECKSUM_VERIFICATION, false);
@@ -1168,7 +1167,7 @@ public class  HRegionServer implements ClientProtocol,
             this.serverNameFromMasterPOV.getHostname());
           continue;
         }
-        String value = e.getValue().toString();
+        String value = e.getValue();
         if (LOG.isDebugEnabled()) {
           LOG.debug("Config from master: " + key + "=" + value);
         }
@@ -1441,7 +1440,7 @@ public class  HRegionServer implements ClientProtocol,
   }
 
   /*
-   * Start maintanence Threads, Server, Worker and lease checker threads.
+   * Start maintenance Threads, Server, Worker and lease checker threads.
    * Install an UncaughtExceptionHandler that calls abort of RegionServer if we
    * get an unhandled exception. We cannot set the handler on all threads.
    * Server's internal Listener thread is off limits. For Server, if an OOME, it
@@ -1985,7 +1984,7 @@ public class  HRegionServer implements ClientProtocol,
         });
     // Copy over all regions. Regions are sorted by size with biggest first.
     for (HRegion region : this.onlineRegions.values()) {
-      sortedRegions.put(Long.valueOf(region.memstoreSize.get()), region);
+      sortedRegions.put(region.memstoreSize.get(), region);
     }
     return sortedRegions;
   }
@@ -2107,7 +2106,7 @@ public class  HRegionServer implements ClientProtocol,
   }
 
 
-  public ConcurrentSkipListMap<byte[], Boolean> getRegionsInTransitionInRS() {
+  public ConcurrentMap<byte[], Boolean> getRegionsInTransitionInRS() {
     return this.regionsInTransitionInRS;
   }
 
@@ -2268,7 +2267,7 @@ public class  HRegionServer implements ClientProtocol,
     for (HRegion region: regions) {
       coprocessors.addAll(region.getCoprocessorHost().getCoprocessors());
     }
-    return coprocessors.toArray(new String[0]);
+    return coprocessors.toArray(new String[coprocessors.size()]);
   }
 
   /**
@@ -2386,16 +2385,16 @@ public class  HRegionServer implements ClientProtocol,
   }
 
   /**
-   * Close asynchronously a region, can be called from the master or internally by the region server
+   * Close asynchronously a region, can be called from the master or internally by the regionserver
    * when stopping. If called from the master, the region will update the znode status.
    *
    * <p>
    * If an opening was in progress, this method will cancel it, but will not start a new close. The
-   * coprocessors are not called in this case. A NotServingRegionException exception will be thrown.
+   * coprocessors are not called in this case. A NotServingRegionException exception is thrown.
    * </p>
 
    * <p>
-   *   If a close was in progress, this new request will be ignored, and an excpetion thrown.
+   *   If a close was in progress, this new request will be ignored, and an exception thrown.
    * </p>
    *
    * @param encodedName Region to close
@@ -2716,7 +2715,7 @@ public class  HRegionServer implements ClientProtocol,
             if (region.getCoprocessorHost() != null) {
               exists = region.getCoprocessorHost().postExists(clientGet, exists);
             }
-            existence = Boolean.valueOf(exists);
+            existence = exists;
           }
         }
       }
@@ -2784,7 +2783,7 @@ public class  HRegionServer implements ClientProtocol,
               result = region.getCoprocessorHost().postCheckAndPut(row, family,
                 qualifier, compareOp, comparator, put, result);
             }
-            processed = Boolean.valueOf(result);
+            processed = result;
           }
         } else {
           region.put(put, lock);
@@ -2813,7 +2812,7 @@ public class  HRegionServer implements ClientProtocol,
               result = region.getCoprocessorHost().postCheckAndDelete(row, family,
                 qualifier, compareOp, comparator, delete, result);
             }
-            processed = Boolean.valueOf(result);
+            processed = result;
           }
         } else {
           region.delete(delete, lock, delete.getWriteToWAL());
@@ -3423,8 +3422,8 @@ public class  HRegionServer implements ClientProtocol,
             builder.addOpeningState(RegionOpeningState.ALREADY_OPENED);
             continue;
           } else {
-            LOG.warn("The region " + region.getEncodedName() +
-                " is online on this server but META does not have this server - continue opening.");
+            LOG.warn("The region " + region.getEncodedName() + " is online on this server" +
+                " but META does not have this server - continue opening.");
             removeFromOnlineRegions(region.getEncodedName(), null);
           }
         }
@@ -3910,7 +3909,8 @@ public class  HRegionServer implements ClientProtocol,
 
   // This map will contains all the regions that we closed for a move.
   //  We add the time it was moved as we don't want to keep too old information
-  protected Map<String, Pair<Long, ServerName>> movedRegions =  new ConcurrentHashMap<String, Pair<Long, ServerName>>(3000);
+  protected Map<String, Pair<Long, ServerName>> movedRegions =
+      new ConcurrentHashMap<String, Pair<Long, ServerName>>(3000);
 
   // We need a timeout. If not there is a risk of giving a wrong information: this would double
   //  the number of network calls instead of reducing them.
