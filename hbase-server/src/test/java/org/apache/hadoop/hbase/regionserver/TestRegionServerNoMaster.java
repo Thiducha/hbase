@@ -167,7 +167,8 @@ public class TestRegionServerNoMaster {
   public void testCloseByMasterWithoutZNode() throws Exception {
 
     // Transition in ZK on. This should fail, as there is no znode
-    AdminProtos.CloseRegionRequest crr = RequestConverter.buildCloseRegionRequest(regionName, true);
+    AdminProtos.CloseRegionRequest crr = RequestConverter.buildCloseRegionRequest(
+        regionName, true);
     AdminProtos.CloseRegionResponse responseClose = getRS().closeRegion(null, crr);
     Assert.assertTrue(responseClose.getClosed());
 
@@ -185,7 +186,8 @@ public class TestRegionServerNoMaster {
 
     ZKAssign.createNodeClosing(HTU.getZooKeeperWatcher(), hri, getRS().getServerName());
 
-    AdminProtos.CloseRegionRequest crr = RequestConverter.buildCloseRegionRequest(regionName, true);
+    AdminProtos.CloseRegionRequest crr = RequestConverter.buildCloseRegionRequest(
+        regionName, true);
     AdminProtos.CloseRegionResponse responseClose = getRS().closeRegion(null, crr);
     Assert.assertTrue(responseClose.getClosed());
 

@@ -176,7 +176,8 @@ public class ZKAssign {
     LOG.debug(zkw.prefix("Async create of unassigned node for " +
       region.getEncodedName() + " with OFFLINE state"));
     RegionTransition rt =
-      RegionTransition.createRegionTransition(EventType.M_ZK_REGION_OFFLINE, region.getRegionName(), serverName);
+      RegionTransition.createRegionTransition(
+          EventType.M_ZK_REGION_OFFLINE, region.getRegionName(), serverName);
     String node = getNodeName(zkw, region.getEncodedName());
     ZKUtil.asyncCreate(zkw, node, rt.toByteArray(), cb, ctx);
   }
@@ -767,7 +768,8 @@ public class ZKAssign {
 
     // Write new data, ensuring data has not changed since we last read it
     try {
-      rt = RegionTransition.createRegionTransition(endState, region.getRegionName(), serverName, payload);
+      rt = RegionTransition.createRegionTransition(
+          endState, region.getRegionName(), serverName, payload);
       if(!ZKUtil.setData(zkw, node, rt.toByteArray(), stat.getVersion())) {
         LOG.warn(zkw.prefix("Attempt to transition the " +
         "unassigned node for " + encoded +

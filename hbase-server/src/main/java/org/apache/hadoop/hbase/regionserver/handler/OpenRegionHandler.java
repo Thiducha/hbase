@@ -110,7 +110,7 @@ public class OpenRegionHandler extends EventHandler {
 
       // Check that we're still supposed to open the region and transition.
       // If fails, just return.  Someone stole the region from under us.
-      // Calling transitionZookeeperOfflineToOpening initalizes this.version.
+      // Calling transitionZookeeperOfflineToOpening initializes this.version.
       if (!isRegionStillOpening()){
         LOG.error("Region " + encodedName + " opening cancelled");
         tryTransitionFromOfflineToFailedOpen(this.rsServices, regionInfo, this.version);
@@ -160,9 +160,9 @@ public class OpenRegionHandler extends EventHandler {
       // Transitioning to failed open would create a race condition if the master has already
       // acted the transition to opened.
       // Cancelling the open is dangerous, because we would have a state where the master thinks
-      //  the region is opened while the region is actually closed. It seems to be a dangerous state
-      //  to be in. For this reason, from now on, we're not going back. There is a message in the
-      //  finally close to let the admin know where we stand.
+      // the region is opened while the region is actually closed. It is a dangerous state
+      // to be in. For this reason, from now on, we're not going back. There is a message in the
+      // finally close to let the admin knows where we stand.
 
 
       // Successful region open, and add it to OnlineRegions
@@ -180,18 +180,20 @@ public class OpenRegionHandler extends EventHandler {
 
       // Let's check if we have met a race condition on open cancellation....
       // A better solution would be to not have any race condition.
-      // this.rsServices.getRegionsInTransitionInRS().remove(this.regionInfo.getEncodedNameAsBytes(), Boolean.TRUE);
-      // would help, but we would still have a consistency with
-      // this.rsServices.addToOnlineRegions(region); and the ZK state.
+      // this.rsServices.getRegionsInTransitionInRS().remove(
+      //  this.regionInfo.getEncodedNameAsBytes(), Boolean.TRUE);
+      // would help, but we would still have a consistency issue to manage with
+      // 1) this.rsServices.addToOnlineRegions(region);
+      // 2) the ZK state.
       if (openSuccessful) {
-        if (current == null) {  // Should not happen, but let's be paranoid.
-          LOG.error("Bad state: we've just opened a region that was NOT in transition region=" +
+        if (current == null) {  // Should NEVER happen, but let's be paranoid.
+          LOG.error("Bad state: we've just opened a region that was NOT in transition. Region=" +
               regionName
           );
         } else if (Boolean.FALSE.equals(current)) { // Can happen, if we're really unlucky.
           LOG.error("Race condition: we've finished to open a region, while a close was requested "
-              + " on region=" + regionName + ". It can be a critical error, as a region that should" +
-              " be closed is now opened."
+              + " on region=" + regionName + ". It can be a critical error, as a region that" +
+              " should be closed is now opened."
           );
         }
       }
@@ -270,7 +272,8 @@ public class OpenRegionHandler extends EventHandler {
   /**
    * Thread to run region post open tasks. Call {@link #getException()} after
    * the thread finishes to check for exceptions running
-   * {@link RegionServerServices#postOpenDeployTasks(HRegion, org.apache.hadoop.hbase.catalog.CatalogTracker, boolean)}
+   * {@link RegionServerServices#postOpenDeployTasks(
+   * HRegion, org.apache.hadoop.hbase.catalog.CatalogTracker, boolean)}
    * .
    */
   static class PostOpenDeployTasksThread extends Thread {
