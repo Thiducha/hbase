@@ -497,8 +497,16 @@ public class AssignmentManager extends ZooKeeperListener {
         // Just insert region into RIT.
         // If this never updates the timeout will trigger new assignment
         regionStates.updateRegionState(rt, RegionState.State.CLOSING);
+        try {
+          if (serverManager.sendRegionClose(sn, regionInfo,
+              expectedVersion , null, true)) {
+
+          }
+        } catch (IOException e) {
+          //
+        }
       }
-      break;
+        break;
 
     case RS_ZK_REGION_CLOSED:
     case RS_ZK_REGION_FAILED_OPEN:
@@ -516,6 +524,20 @@ public class AssignmentManager extends ZooKeeperListener {
         // Just insert region into RIT.
         // If this never updates the timeout will trigger new assignment
         regionStates.updateRegionState(rt, RegionState.State.PENDING_OPEN);
+        // Send OPEN RPC. This can fail if the server on other end is is not up.
+        // Pass the version that was obtained while setting the node to OFFLINE.
+        RegionOpeningState regionOpenState = null;
+        boolean success = true;
+        try {
+          regionOpenState = serverManager.sendRegionOpen(sn, regionInfo, expectedVersion);
+        } catch (IOException e) {
+          success = false;
+        }
+        if (regionOpenState == RegionOpeningState.ALREADY_OPENED) {
+          processAlreadyOpenedRegion(regionInfo, sn);
+        } else if (regionOpenState == RegionOpeningState.FAILED_OPENING) {
+          success = false;
+        }
       }
       break;
 
