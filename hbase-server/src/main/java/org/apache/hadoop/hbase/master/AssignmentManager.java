@@ -21,7 +21,6 @@ package org.apache.hadoop.hbase.master;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -393,7 +392,7 @@ public class AssignmentManager extends ZooKeeperListener {
       LOG.info("Found regions out on cluster or in RIT; failover");
       // Process list of dead servers and regions in RIT.
       // See HBASE-4580 for more information.
-      processDeadServersAndRecoverLostRegions(deadServers, nodes);
+      processDeadServersAndRecoverLostRegions(deadServers);
     } else {
       // Fresh cluster startup.
       LOG.info("Clean cluster startup. Assigning userregions");
@@ -494,16 +493,29 @@ public class AssignmentManager extends ZooKeeperListener {
         // will get it reassigned if appropriate
         forceOffline(regionInfo, rt);
       } else {
-        // Just insert region into RIT.
-        // If this never updates the timeout will trigger new assignment
+        // Insert into RIT & resend the query to the region server: may be we died before
+        //  sending the query the first time.
+        final RegionState rs = regionStates.getRegionState(regionInfo);
         regionStates.updateRegionState(rt, RegionState.State.CLOSING);
         try {
-          if (serverManager.sendRegionClose(sn, regionInfo,
-              expectedVersion , null, true)) {
-
+          if (!serverManager.sendRegionClose(sn, regionInfo, expectedVersion, null, true)) {
+            // The regionserver is there, but says it won't close the region. In 0.96, it means the
+            //  pre-close coprocessor sent an exception.
+            // In any case, the region is not anymore in transition. The best here seems to remove
+            //  it from RIT, and continue. Abort would be another option.
+            LOG.error("Region server " + sn + " refused to close the region " +
+                regionInfo.getEncodedName() + " - removing from RIT and continue");
+            regionStates.updateRegionState(rt, rs.getState());
           }
         } catch (IOException e) {
-          //
+          // May be the region server is not there. Or, if we're unlucky, we had a network issue
+          //  after sending the query, and the regionserver is currently closing the region.
+          // There are too much questions here. Best seems to be aborting: if the region server
+          //  just died, we will have a clear state.
+          String msg = "Received exception while trying to resend a close to the region server " +
+              sn + " for region " + regionInfo.getEncodedName() + " - aborting";
+          LOG.error(msg, e);
+          server.abort(msg, e);
         }
       }
         break;
@@ -521,42 +533,37 @@ public class AssignmentManager extends ZooKeeperListener {
         // Region is offline, insert into RIT and handle it like a closed
         addToRITandCallClose(regionInfo, RegionState.State.OFFLINE, rt);
       } else {
-        // Just insert region into RIT.
-        // If this never updates the timeout will trigger new assignment
+        // Insert in RIT and resend to the regionserver
+        final RegionState rs = regionStates.getRegionState(regionInfo);
         regionStates.updateRegionState(rt, RegionState.State.PENDING_OPEN);
         // Send OPEN RPC. This can fail if the server on other end is is not up.
         // Pass the version that was obtained while setting the node to OFFLINE.
         RegionOpeningState regionOpenState = null;
-        boolean success = true;
         try {
           regionOpenState = serverManager.sendRegionOpen(sn, regionInfo, expectedVersion);
         } catch (IOException e) {
-          success = false;
+          // Same thinking as for a close (see above) => we don't know where we stand => we abort.
+          String msg = "Received exception while trying to (re)send a open to the regionserver " +
+              sn + " for region " + regionInfo.getEncodedName() + " - aborting";
+          LOG.error(msg, e);
+          server.abort(msg, e);
         }
         if (regionOpenState == RegionOpeningState.ALREADY_OPENED) {
           processAlreadyOpenedRegion(regionInfo, sn);
         } else if (regionOpenState == RegionOpeningState.FAILED_OPENING) {
-          success = false;
+          // We wanted to open this region and it failed.
+          LOG.error("Region server " + sn + " refused to open the region " +
+              regionInfo.getEncodedName() + " - removing from RIT and continue");
+          regionStates.updateRegionState(rt, rs.getState());
         }
       }
       break;
 
     case RS_ZK_REGION_OPENING:
-      regionStates.updateRegionState(rt, RegionState.State.OPENING);
-      if (regionInfo.isMetaTable() || !serverManager.isServerOnline(sn)) {
-        // If ROOT or .META. table is waiting for timeout monitor to assign
-        // it may take lot of time when the assignment.timeout.period is
-        // the default value which may be very long.  We will not be able
-        // to serve any request during this time.
-        // So we will assign the ROOT and .META. region immediately.
-        // For a user region, if the server is not online, it takes
-        // some time for timeout monitor to kick in.  We know the region
-        // won't open. So we will assign the opening
-        // region immediately too.
-        //
-        // Otherwise, just insert region into RIT. If the state never
-        // updates, the timeout will trigger new assignment
-        processOpeningState(regionInfo);
+      if (!serverManager.isServerOnline(sn)) {
+        forceOffline(regionInfo, rt);
+      } else {
+        regionStates.updateRegionState(rt, RegionState.State.OPENING);
       }
       break;
 
@@ -570,10 +577,28 @@ public class AssignmentManager extends ZooKeeperListener {
       }
       break;
     case RS_ZK_REGION_SPLITTING:
-      LOG.debug("Processed region in state : " + et);
+      if (!serverManager.isServerOnline(sn)) {
+        // The regionserver started the split, but died before the updating the status.
+        // It means (hopefully) that the split was not finished
+        // TBD - to study. In the meantime, do nothing as in the past.
+        LOG.warn("Processed region " + regionInfo.getEncodedName() + " in state : " + et +
+            " on a dead regionserver: " + sn + " doing nothing");
+      } else {
+        LOG.info("Processed region " + regionInfo.getEncodedName() + " in state : " +
+            et + " nothing to do.");
+        // We don't do anything. The way the code is written in RS_ZK_REGION_SPLIT management,
+      //  it adds the RS_ZK_REGION_SPLITTING state if needed. So we don't have to do it here.
+      }
       break;
     case RS_ZK_REGION_SPLIT:
-      LOG.debug("Processed region in state : " + et);
+      if (!serverManager.isServerOnline(sn)) {
+        forceOffline(regionInfo, rt);
+      } else {
+        LOG.info("Processed region " + regionInfo.getEncodedName() + " in state : " +
+            et + " nothing to do.");
+        // We don't do anything. The regionserver is supposed to update the znode multiple times
+        //  so if it's still up we will receive an update soon.
+      }
       break;
     default:
       throw new IllegalStateException("Received region in state :" + et + " is not valid");
@@ -2025,7 +2050,6 @@ public class AssignmentManager extends ZooKeeperListener {
       server.abort(
         "Unexpected ZK exception deleting node CLOSING/CLOSED for the region "
           + encodedName, ke);
-      return;
     }
   }
 
@@ -2380,16 +2404,15 @@ public class AssignmentManager extends ZooKeeperListener {
    * that were in RIT.
    * <p>
    *
+   *
    * @param deadServers
    *          The list of dead servers which failed while there was no active
    *          master. Can be null.
-   * @param nodes
-   *          The regions in RIT
    * @throws IOException
    * @throws KeeperException
    */
   private void processDeadServersAndRecoverLostRegions(
-      Map<ServerName, List<HRegionInfo>> deadServers, List<String> nodes)
+      Map<ServerName, List<HRegionInfo>> deadServers)
           throws IOException, KeeperException {
     if (deadServers != null) {
       for (Map.Entry<ServerName, List<HRegionInfo>> server: deadServers.entrySet()) {
@@ -2399,7 +2422,7 @@ public class AssignmentManager extends ZooKeeperListener {
         }
       }
     }
-    nodes = ZKUtil.listChildrenAndWatchForNewChildren(
+    List<String> nodes = ZKUtil.listChildrenAndWatchForNewChildren(
       this.watcher, this.watcher.assignmentZNode);
     if (!nodes.isEmpty()) {
       for (String encodedRegionName : nodes) {
@@ -2642,12 +2665,9 @@ public class AssignmentManager extends ZooKeeperListener {
       invokeAssign(regionInfo);
     } catch (KeeperException ke) {
       LOG.error("Unexpected ZK exception timing out CLOSING region", ke);
-      return;
     } catch (DeserializationException e) {
       LOG.error("Unexpected exception parsing CLOSING region", e);
-      return;
     }
-    return;
   }
 
   void invokeAssign(HRegionInfo regionInfo) {

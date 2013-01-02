@@ -153,10 +153,6 @@ public class TestMasterFailover {
 
     // Create config to use for this cluster
     Configuration conf = HBaseConfiguration.create();
-    // Need to have the timeout other the test timeout. The recovery should not depend
-    //  depend on the timeout itself:
-    //conf.setInt("hbase.master.assignment.timeoutmonitor.period", 999999);
-    //conf.setInt("hbase.master.assignment.timeoutmonitor.timeout", 999999);
 
     // Start the cluster
     HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility(conf);
@@ -294,31 +290,18 @@ public class TestMasterFailover {
      */
 
     // Region of enabled table closed but not ack
-    // Cause: ??
+    //Cause: Master was down while the region server updated the ZK status.
     region = enabledRegions.remove(0);
     regionsThatShouldBeOnline.add(region);
     int version = ZKAssign.createNodeClosing(zkw, region, serverName);
     ZKAssign.transitionNodeClosed(zkw, region, serverName, version);
 
     // Region of disabled table closed but not ack
-    //Cause: Master was down while the region server updated the ZK status.
     region = disabledRegions.remove(0);
     regionsThatShouldBeOffline.add(region);
     version = ZKAssign.createNodeClosing(zkw, region, serverName);
     ZKAssign.transitionNodeClosed(zkw, region, serverName, version);
 
-    /*
-     * ZK = OPENING
-     */
-
-    // RS was opening a region of enabled table but never finishes
-    // It's not a master failover. Relies on timeouts. Removed.
-    /*
-    region = enabledRegions.remove(0);
-    regionsThatShouldBeOnline.add(region);
-    ZKAssign.createNodeOffline(zkw, region, serverName);
-    ZKAssign.transitionNodeOpening(zkw, region, serverName);
-    */
     /*
      * ZK = OPENED
      */
@@ -464,9 +447,7 @@ public class TestMasterFailover {
     // Create and start the cluster
     HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
     Configuration conf = TEST_UTIL.getConfiguration();
-    // Need to drop the timeout much lower
-    conf.setInt("hbase.master.assignment.timeoutmonitor.period", 2000);
-    conf.setInt("hbase.master.assignment.timeoutmonitor.timeout", 4000);
+
     conf.setInt(ServerManager.WAIT_ON_REGIONSERVERS_MINTOSTART, 1);
     conf.setInt(ServerManager.WAIT_ON_REGIONSERVERS_MAXTOSTART, 2);
     TEST_UTIL.startMiniCluster(NUM_MASTERS, NUM_RS);
@@ -778,25 +759,6 @@ public class TestMasterFailover {
     assertTrue(cluster.waitForActiveAndReadyMaster());
     log("Master is ready");
 
-    // Let's add some weird states to master in-memory state
-
-    // After HBASE-3181, we need to have some ZK state if we're PENDING_OPEN
-    // b/c it is impossible for us to get into this state w/o a zk node
-    // this is not true of PENDING_CLOSE
-
-    // PENDING_OPEN and enabled
-    region = enabledRegions.remove(0);
-    regionsThatShouldBeOnline.add(region);
-    master.getAssignmentManager().getRegionStates().updateRegionState(
-      region, RegionState.State.PENDING_OPEN);
-    ZKAssign.createNodeOffline(zkw, region, master.getServerName());
-    // PENDING_OPEN and disabled
-    region = disabledRegions.remove(0);
-    regionsThatShouldBeOffline.add(region);
-    master.getAssignmentManager().getRegionStates().updateRegionState(
-      region, RegionState.State.PENDING_OPEN);
-    ZKAssign.createNodeOffline(zkw, region, master.getServerName());
-
     // Failover should be completed, now wait for no RIT
     log("Waiting for no more RIT");
     ZKAssign.blockUntilNoRIT(zkw);
@@ -870,8 +832,6 @@ public class TestMasterFailover {
     // Start the cluster
     HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
     Configuration conf = TEST_UTIL.getConfiguration();
-    conf.setInt("hbase.master.assignment.timeoutmonitor.period", 2000);
-    conf.setInt("hbase.master.assignment.timeoutmonitor.timeout", 8000);
     conf.setInt("hbase.master.info.port", -1);
 
     TEST_UTIL.startMiniCluster(NUM_MASTERS, NUM_RS);
