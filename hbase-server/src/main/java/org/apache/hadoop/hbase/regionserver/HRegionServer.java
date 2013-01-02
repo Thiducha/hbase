@@ -73,7 +73,6 @@ import org.apache.hadoop.hbase.OutOfOrderScannerNextException;
 import org.apache.hadoop.hbase.RegionMovedException;
 import org.apache.hadoop.hbase.RegionServerStatusProtocol;
 import org.apache.hadoop.hbase.RemoteExceptionHandler;
-import org.apache.hadoop.hbase.ServerLoad;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.Stoppable;
 import org.apache.hadoop.hbase.TableDescriptors;
@@ -965,7 +964,7 @@ public class  HRegionServer implements ClientProtocol,
 
     //fsOk flag may be changed when closing regions throws exception.
     if (!this.killed && this.fsOk) {
-      closeWAL(abortRequested ? false : true);
+      closeWAL(!abortRequested);
     }
 
     // Make sure the proxy is down.
@@ -3325,7 +3324,7 @@ public class  HRegionServer implements ClientProtocol,
     try {
       HRegion region = getRegion(request.getRegion());
       requestCount.increment();
-      Set<byte[]> columnFamilies = null;
+      Set<byte[]> columnFamilies;
       if (request.getFamilyCount() == 0) {
         columnFamilies = region.getStores().keySet();
       } else {
@@ -3414,7 +3413,7 @@ public class  HRegionServer implements ClientProtocol,
       try {
         final HRegion onlineRegion = getFromOnlineRegions(region.getEncodedName());
         if (onlineRegion != null) {
-          //Check if the region can actually be opened. 
+          //Check if the region can actually be opened.
           if (onlineRegion.getCoprocessorHost() != null) {
             onlineRegion.getCoprocessorHost().preOpen();
           }
@@ -3447,7 +3446,7 @@ public class  HRegionServer implements ClientProtocol,
         if (Boolean.FALSE.equals(previous)) {
           // There is a close in progress. We need to mark this open as failed in ZK.
           OpenRegionHandler.
-              tryTransitionFromOfflineToFailedOpen(this, this, region, htd, versionOfOfflineNode);
+              tryTransitionFromOfflineToFailedOpen(this, region, versionOfOfflineNode);
 
           throw new RegionAlreadyInTransitionException("Received OPEN for the region:" +
               region.getRegionNameAsString() + " , which we are already trying to CLOSE ");
@@ -3518,7 +3517,7 @@ public class  HRegionServer implements ClientProtocol,
       if ((region  != null) && (region .getCoprocessorHost() != null)) {
         region.getCoprocessorHost().preClose(false);
       }
-           
+
       requestCount.increment();
       LOG.info("Received close region: " + encodedRegionName +
           "Transitioning in ZK: " + (zk ? "yes" : "no") +

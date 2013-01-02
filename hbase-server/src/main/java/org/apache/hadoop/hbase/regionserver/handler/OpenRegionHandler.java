@@ -104,7 +104,7 @@ public class OpenRegionHandler extends EventHandler {
         LOG.error("Region " + encodedName +
             " was already online when we started processing the opening. " +
             "Marking this new attempt as failed");
-        tryTransitionFromOfflineToFailedOpen(regionInfo);
+        tryTransitionFromOfflineToFailedOpen(this.rsServices, regionInfo, this.version);
         return;
       }
 
@@ -113,14 +113,14 @@ public class OpenRegionHandler extends EventHandler {
       // Calling transitionZookeeperOfflineToOpening initalizes this.version.
       if (!isRegionStillOpening()){
         LOG.error("Region " + encodedName + " opening cancelled");
-        tryTransitionFromOfflineToFailedOpen(regionInfo);
+        tryTransitionFromOfflineToFailedOpen(this.rsServices, regionInfo, this.version);
         return;
       }
 
       if (!transitionZookeeperOfflineToOpening(encodedName, versionOfOfflineNode)) {
         LOG.warn("Region was hijacked? Opening cancelled for encodedName=" + encodedName);
         // This is a desperate attempt: the znode is unlikely to be ours. But we can't do more.
-        tryTransitionFromOfflineToFailedOpen(regionInfo);
+        tryTransitionFromOfflineToFailedOpen(this.rsServices, regionInfo, this.version);
         return;
       }
 
@@ -149,7 +149,7 @@ public class OpenRegionHandler extends EventHandler {
         // If we fail to transition to opened, it's because of one of two cases:
         //    (a) we lost our ZK lease
         // OR (b) someone else opened the region before us
-        // OR (c) someone cancelled the close.
+        // OR (c) someone cancelled the open
         // In all cases, we try to transition to failed_open to be safe.
         cleanupFailedOpen(region);
         tryTransitionFromOpeningToFailedOpen(regionInfo);
@@ -376,22 +376,29 @@ public class OpenRegionHandler extends EventHandler {
   }
 
   /**
+   * Try to transition to open. This function is static to make it usable before creating the
+   *  handler.
+   *
    * This is not guaranteed to succeed, we just do our best.
+   *
+   * @param rsServices
    * @param hri Region we're working on.
+   * @param versionOfOfflineNode version to checked.
    * @return whether znode is successfully transitioned to FAILED_OPEN state.
    */
-  protected boolean tryTransitionFromOfflineToFailedOpen(final HRegionInfo hri) {
+  public static boolean tryTransitionFromOfflineToFailedOpen(RegionServerServices rsServices,
+       final HRegionInfo hri, final int versionOfOfflineNode) {
     boolean result = false;
     final String name = hri.getRegionNameAsString();
     try {
       LOG.info("Opening of region " + hri + " failed, transitioning" +
-          " from OFFLINE to FAILED_OPEN in ZK, expecting version " + this.version);
+          " from OFFLINE to FAILED_OPEN in ZK, expecting version " + versionOfOfflineNode);
       if (ZKAssign.transitionNode(
-          this.server.getZooKeeper(), hri,
-          this.server.getServerName(),
+          rsServices.getZooKeeper(), hri,
+          rsServices.getServerName(),
           EventType.M_ZK_REGION_OFFLINE,
           EventType.RS_ZK_REGION_FAILED_OPEN,
-          this.version) == -1) {
+          versionOfOfflineNode) == -1) {
         LOG.warn("Unable to mark region " + hri + " as FAILED_OPEN. " +
             "It's likely that the master already timed out this open " +
             "attempt, and thus another RS already has the region.");
@@ -404,14 +411,6 @@ public class OpenRegionHandler extends EventHandler {
     return result;
   }
 
-
-  public static void tryTransitionFromOfflineToFailedOpen(final Server server,
-    final RegionServerServices rsServices, final HRegionInfo regionInfo, final HTableDescriptor htd,
-    final int versionOfOfflineNode) {
-
-    new OpenRegionHandler(server, rsServices, regionInfo, htd, versionOfOfflineNode).
-        tryTransitionFromOfflineToFailedOpen(regionInfo);
-  }
 
   /**
    * @return Instance of HRegion if successful open else null.
