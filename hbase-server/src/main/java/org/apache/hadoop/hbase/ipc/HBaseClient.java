@@ -418,16 +418,14 @@ public class HBaseClient {
         return null;
       }
       UserInformation.Builder userInfoPB = UserInformation.newBuilder();
-      if (ugi != null) {
-        if (authMethod == AuthMethod.KERBEROS) {
-          // Send effective user for Kerberos auth
-          userInfoPB.setEffectiveUser(ugi.getUserName());
-        } else if (authMethod == AuthMethod.SIMPLE) {
-          //Send both effective user and real user for simple auth
-          userInfoPB.setEffectiveUser(ugi.getUserName());
-          if (ugi.getRealUser() != null) {
-            userInfoPB.setRealUser(ugi.getRealUser().getUserName());
-          }
+      if (authMethod == AuthMethod.KERBEROS) {
+        // Send effective user for Kerberos auth
+        userInfoPB.setEffectiveUser(ugi.getUserName());
+      } else if (authMethod == AuthMethod.SIMPLE) {
+        //Send both effective user and real user for simple auth
+        userInfoPB.setEffectiveUser(ugi.getUserName());
+        if (ugi.getRealUser() != null) {
+          userInfoPB.setRealUser(ugi.getRealUser().getUserName());
         }
       }
       return userInfoPB.build();
@@ -1339,7 +1337,6 @@ public class HBaseClient {
    * @param exception the relevant exception
    * @return an exception to throw
    */
-  @SuppressWarnings({"ThrowableInstanceNeverThrown"})
   protected IOException wrapException(InetSocketAddress addr,
                                          IOException exception) {
     if (exception instanceof ConnectException) {
