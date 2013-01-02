@@ -59,7 +59,7 @@ public class TestUpgradeFromHFileV1ToEncoding {
     // Use a small flush size to create more HFiles.
     conf.setInt(HConstants.HREGION_MEMSTORE_FLUSH_SIZE, 1024 * 1024);
     conf.setInt(HFile.FORMAT_VERSION_KEY, 1); // Use HFile v1 initially
-    conf.setLong("hbase.hregion.max.filesize", Long.MAX_VALUE); // We don't want a split here.
+    conf.setLong(HConstants.HREGION_MAX_FILESIZE, Long.MAX_VALUE); // We don't want a split in this test.
     TEST_UTIL.startMiniCluster(NUM_SLAVES);
     LOG.debug("Started an HFile v1 cluster");
   }
@@ -73,6 +73,7 @@ public class TestUpgradeFromHFileV1ToEncoding {
   public void testUpgrade() throws Exception {
     int numBatches = 0;
     HTableDescriptor htd = new HTableDescriptor(TABLE);
+    htd.setMaxFileSize(Long.MAX_VALUE);
     HColumnDescriptor hcd = new HColumnDescriptor(CF);
     htd.addFamily(hcd);
     HBaseAdmin admin = new HBaseAdmin(conf);
