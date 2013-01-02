@@ -501,8 +501,8 @@ public class AssignmentManager extends ZooKeeperListener {
           if (!serverManager.sendRegionClose(sn, regionInfo, expectedVersion, null, true)) {
             // The regionserver is there, but says it won't close the region. In 0.96, it means the
             //  pre-close coprocessor sent an exception.
-            // In any case, the region is not anymore in transition. The best here seems to remove
-            //  it from RIT, and continue. Abort would be another option.
+            // In any case, the region is not anymore in transition. The best here seems to restore
+            //  the previous state in RIT, and to continue. Abort would be another option.
             LOG.error("Region server " + sn + " refused to close the region " +
                 regionInfo.getEncodedName() + " - removing from RIT and continue");
             regionStates.updateRegionState(rt, rs.getState());

@@ -166,7 +166,9 @@ public interface HConnection extends Abortable, Closeable {
    * @return HRegionLocation that describes where to find the region in
    * question
    * @throws IOException if a remote or network exception occurs
+   * @Deprecated - not implemented
    */
+  @Deprecated
   public HRegionLocation locateRegion(final byte [] regionName)
   throws IOException;
 
@@ -175,7 +177,9 @@ public interface HConnection extends Abortable, Closeable {
    * @param tableName table to get regions of
    * @return list of region locations for all regions of table
    * @throws IOException
+   * @Deprecated - not implemented
    */
+  @Deprecated
   public List<HRegionLocation> locateRegions(byte[] tableName)
   throws IOException;
 

@@ -892,18 +892,24 @@ public class HConnectionManager {
       }
     }
 
+    /**
+     * Not implemented/
+     */
     @Override
+    @Deprecated
     public HRegionLocation locateRegion(final byte [] regionName)
     throws IOException {
-      // TODO implement.  use old stuff or new stuff?
-      return null;
+      throw new RuntimeException("not implemented");
     }
 
+    /**
+     * Not implemented/
+     */
     @Override
+    @Deprecated
     public List<HRegionLocation> locateRegions(final byte [] tableName)
     throws IOException {
-      // TODO implement.  use old stuff or new stuff?
-      return null;
+      throw new RuntimeException("not implemented");
     }
 
     @Override
