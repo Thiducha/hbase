@@ -32,6 +32,7 @@ import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.zookeeper.ZKAssign;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -66,6 +67,7 @@ public class TestUpgradeFromHFileV1ToEncoding {
 
   @AfterClass
   public static void tearDownAfterClass() throws Exception {
+    ZKAssign.blockUntilNoRIT(TEST_UTIL.getZooKeeperWatcher());
     TEST_UTIL.shutdownMiniCluster();
   }
 
