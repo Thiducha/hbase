@@ -84,6 +84,7 @@ public class TestUpgradeFromHFileV1ToEncoding {
     for (int i = 0; i < NUM_HFILE_V1_BATCHES; ++i) {
       TestChangingEncoding.writeTestDataBatch(conf, TABLE, numBatches++);
     }
+    ZKAssign.blockUntilNoRIT(TEST_UTIL.getZooKeeperWatcher());
     TEST_UTIL.shutdownMiniHBaseCluster();
 
     conf.setInt(HFile.FORMAT_VERSION_KEY, 2);
