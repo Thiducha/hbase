@@ -31,6 +31,7 @@ import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.io.hfile.HFile;
+import org.apache.hadoop.hbase.regionserver.ConstantSizeRegionSplitPolicy;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.zookeeper.ZKAssign;
 import org.junit.AfterClass;
@@ -60,14 +61,12 @@ public class TestUpgradeFromHFileV1ToEncoding {
     // Use a small flush size to create more HFiles.
     conf.setInt(HConstants.HREGION_MEMSTORE_FLUSH_SIZE, 1024 * 1024);
     conf.setInt(HFile.FORMAT_VERSION_KEY, 1); // Use HFile v1 initially
-    conf.setLong(HConstants.HREGION_MAX_FILESIZE, Long.MAX_VALUE); // We don't want a split in this test.
     TEST_UTIL.startMiniCluster(NUM_SLAVES);
     LOG.debug("Started an HFile v1 cluster");
   }
 
   @AfterClass
   public static void tearDownAfterClass() throws Exception {
-    ZKAssign.blockUntilNoRIT(TEST_UTIL.getZooKeeperWatcher());
     TEST_UTIL.shutdownMiniCluster();
   }
 
@@ -75,6 +74,9 @@ public class TestUpgradeFromHFileV1ToEncoding {
   public void testUpgrade() throws Exception {
     int numBatches = 0;
     HTableDescriptor htd = new HTableDescriptor(TABLE);
+
+    // We don't want a split in this test.
+    htd.setValue(HTableDescriptor.SPLIT_POLICY, ConstantSizeRegionSplitPolicy.class.getName());
     htd.setMaxFileSize(Long.MAX_VALUE);
     HColumnDescriptor hcd = new HColumnDescriptor(CF);
     htd.addFamily(hcd);
@@ -84,7 +86,6 @@ public class TestUpgradeFromHFileV1ToEncoding {
     for (int i = 0; i < NUM_HFILE_V1_BATCHES; ++i) {
       TestChangingEncoding.writeTestDataBatch(conf, TABLE, numBatches++);
     }
-    ZKAssign.blockUntilNoRIT(TEST_UTIL.getZooKeeperWatcher());
     TEST_UTIL.shutdownMiniHBaseCluster();
 
     conf.setInt(HFile.FORMAT_VERSION_KEY, 2);
