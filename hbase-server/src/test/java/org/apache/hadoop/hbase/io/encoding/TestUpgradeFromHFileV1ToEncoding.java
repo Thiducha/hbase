@@ -51,7 +51,7 @@ public class TestUpgradeFromHFileV1ToEncoding {
   private static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
   private static final Configuration conf = TEST_UTIL.getConfiguration();
 
-  private static final int NUM_HFILE_V1_BATCHES = 10;
+  private static final int NUM_HFILE_V1_BATCHES = 100;
   private static final int NUM_HFILE_V2_BATCHES = 20;
   
   private static final int NUM_SLAVES = 3;
@@ -76,7 +76,7 @@ public class TestUpgradeFromHFileV1ToEncoding {
     HTableDescriptor htd = new HTableDescriptor(TABLE);
 
     // We don't want a split in this test.
-    htd.setValue(HTableDescriptor.SPLIT_POLICY, ConstantSizeRegionSplitPolicy.class.getName());
+    //htd.setValue(HTableDescriptor.SPLIT_POLICY, ConstantSizeRegionSplitPolicy.class.getName());
     htd.setMaxFileSize(Long.MAX_VALUE);
     HColumnDescriptor hcd = new HColumnDescriptor(CF);
     htd.addFamily(hcd);

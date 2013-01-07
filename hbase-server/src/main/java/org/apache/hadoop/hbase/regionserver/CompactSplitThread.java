@@ -250,6 +250,7 @@ public class CompactSplitThread implements CompactionRequestor {
     while (!done) {
       try {
         done = t.awaitTermination(60, TimeUnit.SECONDS);
+        t.s
         LOG.info("Waiting for " + name + " to finish...");
       } catch (InterruptedException ie) {
         LOG.warn("Interrupted waiting for " + name + " to finish...");
