@@ -35,6 +35,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -208,6 +209,10 @@ public class HConnectionManager {
     synchronized (HBASE_INSTANCES) {
       HConnectionImplementation connection = HBASE_INSTANCES.get(connectionKey);
       if (connection == null) {
+        connection = new HConnectionImplementation(conf, true);
+        HBASE_INSTANCES.put(connectionKey, connection);
+      } else if (connection.isClosed()) {
+        HConnectionManager.deleteConnection(connectionKey, true, true);
         connection = new HConnectionImplementation(conf, true);
         HBASE_INSTANCES.put(connectionKey, connection);
       }
@@ -892,24 +897,29 @@ public class HConnectionManager {
       }
     }
 
-    /**
-     * Not implemented/
-     */
+
     @Override
-    @Deprecated
-    public HRegionLocation locateRegion(final byte [] regionName)
-    throws IOException {
-      throw new RuntimeException("not implemented");
+    public HRegionLocation locateRegion(final byte[] regionName) throws IOException {
+      return locateRegion(HRegionInfo.getTableName(regionName),
+        HRegionInfo.getStartKey(regionName), false, true);
     }
 
-    /**
-     * Not implemented/
-     */
+
     @Override
-    @Deprecated
-    public List<HRegionLocation> locateRegions(final byte [] tableName)
-    throws IOException {
-      throw new RuntimeException("not implemented");
+    public List<HRegionLocation> locateRegions(final byte[] tableName) throws IOException {
+      return locateRegions (tableName, false, true);
+    }
+    
+    @Override
+    public List<HRegionLocation> locateRegions(final byte[] tableName, final boolean useCache,
+        final boolean offlined) throws IOException {
+      NavigableMap<HRegionInfo, ServerName> regions = MetaScanner.allTableRegions(conf, tableName,
+        offlined);
+      final List<HRegionLocation> locations = new ArrayList<HRegionLocation>();
+      for (HRegionInfo regionInfo : regions.keySet()) {
+        locations.add(locateRegion(tableName, regionInfo.getStartKey(), useCache, true));
+      }
+      return locations;
     }
 
     @Override
@@ -2191,13 +2201,14 @@ public class HConnectionManager {
             closeZooKeeperWatcher();
           }
         }
-      }else {
+      } else {
         if (t != null) {
           LOG.fatal(msg, t);
         } else {
           LOG.fatal(msg);
         }
         this.aborted = true;
+        close();
         this.closed = true;
       }
     }
@@ -2277,7 +2288,11 @@ public class HConnectionManager {
     @Override
     public void close() {
       if (managed) {
-        HConnectionManager.deleteConnection(this, stopProxy, false);
+        if (aborted) {
+          HConnectionManager.deleteStaleConnection(this);
+        } else {
+          HConnectionManager.deleteConnection(this, stopProxy, false);
+        }
       } else {
         close(true);
       }
