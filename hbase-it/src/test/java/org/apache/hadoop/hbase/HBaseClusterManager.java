@@ -150,6 +150,10 @@ public class HBaseClusterManager extends ClusterManager {
       return String.format("%s/bin/hbase-daemon.sh %s %s %s", getHBaseHome(), getConfig(),
           op.toString().toLowerCase(), service);
     }
+
+    public String getDevSupportCommand(String cmd, String param1 ) {
+      return String.format("%s/dev-support/%s %s", getHBaseHome(), cmd, param1);
+    }
   }
 
   public HBaseClusterManager() {
@@ -208,6 +212,19 @@ public class HBaseClusterManager extends ClusterManager {
     String ret = exec(hostname, getCommandProvider(service).isRunningCommand(service))
         .getSecond();
     return ret.length() > 0;
+  }
+
+
+  @Override
+  public void unplug(String hostname) throws IOException {
+    exec("127.0.0.1", new HBaseShellCommandProvider().
+        getDevSupportCommand("it_tests_unblockmachine_wrapper", hostname));
+  }
+
+  @Override
+  public void replug(String hostname) throws IOException {
+    exec("127.0.0.1", new HBaseShellCommandProvider().
+        getDevSupportCommand("it_tests_blockmachine_wrapper", hostname));
   }
 
 }

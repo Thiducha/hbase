@@ -117,6 +117,19 @@ public abstract class ClusterManager extends Configured {
    */
   public abstract boolean isRunning(ServiceType service, String hostname) throws IOException;
 
+
+  /**
+   * Simulate an unplug of a remote host. Always calls replug after!
+   * @param hostname
+   */
+  public abstract void unplug(String hostname) throws IOException;
+
+  /**
+   * Simulates a replug of a hostname after being unplug.
+   * @param hostname
+   */
+  public abstract void replug(String hostname) throws IOException;
+
   /* TODO: further API ideas:
    *
    * //return services running on host:
