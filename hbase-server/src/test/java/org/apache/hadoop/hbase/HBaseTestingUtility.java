@@ -52,6 +52,7 @@ import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.Waiter.Predicate;
 import org.apache.hadoop.hbase.catalog.MetaEditor;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Get;
@@ -266,6 +267,9 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
       "mapred.local.dir",
       testPath, "mapred-local-dir");
 
+    createSubDir(
+      "hbase.local.dir",
+      testPath, "hbase-local-dir");
     return testPath;
   }
 
@@ -383,7 +387,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     //file system, the tests should use getBaseTestDir, otherwise, we can use
     //the working directory, and create a unique sub dir there
     FileSystem fs = getTestFileSystem();
-    if (fs.getUri().getScheme().equals(fs.getLocal(conf).getUri().getScheme())) {
+    if (fs.getUri().getScheme().equals(FileSystem.getLocal(conf).getUri().getScheme())) {
       File dataTestDir = new File(getDataTestDir().toString());
       dataTestDirOnTestFS = new Path(dataTestDir.getAbsolutePath());
     } else {
@@ -1255,6 +1259,18 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     Bytes.toBytes("rrr"), Bytes.toBytes("sss"), Bytes.toBytes("ttt"),
     Bytes.toBytes("uuu"), Bytes.toBytes("vvv"), Bytes.toBytes("www"),
     Bytes.toBytes("xxx"), Bytes.toBytes("yyy")
+  };
+
+  public static final byte[][] KEYS_FOR_HBA_CREATE_TABLE = {
+      Bytes.toBytes("bbb"),
+      Bytes.toBytes("ccc"), Bytes.toBytes("ddd"), Bytes.toBytes("eee"),
+      Bytes.toBytes("fff"), Bytes.toBytes("ggg"), Bytes.toBytes("hhh"),
+      Bytes.toBytes("iii"), Bytes.toBytes("jjj"), Bytes.toBytes("kkk"),
+      Bytes.toBytes("lll"), Bytes.toBytes("mmm"), Bytes.toBytes("nnn"),
+      Bytes.toBytes("ooo"), Bytes.toBytes("ppp"), Bytes.toBytes("qqq"),
+      Bytes.toBytes("rrr"), Bytes.toBytes("sss"), Bytes.toBytes("ttt"),
+      Bytes.toBytes("uuu"), Bytes.toBytes("vvv"), Bytes.toBytes("www"),
+      Bytes.toBytes("xxx"), Bytes.toBytes("yyy"), Bytes.toBytes("zzz")
   };
 
   /**
@@ -2333,5 +2349,29 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
 
   public void setFileSystemURI(String fsURI) {
     FS_URI = fsURI;
+  }
+  
+  /**
+   * Wrapper method for {@link Waiter#waitFor(Configuration, long, Predicate)}.
+   */
+  public <E extends Exception> long waitFor(long timeout, Predicate<E> predicate)
+      throws E {
+    return Waiter.waitFor(this.conf, timeout, predicate);
+  }
+
+  /**
+   * Wrapper method for {@link Waiter#waitFor(Configuration, long, long, Predicate)}.
+   */
+  public <E extends Exception> long waitFor(long timeout, long interval, Predicate<E> predicate)
+      throws E {
+    return Waiter.waitFor(this.conf, timeout, interval, predicate);
+  }
+
+  /**
+   * Wrapper method for {@link Waiter#waitFor(Configuration, long, long, boolean, Predicate)}.
+   */
+  public <E extends Exception> long waitFor(long timeout, long interval,
+      boolean failIfTimeout, Predicate<E> predicate) throws E {
+    return Waiter.waitFor(this.conf, timeout, interval, failIfTimeout, predicate);
   }
 }

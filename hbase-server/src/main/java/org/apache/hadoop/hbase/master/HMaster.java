@@ -54,6 +54,7 @@ import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.HealthCheckChore;
 import org.apache.hadoop.hbase.MasterAdminProtocol;
 import org.apache.hadoop.hbase.MasterMonitorProtocol;
 import org.apache.hadoop.hbase.MasterNotRunningException;
@@ -80,7 +81,6 @@ import org.apache.hadoop.hbase.executor.ExecutorService;
 import org.apache.hadoop.hbase.executor.ExecutorService.ExecutorType;
 import org.apache.hadoop.hbase.ipc.HBaseServer;
 import org.apache.hadoop.hbase.ipc.HBaseServerRPC;
-import org.apache.hadoop.hbase.ipc.ProtocolSignature;
 import org.apache.hadoop.hbase.ipc.RpcServer;
 import org.apache.hadoop.hbase.ipc.ServerRpcController;
 import org.apache.hadoop.hbase.ipc.UnknownProtocolException;
@@ -320,6 +320,9 @@ Server {
 
   private Map<String, Service> coprocessorServiceHandlers = Maps.newHashMap();
 
+  /** The health check chore. */
+  private HealthCheckChore healthCheckChore;
+
   /**
    * Initializes the HMaster. The steps are as follows:
    * <p>
@@ -399,6 +402,13 @@ Server {
     this.masterCheckCompression = conf.getBoolean("hbase.master.check.compression", true);
 
     this.metricsMaster = new MetricsMaster( new MetricsMasterWrapperImpl(this));
+
+    // Health checker thread.
+    int sleepTime = this.conf.getInt(HConstants.HEALTH_CHORE_WAKE_FREQ,
+      HConstants.DEFAULT_THREAD_WAKE_FREQUENCY);
+    if (isHealthCheckerConfigured()) {
+      healthCheckChore = new HealthCheckChore(sleepTime, this, getConfiguration());
+    }
   }
 
   /**
@@ -950,35 +960,9 @@ Server {
       return;
     }
     LOG.info("Forcing splitLog and expire of " + sn);
+    fileSystemManager.splitMetaLog(sn);
     fileSystemManager.splitLog(sn);
     serverManager.expireServer(sn);
-  }
-
-  @Override
-  public ProtocolSignature getProtocolSignature(
-      String protocol, long version, int clientMethodsHashCode)
-  throws IOException {
-    if (MasterMonitorProtocol.class.getName().equals(protocol)) {
-      return new ProtocolSignature(MasterMonitorProtocol.VERSION, null);
-    } else if (MasterAdminProtocol.class.getName().equals(protocol)) {
-      return new ProtocolSignature(MasterAdminProtocol.VERSION, null);
-    } else if (RegionServerStatusProtocol.class.getName().equals(protocol)) {
-      return new ProtocolSignature(RegionServerStatusProtocol.VERSION, null);
-    }
-    throw new IOException("Unknown protocol: " + protocol);
-  }
-
-  public long getProtocolVersion(String protocol, long clientVersion) {
-    if (MasterMonitorProtocol.class.getName().equals(protocol)) {
-      return MasterMonitorProtocol.VERSION;
-    } else if (MasterAdminProtocol.class.getName().equals(protocol)) {
-      return MasterAdminProtocol.VERSION;
-    } else if (RegionServerStatusProtocol.class.getName().equals(protocol)) {
-      return RegionServerStatusProtocol.VERSION;
-    }
-    // unknown protocol
-    LOG.warn("Version requested for unimplemented protocol: "+protocol);
-    return -1;
   }
 
   @Override
@@ -1069,6 +1053,11 @@ Server {
      this.infoServer.start();
     }
 
+   // Start the health checker
+   if (this.healthCheckChore != null) {
+     Threads.setDaemonThreadRunning(this.healthCheckChore.getThread(), n + ".healthChecker");
+   }
+
     // Start allowing requests to happen.
     this.rpcServer.openServer();
     this.rpcServerOpen = true;
@@ -1104,6 +1093,9 @@ Server {
       }
     }
     if (this.executorService != null) this.executorService.shutdown();
+    if (this.healthCheckChore != null) {
+      this.healthCheckChore.interrupt();
+    }
   }
 
   private static Thread getAndStartClusterStatusChore(HMaster master) {
@@ -2428,5 +2420,10 @@ Server {
 
   public HFileCleaner getHFileCleaner() {
     return this.hfileCleaner;
+  }
+
+  private boolean isHealthCheckerConfigured() {
+    String healthScriptLocation = this.conf.get(HConstants.HEALTH_SCRIPT_LOC);
+    return org.apache.commons.lang.StringUtils.isNotBlank(healthScriptLocation);
   }
 }

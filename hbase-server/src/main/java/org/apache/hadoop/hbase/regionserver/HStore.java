@@ -19,13 +19,12 @@
 package org.apache.hadoop.hbase.regionserver;
 
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
+import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.NavigableSet;
-import java.util.Random;
 import java.util.SortedSet;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionService;
@@ -64,7 +63,10 @@ import org.apache.hadoop.hbase.io.hfile.HFileScanner;
 import org.apache.hadoop.hbase.io.hfile.InvalidHFileException;
 import org.apache.hadoop.hbase.io.hfile.NoOpDataBlockEncoder;
 import org.apache.hadoop.hbase.monitoring.MonitoredTask;
-import org.apache.hadoop.hbase.regionserver.compactions.*;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactSelection;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionPolicy;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionProgress;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionRequest;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.ChecksumType;
 import org.apache.hadoop.hbase.util.ClassSize;
@@ -428,25 +430,37 @@ public class HStore implements Store, StoreConfiguration {
       totalValidStoreFile++;
     }
 
+    IOException ioe = null;
     try {
       for (int i = 0; i < totalValidStoreFile; i++) {
-        Future<StoreFile> future = completionService.take();
-        StoreFile storeFile = future.get();
-        long length = storeFile.getReader().length();
-        this.storeSize += length;
-        this.totalUncompressedBytes +=
-          storeFile.getReader().getTotalUncompressedBytes();
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("loaded " + storeFile.toStringDetailed());
-        }
-        results.add(storeFile);
-      }
-    } catch (InterruptedException e) {
-      throw new IOException(e);
-    } catch (ExecutionException e) {
-      throw new IOException(e.getCause());
+        try {
+          Future<StoreFile> future = completionService.take();
+          StoreFile storeFile = future.get();
+          long length = storeFile.getReader().length();
+          this.storeSize += length;
+          this.totalUncompressedBytes +=
+              storeFile.getReader().getTotalUncompressedBytes();
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("loaded " + storeFile.toStringDetailed());
+          }
+          results.add(storeFile);
+        } catch (InterruptedException e) {
+          if (ioe == null) ioe = new InterruptedIOException(e.getMessage());
+        } catch (ExecutionException e) {
+          if (ioe == null) ioe = new IOException(e.getCause());
+        } 
+      } 
     } finally {
       storeFileOpenerThreadPool.shutdownNow();
+    }
+    if (ioe != null) {
+      // close StoreFile readers
+      try {
+        for (StoreFile file : results) {
+          if (file != null) file.closeReader(true);
+        }
+      } catch (IOException e) { }
+      throw ioe;
     }
 
     return results;
@@ -644,18 +658,25 @@ public class HStore implements Store, StoreConfiguration {
           });
         }
 
+        IOException ioe = null;
         try {
           for (int i = 0; i < result.size(); i++) {
-            Future<Void> future = completionService.take();
-            future.get();
+            try {
+              Future<Void> future = completionService.take();
+              future.get();
+            } catch (InterruptedException e) {
+              if (ioe == null) {
+                ioe = new InterruptedIOException();
+                ioe.initCause(e);
+              }
+            } catch (ExecutionException e) {
+              if (ioe == null) ioe = new IOException(e.getCause());
+            }
           }
-        } catch (InterruptedException e) {
-          throw new IOException(e);
-        } catch (ExecutionException e) {
-          throw new IOException(e.getCause());
         } finally {
           storeFileCloserThreadPool.shutdownNow();
         }
+        if (ioe != null) throw ioe;
       }
       LOG.info("Closed " + this);
       return result;
@@ -1314,7 +1335,7 @@ public class HStore implements Store, StoreConfiguration {
 
       // let the archive util decide if we should archive or delete the files
       LOG.debug("Removing store files after compaction...");
-      HFileArchiver.archiveStoreFiles(this.fs, this.region, this.conf,
+      HFileArchiver.archiveStoreFiles(this.conf, this.fs, this.region,
         this.family.getName(), compactedFiles);
 
     } catch (IOException e) {

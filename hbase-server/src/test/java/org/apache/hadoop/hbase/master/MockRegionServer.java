@@ -36,7 +36,6 @@ import org.apache.hadoop.hbase.client.ClientProtocol;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
-import org.apache.hadoop.hbase.ipc.ProtocolSignature;
 import org.apache.hadoop.hbase.ipc.RpcServer;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CloseRegionRequest;
@@ -187,20 +186,6 @@ class MockRegionServer implements AdminProtocol, ClientProtocol, RegionServerSer
   }
 
   @Override
-  public long getProtocolVersion(String protocol, long clientVersion)
-      throws IOException {
-    // TODO Auto-generated method stub
-    return 0;
-  }
-
-  @Override
-  public ProtocolSignature getProtocolSignature(String protocol,
-      long clientVersion, int clientMethodsHash) throws IOException {
-    // TODO Auto-generated method stub
-    return null;
-  }
-
-  @Override
   public boolean isStopped() {
     // TODO Auto-generated method stub
     return false;
@@ -286,12 +271,6 @@ class MockRegionServer implements AdminProtocol, ClientProtocol, RegionServerSer
   @Override
   public boolean isStopping() {
     return false;
-  }
-
-  @Override
-  public HLog getWAL() {
-    // TODO Auto-generated method stub
-    return null;
   }
 
   @Override
@@ -511,6 +490,12 @@ class MockRegionServer implements AdminProtocol, ClientProtocol, RegionServerSer
 
   @Override
   public Leases getLeases() {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public HLog getWAL(HRegionInfo regionInfo) throws IOException {
     // TODO Auto-generated method stub
     return null;
   }

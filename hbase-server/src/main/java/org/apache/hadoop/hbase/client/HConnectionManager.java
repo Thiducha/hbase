@@ -35,6 +35,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -63,6 +64,7 @@ import org.apache.hadoop.hbase.MasterAdminProtocol;
 import org.apache.hadoop.hbase.MasterMonitorProtocol;
 import org.apache.hadoop.hbase.MasterNotRunningException;
 import org.apache.hadoop.hbase.MasterProtocol;
+import org.apache.hadoop.hbase.IpcProtocol;
 import org.apache.hadoop.hbase.RegionMovedException;
 import org.apache.hadoop.hbase.RemoteExceptionHandler;
 import org.apache.hadoop.hbase.ServerName;
@@ -73,7 +75,6 @@ import org.apache.hadoop.hbase.client.MetaScanner.MetaScannerVisitor;
 import org.apache.hadoop.hbase.client.MetaScanner.MetaScannerVisitorBase;
 import org.apache.hadoop.hbase.client.coprocessor.Batch;
 import org.apache.hadoop.hbase.ipc.HBaseClientRPC;
-import org.apache.hadoop.hbase.ipc.VersionedProtocol;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.TableSchema;
@@ -210,6 +211,10 @@ public class HConnectionManager {
       if (connection == null) {
         connection = new HConnectionImplementation(conf, true);
         HBASE_INSTANCES.put(connectionKey, connection);
+      } else if (connection.isClosed()) {
+        HConnectionManager.deleteConnection(connectionKey, true, true);
+        connection = new HConnectionImplementation(conf, true);
+        HBASE_INSTANCES.put(connectionKey, connection);
       }
       connection.incCount();
       return connection;
@@ -242,7 +247,7 @@ public class HConnectionManager {
    * @param stopProxy
    *          Shuts down all the proxy's put up to cluster members including to
    *          cluster HMaster. Calls
-   *          {@link HBaseClientRPC#stopProxy(org.apache.hadoop.hbase.ipc.VersionedProtocol)}
+   *          {@link HBaseClientRPC#stopProxy(IpcProtocol)}
    *          .
    */
   public static void deleteConnection(Configuration conf, boolean stopProxy) {
@@ -513,7 +518,7 @@ public class HConnectionManager {
     }
   }
 
-  /* Encapsulates connection to zookeeper and regionservers.*/
+  /** Encapsulates connection to zookeeper and regionservers.*/
   static class HConnectionImplementation implements HConnection, Closeable {
     static final Log LOG = LogFactory.getLog(HConnectionImplementation.class);
     private final Class<? extends AdminProtocol> adminClass;
@@ -545,8 +550,8 @@ public class HConnectionManager {
     private final Configuration conf;
 
     // Known region ServerName.toString() -> RegionClient/Admin
-    private final ConcurrentHashMap<String, Map<String, VersionedProtocol>> servers =
-      new ConcurrentHashMap<String, Map<String, VersionedProtocol>>();
+    private final ConcurrentHashMap<String, Map<String, IpcProtocol>> servers =
+      new ConcurrentHashMap<String, Map<String, IpcProtocol>>();
     private final ConcurrentHashMap<String, String> connectionLock =
       new ConcurrentHashMap<String, String>();
 
@@ -676,12 +681,10 @@ public class HConnectionManager {
       public int userCount;
       public long keepAliveUntil = Long.MAX_VALUE;
       public final Class<? extends MasterProtocol> protocolClass;
-      public long version;
 
       public MasterProtocolState (
-          final Class<? extends MasterProtocol> protocolClass, long version) {
+          final Class<? extends MasterProtocol> protocolClass) {
         this.protocolClass = protocolClass;
-        this.version = version;
       }
     }
 
@@ -713,9 +716,8 @@ public class HConnectionManager {
 
         InetSocketAddress isa =
           new InetSocketAddress(sn.getHostname(), sn.getPort());
-        MasterProtocol tryMaster = (MasterProtocol) HBaseClientRPC.getProxy(
+        MasterProtocol tryMaster = (MasterProtocol)HBaseClientRPC.getProxy(
             masterProtocolState.protocolClass,
-            masterProtocolState.version,
             isa, this.conf, this.rpcTimeout);
 
         if (tryMaster.isMasterRunning(
@@ -893,17 +895,27 @@ public class HConnectionManager {
     }
 
     @Override
-    public HRegionLocation locateRegion(final byte [] regionName)
-    throws IOException {
-      // TODO implement.  use old stuff or new stuff?
-      return null;
+    public HRegionLocation locateRegion(final byte[] regionName) throws IOException {
+      return locateRegion(HRegionInfo.getTableName(regionName),
+        HRegionInfo.getStartKey(regionName), false, true);
     }
 
     @Override
-    public List<HRegionLocation> locateRegions(final byte [] tableName)
+    public List<HRegionLocation> locateRegions(final byte[] tableName)
     throws IOException {
-      // TODO implement.  use old stuff or new stuff?
-      return null;
+      return locateRegions (tableName, false, true);
+    }
+    
+    @Override
+    public List<HRegionLocation> locateRegions(final byte[] tableName, final boolean useCache,
+        final boolean offlined) throws IOException {
+      NavigableMap<HRegionInfo, ServerName> regions = MetaScanner.allTableRegions(conf, tableName,
+        offlined);
+      final List<HRegionLocation> locations = new ArrayList<HRegionLocation>();
+      for (HRegionInfo regionInfo : regions.keySet()) {
+        locations.add(locateRegion(tableName, regionInfo.getStartKey(), useCache, true));
+      }
+      return locations;
     }
 
     @Override
@@ -1334,17 +1346,16 @@ public class HConnectionManager {
     }
 
     @Override
-    public ClientProtocol getClient(
-        final String hostname, final int port) throws IOException {
-      return (ClientProtocol)getProtocol(hostname, port,
-        clientClass, ClientProtocol.VERSION);
+    public ClientProtocol getClient(final String hostname, final int port)
+    throws IOException {
+      return (ClientProtocol)getProtocol(hostname, port, clientClass);
     }
 
     @Override
-    public AdminProtocol getAdmin(final String hostname,
-        final int port, final boolean master) throws IOException {
-      return (AdminProtocol)getProtocol(hostname, port,
-        adminClass, AdminProtocol.VERSION);
+    public AdminProtocol getAdmin(final String hostname, final int port,
+        final boolean master)
+    throws IOException {
+      return (AdminProtocol)getProtocol(hostname, port, adminClass);
     }
 
     /**
@@ -1357,22 +1368,22 @@ public class HConnectionManager {
      * @return Proxy.
      * @throws IOException
      */
-    VersionedProtocol getProtocol(final String hostname,
-        final int port, final Class <? extends VersionedProtocol> protocolClass,
-        final long version) throws IOException {
+    IpcProtocol getProtocol(final String hostname,
+        final int port, final Class <? extends IpcProtocol> protocolClass)
+    throws IOException {
       String rsName = Addressing.createHostAndPortStr(hostname, port);
       // See if we already have a connection (common case)
-      Map<String, VersionedProtocol> protocols = this.servers.get(rsName);
+      Map<String, IpcProtocol> protocols = this.servers.get(rsName);
       if (protocols == null) {
-        protocols = new HashMap<String, VersionedProtocol>();
-        Map<String, VersionedProtocol> existingProtocols =
+        protocols = new HashMap<String, IpcProtocol>();
+        Map<String, IpcProtocol> existingProtocols =
           this.servers.putIfAbsent(rsName, protocols);
         if (existingProtocols != null) {
           protocols = existingProtocols;
         }
       }
       String protocol = protocolClass.getName();
-      VersionedProtocol server = protocols.get(protocol);
+      IpcProtocol server = protocols.get(protocol);
       if (server == null) {
         // create a unique lock for this RS + protocol (if necessary)
         String lockKey = protocol + "@" + rsName;
@@ -1387,7 +1398,7 @@ public class HConnectionManager {
               InetSocketAddress address = new InetSocketAddress(hostname, port);
               // definitely a cache miss. establish an RPC for this RS
               server = HBaseClientRPC.waitForProxy(
-                  protocolClass, version, address, this.conf,
+                  protocolClass, address, this.conf,
                   this.maxRPCAttempts, this.rpcTimeout, this.rpcTimeout);
               protocols.put(protocol, server);
             } catch (RemoteException e) {
@@ -1584,9 +1595,9 @@ public class HConnectionManager {
     }
 
     MasterProtocolState masterAdminProtocol =
-      new MasterProtocolState(MasterAdminProtocol.class, MasterAdminProtocol.VERSION);
+      new MasterProtocolState(MasterAdminProtocol.class);
     MasterProtocolState masterMonitorProtocol =
-      new MasterProtocolState(MasterMonitorProtocol.class, MasterMonitorProtocol.VERSION);
+      new MasterProtocolState(MasterMonitorProtocol.class);
 
     /**
      * This function allows HBaseAdmin and potentially others
@@ -1845,12 +1856,6 @@ public class HConnectionManager {
       private final Object[] results;
       private final Batch.Callback<R> callback;
 
-      // Error management: these lists are filled by the errors on the final try. Indexes
-      //  are consistent, i.e. exceptions[i] matches failedActions[i] and failedAddresses[i]
-      private final List<Throwable> exceptions;
-      private final List<Row> failedActions;
-      private final List<String> failedAddresses;
-
       // Used during the batch process
       private final List<Action<R>> toReplay;
       private final LinkedList<Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>>
@@ -1872,9 +1877,6 @@ public class HConnectionManager {
         this.toReplay = new ArrayList<Action<R>>();
         this.inProgress =
           new LinkedList<Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>>();
-        this.exceptions = new ArrayList<Throwable>();
-        this.failedActions = new ArrayList<Row>();
-        this.failedAddresses = new ArrayList<String>();
         this.curNumRetries = 0;
       }
 
@@ -1913,19 +1915,19 @@ public class HConnectionManager {
         for (Entry<HRegionLocation, MultiAction<R>> e : actionsByServer.entrySet()) {
           Callable<MultiResponse> callable =
             createDelayedCallable(sleepTime, e.getKey(), e.getValue());
+          if (LOG.isTraceEnabled() && (sleepTime > 0)) {
+            StringBuilder sb = new StringBuilder();
+            for (Action<R> action : e.getValue().allActions()) {
+              sb.append(Bytes.toStringBinary(action.getAction().getRow()) + ";");
+            }
+            LOG.trace("Sending requests to [" + e.getKey().getHostnamePort()
+              + "] with delay of [" + sleepTime + "] for rows [" + sb.toString() + "]");
+          }
           Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> p =
             new Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>(
               e.getValue(), e.getKey(), this.pool.submit(callable));
           this.inProgress.addLast(p);
         }
-      }
-
-
-      private void addToErrorsLists(Exception ex, Row row, Triple<MultiAction<R>,
-          HRegionLocation, Future<MultiResponse>> obj) {
-        this.exceptions.add(ex);
-        this.failedActions.add(row);
-        this.failedAddresses.add(obj.getSecond().getHostnamePort());
       }
 
      /**
@@ -1954,6 +1956,13 @@ public class HConnectionManager {
           return;
         }
 
+        boolean isTraceEnabled = LOG.isTraceEnabled();
+        BatchErrors errors = new BatchErrors();
+        BatchErrors retriedErrors = null;
+        if (isTraceEnabled) {
+          retriedErrors = new BatchErrors();
+        }
+
         // We keep the number of retry per action.
         int[] nbRetries = new int[this.results.length];
 
@@ -1979,7 +1988,6 @@ public class HConnectionManager {
 
         // Analyze and resubmit until all actions are done successfully or failed after numRetries
         while (!this.inProgress.isEmpty()) {
-
           // We need the original multi action to find out what actions to replay if
           //  we have a 'total' failure of the Future<MultiResponse>
           // We need the HRegionLocation as we give it back if we go out of retries
@@ -2002,8 +2010,11 @@ public class HConnectionManager {
                 Row row = action.getAction();
                 hci.updateCachedLocations(this.tableName, row, exception);
                 if (noRetry) {
-                  addToErrorsLists(exception, row, currentTask);
+                  errors.add(exception, row, currentTask);
                 } else {
+                  if (isTraceEnabled) {
+                    retriedErrors.add(exception, row, currentTask);
+                  }
                   lastRetry = addToReplay(nbRetries, action);
                 }
               }
@@ -2025,8 +2036,11 @@ public class HConnectionManager {
                   Row row = correspondingAction.getAction();
                   hci.updateCachedLocations(this.tableName, row, result);
                   if (result instanceof DoNotRetryIOException || noRetry) {
-                    addToErrorsLists((Exception)result, row, currentTask);
+                    errors.add((Exception)result, row, currentTask);
                   } else {
+                    if (isTraceEnabled) {
+                      retriedErrors.add((Exception)result, row, currentTask);
+                    }
                     lastRetry = addToReplay(nbRetries, correspondingAction);
                   }
                 } else // success
@@ -2041,19 +2055,59 @@ public class HConnectionManager {
 
           // Retry all actions in toReplay then clear it.
           if (!noRetry && !toReplay.isEmpty()) {
+            if (isTraceEnabled) {
+              LOG.trace("Retrying due to errors: " + retriedErrors.getDescriptionAndClear());
+            }
             doRetry();
             if (lastRetry) {
+              if (isTraceEnabled) {
+                LOG.trace("No more retries");
+              }
               noRetry = true;
             }
           }
         }
 
-        if (!exceptions.isEmpty()) {
-          throw new RetriesExhaustedWithDetailsException(this.exceptions,
-            this.failedActions,
-            this.failedAddresses);
+        errors.rethrowIfAny();
+      }
+
+
+      private class BatchErrors {
+        private List<Throwable> exceptions = new ArrayList<Throwable>();
+        private List<Row> actions = new ArrayList<Row>();
+        private List<String> addresses = new ArrayList<String>();
+
+        public void add(Exception ex, Row row,
+          Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> obj) {
+          exceptions.add(ex);
+          actions.add(row);
+          addresses.add(obj.getSecond().getHostnamePort());
+        }
+
+        public void rethrowIfAny() throws RetriesExhaustedWithDetailsException {
+          if (!exceptions.isEmpty()) {
+            throw makeException();
+          }
+        }
+
+        public String getDescriptionAndClear()
+        {
+          if (exceptions.isEmpty()) {
+            return "";
+          }
+          String result = makeException().getMessage();
+          exceptions.clear();
+          actions.clear();
+          addresses.clear();
+          return result;
+        };
+
+        private RetriesExhaustedWithDetailsException makeException() {
+          return new RetriesExhaustedWithDetailsException(exceptions, actions, addresses);
         }
       }
+
+
 
       /**
        * Put the action that has to be retried in the Replay list.
@@ -2185,13 +2239,14 @@ public class HConnectionManager {
             closeZooKeeperWatcher();
           }
         }
-      }else {
+      } else {
         if (t != null) {
           LOG.fatal(msg, t);
         } else {
           LOG.fatal(msg);
         }
         this.aborted = true;
+        close();
         this.closed = true;
       }
     }
@@ -2257,8 +2312,8 @@ public class HConnectionManager {
       delayedClosing.stop("Closing connection");
       if (stopProxy) {
         closeMaster();
-        for (Map<String, VersionedProtocol> i : servers.values()) {
-          for (VersionedProtocol server: i.values()) {
+        for (Map<String, IpcProtocol> i : servers.values()) {
+          for (IpcProtocol server: i.values()) {
             HBaseClientRPC.stopProxy(server);
           }
         }
@@ -2271,7 +2326,11 @@ public class HConnectionManager {
     @Override
     public void close() {
       if (managed) {
-        HConnectionManager.deleteConnection(this, stopProxy, false);
+        if (aborted) {
+          HConnectionManager.deleteStaleConnection(this);
+        } else {
+          HConnectionManager.deleteConnection(this, stopProxy, false);
+        }
       } else {
         close(true);
       }

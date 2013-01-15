@@ -1,3 +1,4 @@
+package org.apache.hadoop.hbase;
 /**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -16,25 +17,16 @@
  * limitations under the License.
  */
 
-package org.apache.hadoop.hbase.replication;
-
-import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.LargeTests;
-import org.junit.BeforeClass;
-import org.junit.experimental.categories.Category;
-
 /**
- * Run the same test as TestReplication but with HLog compression enabled
+ * Marker Interface used by ipc.  We need a means of referring to
+ * ipc "protocols" generically.  For example, we need to tell an rpc
+ * server the "protocols" it implements and it helps if all protocols
+ * implement a common 'type'.  That is what this Interface is used for.
  */
-@Category(LargeTests.class)
-public class TestReplicationWithCompression extends TestReplication {
+// This Interface replaces the old VersionedProtocol Interface.  Rather
+// than redo a bunch of code its removal, instead we put in place this
+// Interface and change all VP references to Protocol references.
 
-  /**
-   * @throws java.lang.Exception
-   */
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
-    conf1.setBoolean(HConstants.ENABLE_WAL_COMPRESSION, true);
-    TestReplication.setUpBeforeClass();
-  }
-}
+// It is moved up here to top-level because it is ugly having members
+// of super packages reach down into subpackages.
+public interface IpcProtocol {}
