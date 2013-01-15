@@ -26,6 +26,7 @@ import java.net.InetSocketAddress;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
 import java.util.HashMap;
@@ -910,6 +911,7 @@ public class ZKUtil {
           (node.equals(zkw.clusterIdZNode) == true) ||
           (node.equals(zkw.rsZNode) == true) ||
           (node.equals(zkw.backupMasterAddressesZNode) == true) ||
+          (node.startsWith(zkw.assignmentZNode) == true) ||
           (node.startsWith(zkw.tableZNode) == true)) {
         return ZooKeeperWatcher.CREATOR_ALL_AND_WORLD_READABLE;
       }
@@ -1253,6 +1255,11 @@ public class ZKUtil {
       for (String child : listChildrenNoWatch(zkw, zkw.rsZNode)) {
         sb.append("\n ").append(child);
       }
+      try {
+        getReplicationZnodesDump(zkw, sb);
+      } catch (KeeperException ke) {
+        LOG.warn("Couldn't get the replication znode dump." + ke.getStackTrace());
+      }
       sb.append("\nQuorum Server Statistics:");
       String[] servers = zkw.getQuorum().split(",");
       for (String server : servers) {
@@ -1277,6 +1284,25 @@ public class ZKUtil {
       sb.append("\n" + ke.getMessage());
     }
     return sb.toString();
+  }
+
+  private static void getReplicationZnodesDump(ZooKeeperWatcher zkw, StringBuilder sb)
+      throws KeeperException {
+    String replicationZNodeName = zkw.getConfiguration().get("zookeeper.znode.replication",
+      "replication");
+    String replicationZnode = joinZNode(zkw.baseZNode, replicationZNodeName);
+    if (ZKUtil.checkExists(zkw, replicationZnode) == -1) return;
+    // do a ls -r on this znode
+    List<String> stack = new LinkedList<String>();
+    stack.add(replicationZnode);
+    do {
+      String znodeToProcess = stack.remove(stack.size() - 1);
+      sb.append("\n").append(znodeToProcess).append(": ")
+          .append(Bytes.toString(ZKUtil.getData(zkw, znodeToProcess)));
+      for (String zNodeChild : ZKUtil.listChildrenNoWatch(zkw, znodeToProcess)) {
+        stack.add(ZKUtil.joinZNode(znodeToProcess, zNodeChild));
+      }
+    } while (stack.size() > 0);
   }
 
   /**

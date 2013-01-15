@@ -22,7 +22,10 @@ import static org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionSpeci
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -562,6 +565,10 @@ public final class ProtobufUtil {
     if (scan.getMaxResultSize() > 0) {
       scanBuilder.setMaxResultSize(scan.getMaxResultSize());
     }
+    Boolean loadColumnFamiliesOnDemand = scan.getLoadColumnFamiliesOnDemandValue();
+    if (loadColumnFamiliesOnDemand != null) {
+      scanBuilder.setLoadColumnFamiliesOnDemand(loadColumnFamiliesOnDemand.booleanValue());
+    }
     scanBuilder.setMaxVersions(scan.getMaxVersions());
     TimeRange timeRange = scan.getTimeRange();
     if (!timeRange.isAllTime()) {
@@ -644,6 +651,9 @@ public final class ProtobufUtil {
     }
     if (proto.hasStoreOffset()) {
       scan.setRowOffsetPerColumnFamily(proto.getStoreOffset());
+    }
+    if (proto.hasLoadColumnFamiliesOnDemand()) {
+      scan.setLoadColumnFamiliesOnDemand(proto.getLoadColumnFamiliesOnDemand());
     }
     if (proto.hasTimeRange()) {
       HBaseProtos.TimeRange timeRange = proto.getTimeRange();
@@ -1835,5 +1845,40 @@ public final class ProtobufUtil {
       kv.getTimestamp(),
       KeyValue.Type.codeToType((byte)kv.getKeyType().getNumber()),
       kv.getValue().toByteArray());
+  }
+
+  /**
+   * Get an instance of the argument type declared in a class's signature. The
+   * argument type is assumed to be a PB Message subclass, and the instance is
+   * created using parseFrom method on the passed ByteString.
+   * @param runtimeClass the runtime type of the class
+   * @param position the position of the argument in the class declaration
+   * @param b the ByteString which should be parsed to get the instance created
+   * @return the instance
+   * @throws IOException
+   */
+  @SuppressWarnings("unchecked")
+  public static <T extends Message> 
+  T getParsedGenericInstance(Class<?> runtimeClass, int position, ByteString b) 
+      throws IOException {
+    Type type = runtimeClass.getGenericSuperclass();
+    Type argType = ((ParameterizedType)type).getActualTypeArguments()[position];
+    Class<T> classType = (Class<T>)argType;
+    T inst;
+    try {
+      Method m = classType.getMethod("parseFrom", ByteString.class);
+      inst = (T)m.invoke(null, b);
+      return inst;
+    } catch (SecurityException e) {
+      throw new IOException(e);
+    } catch (NoSuchMethodException e) {
+      throw new IOException(e);
+    } catch (IllegalArgumentException e) {
+      throw new IOException(e);
+    } catch (InvocationTargetException e) {
+      throw new IOException(e);
+    } catch (IllegalAccessException e) {
+      throw new IOException(e);
+    }
   }
 }
