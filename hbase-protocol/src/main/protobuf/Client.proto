@@ -186,6 +186,7 @@ message Scan {
   optional uint64 maxResultSize = 10;
   optional uint32 storeLimit = 11;
   optional uint32 storeOffset = 12;
+  optional bool loadColumnFamiliesOnDemand = 13; /* DO NOT add defaults to loadColumnFamiliesOnDemand. */
 }
 
 /**
@@ -217,6 +218,7 @@ message ScanResponse {
   optional uint64 scannerId = 2;
   optional bool moreResults = 3;
   optional uint32 ttl = 4;
+  optional uint64 resultSizeBytes = 5;
 }
 
 message LockRowRequest {

@@ -29,6 +29,7 @@ import java.lang.reflect.Method;
 import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -328,6 +329,7 @@ public class  HRegionServer implements ClientProtocol,
   RpcServer rpcServer;
 
   private final InetSocketAddress isa;
+  private UncaughtExceptionHandler uncaughtExceptionHandler;
 
   // Info server. Default access so can be used by unit tests. REGIONSERVER
   // is name of the webapp and the attribute name used stuffing this instance
@@ -357,7 +359,12 @@ public class  HRegionServer implements ClientProtocol,
   // HLog and HLog roller. log is protected rather than private to avoid
   // eclipse warning when accessed by inner classes
   protected volatile HLog hlog;
+  // The meta updates are written to a different hlog. If this
+  // regionserver holds meta regions, then this field will be non-null.
+  protected volatile HLog hlogForMeta;
+
   LogRoller hlogRoller;
+  LogRoller metaHLogRoller;
 
   // flag set after we're done setting up server threads (used for testing)
   protected volatile boolean isOnline;
@@ -518,6 +525,11 @@ public class  HRegionServer implements ClientProtocol,
       "hbase.regionserver.kerberos.principal", this.isa.getHostName());
     regionServerAccounting = new RegionServerAccounting();
     cacheConfig = new CacheConfig(conf);
+    uncaughtExceptionHandler = new UncaughtExceptionHandler() {
+      public void uncaughtException(Thread t, Throwable e) {
+        abort("Uncaught exception in service thread " + t.getName(), e);
+      }
+    };
     this.rsHost = new RegionServerCoprocessorHost(this, this.conf);
   }
 
@@ -757,8 +769,7 @@ public class  HRegionServer implements ClientProtocol,
     blockAndCheckIfStopped(this.clusterStatusTracker);
 
     // Create the catalog tracker and start it;
-    this.catalogTracker = new CatalogTracker(this.zooKeeper, this.conf,
-      this, this.conf.getInt("hbase.regionserver.catalog.timeout", 600000));
+    this.catalogTracker = new CatalogTracker(this.zooKeeper, this.conf, this);
     catalogTracker.start();
 
     // Retrieve clusterId
@@ -931,6 +942,7 @@ public class  HRegionServer implements ClientProtocol,
     if (this.cacheFlusher != null) this.cacheFlusher.interruptIfNecessary();
     if (this.compactSplitThread != null) this.compactSplitThread.interruptIfNecessary();
     if (this.hlogRoller != null) this.hlogRoller.interruptIfNecessary();
+    if (this.metaHLogRoller != null) this.metaHLogRoller.interruptIfNecessary();
     if (this.compactionChecker != null)
       this.compactionChecker.interrupt();
     if (this.healthCheckChore != null) {
@@ -1135,6 +1147,13 @@ public class  HRegionServer implements ClientProtocol,
 
   private void closeWAL(final boolean delete) {
     try {
+      if (this.hlogForMeta != null) {
+        //All hlogs (meta and non-meta) are in the same directory. Don't call 
+        //closeAndDelete here since that would delete all hlogs not just the 
+        //meta ones. We will just 'close' the hlog for meta here, and leave
+        //the directory cleanup to the follow-on closeAndDelete call.
+        this.hlogForMeta.close();
+      }
       if (this.hlog != null) {
         if (delete) {
           hlog.closeAndDelete();
@@ -1405,6 +1424,21 @@ public class  HRegionServer implements ClientProtocol,
     return instantiateHLog(rootDir, logName);
   }
 
+  private HLog getMetaWAL() throws IOException {
+    if (this.hlogForMeta == null) {
+      final String logName
+      = HLogUtil.getHLogDirectoryName(this.serverNameFromMasterPOV.toString());
+
+      Path logdir = new Path(rootDir, logName);
+      if (LOG.isDebugEnabled()) LOG.debug("logdir=" + logdir);
+
+      this.hlogForMeta = HLogFactory.createMetaHLog(this.fs.getBackingFs(), 
+          rootDir, logName, this.conf, getMetaWALActionListeners(), 
+          this.serverNameFromMasterPOV.toString());
+    }
+    return this.hlogForMeta;
+  }
+
   /**
    * Called by {@link #setupWALAndReplication()} creating WAL instance.
    * @param rootdir
@@ -1433,6 +1467,20 @@ public class  HRegionServer implements ClientProtocol,
       // Replication handler is an implementation of WALActionsListener.
       listeners.add(this.replicationSourceHandler.getWALActionsListener());
     }
+    return listeners;
+  }
+
+  protected List<WALActionsListener> getMetaWALActionListeners() {
+    List<WALActionsListener> listeners = new ArrayList<WALActionsListener>();
+    // Using a tmp log roller to ensure metaLogRoller is alive once it is not
+    // null
+    MetaLogRoller tmpLogRoller = new MetaLogRoller(this, this);
+    String n = Thread.currentThread().getName();
+    Threads.setDaemonThreadRunning(tmpLogRoller.getThread(),
+        n + "MetaLogRoller", uncaughtExceptionHandler);
+    this.metaHLogRoller = tmpLogRoller;
+    tmpLogRoller = null;
+    listeners.add(this.metaHLogRoller);
     return listeners;
   }
 
@@ -1465,12 +1513,6 @@ public class  HRegionServer implements ClientProtocol,
    */
   private void startServiceThreads() throws IOException {
     String n = Thread.currentThread().getName();
-    UncaughtExceptionHandler handler = new UncaughtExceptionHandler() {
-      public void uncaughtException(Thread t, Throwable e) {
-        abort("Uncaught exception in service thread " + t.getName(), e);
-      }
-    };
-
     // Start executor services
     this.service = new ExecutorService(getServerName().toString());
     this.service.startExecutorService(ExecutorType.RS_OPEN_REGION,
@@ -1486,14 +1528,16 @@ public class  HRegionServer implements ClientProtocol,
     this.service.startExecutorService(ExecutorType.RS_CLOSE_META,
       conf.getInt("hbase.regionserver.executor.closemeta.threads", 1));
 
-    Threads.setDaemonThreadRunning(this.hlogRoller.getThread(), n + ".logRoller", handler);
+    Threads.setDaemonThreadRunning(this.hlogRoller.getThread(), n + ".logRoller",
+        uncaughtExceptionHandler);
     Threads.setDaemonThreadRunning(this.cacheFlusher.getThread(), n + ".cacheFlusher",
-      handler);
+      uncaughtExceptionHandler);
     Threads.setDaemonThreadRunning(this.compactionChecker.getThread(), n +
-      ".compactionChecker", handler);
+      ".compactionChecker", uncaughtExceptionHandler);
     if (this.healthCheckChore != null) {
     Threads
-        .setDaemonThreadRunning(this.healthCheckChore.getThread(), n + ".healthChecker", handler);
+        .setDaemonThreadRunning(this.healthCheckChore.getThread(), n + ".healthChecker", 
+            uncaughtExceptionHandler);
     }
 
     // Leases is not a Thread. Internally it runs a daemon thread. If it gets
@@ -1574,11 +1618,32 @@ public class  HRegionServer implements ClientProtocol,
       stop("One or more threads are no longer alive -- stop");
       return false;
     }
+    if (metaHLogRoller != null && !metaHLogRoller.isAlive()) {
+      stop("Meta HLog roller thread is no longer alive -- stop");
+      return false;
+    }
     return true;
   }
 
-  @Override
   public HLog getWAL() {
+    try {
+      return getWAL(null);
+    } catch (IOException e) {
+      LOG.warn("getWAL threw exception " + e);
+      return null; 
+    }
+  }
+
+  @Override
+  public HLog getWAL(HRegionInfo regionInfo) throws IOException {
+    //TODO: at some point this should delegate to the HLogFactory
+    //currently, we don't care about the region as much as we care about the 
+    //table.. (hence checking the tablename below)
+    //_ROOT_ and .META. regions have separate WAL. 
+    if (regionInfo != null && 
+        regionInfo.isMetaTable()) {
+      return getMetaWAL();
+    }
     return this.hlog;
   }
 
@@ -1724,6 +1789,9 @@ public class  HRegionServer implements ClientProtocol,
     }
     if (this.hlogRoller != null) {
       Threads.shutdown(this.hlogRoller.getThread());
+    }
+    if (this.metaHLogRoller != null) {
+      Threads.shutdown(this.metaHLogRoller.getThread());
     }
     if (this.compactSplitThread != null) {
       this.compactSplitThread.join();
@@ -2879,6 +2947,7 @@ public class  HRegionServer implements ClientProtocol,
         RegionScannerHolder rsh = null;
         boolean moreResults = true;
         boolean closeScanner = false;
+        Long resultsWireSize = null;
         ScanResponse.Builder builder = ScanResponse.newBuilder();
         if (request.hasCloseScanner()) {
           closeScanner = request.getCloseScanner();
@@ -2898,7 +2967,14 @@ public class  HRegionServer implements ClientProtocol,
         } else {
           region = getRegion(request.getRegion());
           ClientProtos.Scan protoScan = request.getScan();
+          boolean isLoadingCfsOnDemandSet = protoScan.hasLoadColumnFamiliesOnDemand();
           Scan scan = ProtobufUtil.toScan(protoScan);
+          // if the request doesn't set this, get the default region setting.
+          if (!isLoadingCfsOnDemandSet) {
+            scan.setLoadColumnFamiliesOnDemand(region.isLoadingCfsOnDemandDefault());
+          }
+          byte[] hasMetrics = scan.getAttribute(Scan.SCAN_ATTRIBUTES_METRICS_ENABLE);
+          resultsWireSize = (hasMetrics != null && Bytes.toBoolean(hasMetrics)) ? 0L : null;
           region.prepareScanner(scan);
           if (region.getCoprocessorHost() != null) {
             scanner = region.getCoprocessorHost().preScannerOpen(scan);
@@ -2945,8 +3021,10 @@ public class  HRegionServer implements ClientProtocol,
                 scanner, results, rows);
               if (!results.isEmpty()) {
                 for (Result r : results) {
-                  for (KeyValue kv : r.raw()) {
-                    currentScanResultSize += kv.heapSize();
+                  if (maxScannerResultSize < Long.MAX_VALUE){
+                    for (KeyValue kv : r.raw()) {
+                      currentScanResultSize += kv.heapSize();
+                    }
                   }
                 }
               }
@@ -2971,8 +3049,10 @@ public class  HRegionServer implements ClientProtocol,
                     // Collect values to be returned here
                     boolean moreRows = scanner.nextRaw(values);
                     if (!values.isEmpty()) {
-                      for (KeyValue kv : values) {
-                        currentScanResultSize += kv.heapSize();
+                      if (maxScannerResultSize < Long.MAX_VALUE){
+                        for (KeyValue kv : values) {
+                          currentScanResultSize += kv.heapSize();
+                        }
                       }
                       results.add(new Result(values));
                     }
@@ -3002,8 +3082,15 @@ public class  HRegionServer implements ClientProtocol,
             } else {
               for (Result result: results) {
                 if (result != null) {
-                  builder.addResult(ProtobufUtil.toResult(result));
+                  ClientProtos.Result pbResult = ProtobufUtil.toResult(result);
+                  if (resultsWireSize != null) {
+                    resultsWireSize += pbResult.getSerializedSize();
+                  }
+                  builder.addResult(pbResult);
                 }
+              }
+              if (resultsWireSize != null) {
+                builder.setResultSizeBytes(resultsWireSize.longValue());
               }
             }
           } finally {

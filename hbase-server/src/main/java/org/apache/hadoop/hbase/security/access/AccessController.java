@@ -18,7 +18,9 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -63,6 +65,7 @@ import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.security.access.Permission.Action;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
+import org.apache.hadoop.hbase.util.Pair;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ListMultimap;
@@ -347,15 +350,7 @@ public class AccessController extends BaseRegionObserver
    * @throws AccessDeniedException if authorization is denied
    */
   private void requirePermission(String request, Permission.Action perm) throws IOException {
-    User user = getActiveUser();
-    if (authManager.authorize(user, perm)) {
-      logResult(AuthResult.allow(request, "Global check allowed", user, perm, null, null));
-    } else {
-      logResult(AuthResult.deny(request, "Global check failed", user, perm, null, null));
-      throw new AccessDeniedException("Insufficient permissions for user '" +
-          (user != null ? user.getShortName() : "null") +"' (global, action=" +
-          perm.toString() + ")");
-    }
+    requireGlobalPermission(request, perm, null, null);
   }
 
   /**
@@ -482,7 +477,12 @@ public class AccessController extends BaseRegionObserver
   @Override
   public void preCreateTable(ObserverContext<MasterCoprocessorEnvironment> c,
       HTableDescriptor desc, HRegionInfo[] regions) throws IOException {
-    requirePermission("createTable", Permission.Action.CREATE);
+    Set<byte[]> families = desc.getFamiliesKeys();
+    HashMap<byte[], Set<byte[]>> familyMap = Maps.newHashMapWithExpectedSize(families.size());
+    for (byte[] family: families) {
+      familyMap.put(family, null);
+    }
+    requireGlobalPermission("createTable", Permission.Action.CREATE, desc.getName(), familyMap);
   }
 
   @Override
@@ -1005,6 +1005,76 @@ public class AccessController extends BaseRegionObserver
       if (owner != null && !owner.equals(requestUserName)) {
         throw new AccessDeniedException("User '"+ requestUserName +"' is not the scanner owner!");
       }
+    }
+  }
+
+  /**
+   * Verifies user has WRITE privileges on
+   * the Column Families involved in the bulkLoadHFile
+   * request. Specific Column Write privileges are presently
+   * ignored.
+   */
+  @Override
+  public void preBulkLoadHFile(ObserverContext<RegionCoprocessorEnvironment> ctx,
+      List<Pair<byte[], String>> familyPaths) throws IOException {
+    List<byte[]> cfs = new LinkedList<byte[]>();
+    for(Pair<byte[],String> el : familyPaths) {
+      requirePermission("preBulkLoadHFile",
+          ctx.getEnvironment().getRegion().getTableDesc().getName(),
+          el.getFirst(),
+          null,
+          Permission.Action.WRITE);
+    }
+  }
+
+  private AuthResult hasSomeAccess(RegionCoprocessorEnvironment e, String method, Action action) throws IOException {
+    User requestUser = getActiveUser();
+    byte[] tableName = e.getRegion().getTableDesc().getName();
+    AuthResult authResult = permissionGranted(method, requestUser,
+        action, e, Collections.EMPTY_MAP);
+    if (!authResult.isAllowed()) {
+      for(UserPermission userPerm:
+          AccessControlLists.getUserPermissions(regionEnv.getConfiguration(), tableName)) {
+        for(Permission.Action userAction: userPerm.getActions()) {
+          if(userAction.equals(action)) {
+            return AuthResult.allow(method, "Access allowed", requestUser,
+                action, tableName, null, null);
+          }
+        }
+      }
+    }
+    return authResult;
+  }
+
+  /**
+   * Authorization check for
+   * SecureBulkLoadProtocol.prepareBulkLoad()
+   * @param e
+   * @throws IOException
+   */
+  //TODO this should end up as a coprocessor hook
+  public void prePrepareBulkLoad(RegionCoprocessorEnvironment e) throws IOException {
+    AuthResult authResult = hasSomeAccess(e, "prePrepareBulkLoad", Action.WRITE);
+    logResult(authResult);
+    if (!authResult.isAllowed()) {
+      throw new AccessDeniedException("Insufficient permissions (table=" +
+        e.getRegion().getTableDesc().getNameAsString() + ", action=WRITE)");
+    }
+  }
+
+  /**
+   * Authorization security check for
+   * SecureBulkLoadProtocol.cleanupBulkLoad()
+   * @param e
+   * @throws IOException
+   */
+  //TODO this should end up as a coprocessor hook
+  public void preCleanupBulkLoad(RegionCoprocessorEnvironment e) throws IOException {
+    AuthResult authResult = hasSomeAccess(e, "preCleanupBulkLoad", Action.WRITE);
+    logResult(authResult);
+    if (!authResult.isAllowed()) {
+      throw new AccessDeniedException("Insufficient permissions (table=" +
+        e.getRegion().getTableDesc().getNameAsString() + ", action=WRITE)");
     }
   }
 

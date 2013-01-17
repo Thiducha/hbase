@@ -19,6 +19,7 @@
 package org.apache.hadoop.hbase.regionserver;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -43,6 +44,7 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.CompoundConfiguration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
@@ -180,7 +182,7 @@ public class HStore implements Store, StoreConfiguration {
     // 'conf' renamed to 'confParam' b/c we use this.conf in the constructor
     this.conf = new CompoundConfiguration()
       .add(confParam)
-      .add(family.getValues());
+      .addWritableMap(family.getValues());
     this.blocksize = family.getBlocksize();
 
     this.dataBlockEncoder =
@@ -429,25 +431,37 @@ public class HStore implements Store, StoreConfiguration {
       totalValidStoreFile++;
     }
 
+    IOException ioe = null;
     try {
       for (int i = 0; i < totalValidStoreFile; i++) {
-        Future<StoreFile> future = completionService.take();
-        StoreFile storeFile = future.get();
-        long length = storeFile.getReader().length();
-        this.storeSize += length;
-        this.totalUncompressedBytes +=
-          storeFile.getReader().getTotalUncompressedBytes();
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("loaded " + storeFile.toStringDetailed());
-        }
-        results.add(storeFile);
-      }
-    } catch (InterruptedException e) {
-      throw new IOException(e);
-    } catch (ExecutionException e) {
-      throw new IOException(e.getCause());
+        try {
+          Future<StoreFile> future = completionService.take();
+          StoreFile storeFile = future.get();
+          long length = storeFile.getReader().length();
+          this.storeSize += length;
+          this.totalUncompressedBytes +=
+              storeFile.getReader().getTotalUncompressedBytes();
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("loaded " + storeFile.toStringDetailed());
+          }
+          results.add(storeFile);
+        } catch (InterruptedException e) {
+          if (ioe == null) ioe = new InterruptedIOException(e.getMessage());
+        } catch (ExecutionException e) {
+          if (ioe == null) ioe = new IOException(e.getCause());
+        } 
+      } 
     } finally {
       storeFileOpenerThreadPool.shutdownNow();
+    }
+    if (ioe != null) {
+      // close StoreFile readers
+      try {
+        for (StoreFile file : results) {
+          if (file != null) file.closeReader(true);
+        }
+      } catch (IOException e) { }
+      throw ioe;
     }
 
     return results;
@@ -564,7 +578,11 @@ public class HStore implements Store, StoreConfiguration {
     // Copy the file if it's on another filesystem
     FileSystem srcFs = srcPath.getFileSystem(conf);
     FileSystem desFs = fs instanceof HFileSystem ? ((HFileSystem)fs).getBackingFs() : fs;
-    if (!srcFs.equals(desFs)) {
+    //We can't compare FileSystem instances as
+    //equals() includes UGI instance as part of the comparison
+    //and won't work when doing SecureBulkLoad
+    //TODO deal with viewFS
+    if (!srcFs.getUri().equals(desFs.getUri())) {
       LOG.info("Bulk-load file " + srcPath + " is on different filesystem than " +
           "the destination store. Copying file over to destination filesystem.");
       Path tmpPath = getTmpPath();
@@ -645,18 +663,25 @@ public class HStore implements Store, StoreConfiguration {
           });
         }
 
+        IOException ioe = null;
         try {
           for (int i = 0; i < result.size(); i++) {
-            Future<Void> future = completionService.take();
-            future.get();
+            try {
+              Future<Void> future = completionService.take();
+              future.get();
+            } catch (InterruptedException e) {
+              if (ioe == null) {
+                ioe = new InterruptedIOException();
+                ioe.initCause(e);
+              }
+            } catch (ExecutionException e) {
+              if (ioe == null) ioe = new IOException(e.getCause());
+            }
           }
-        } catch (InterruptedException e) {
-          throw new IOException(e);
-        } catch (ExecutionException e) {
-          throw new IOException(e.getCause());
         } finally {
           storeFileCloserThreadPool.shutdownNow();
         }
+        if (ioe != null) throw ioe;
       }
       LOG.info("Closed " + this);
       return result;
