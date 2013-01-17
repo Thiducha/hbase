@@ -51,7 +51,8 @@ public abstract class ClusterManager extends Configured {
     HADOOP_JOBTRACKER("jobtracker"),
     HADOOP_TASKTRACKER("tasktracker"),
     HBASE_MASTER("master"),
-    HBASE_REGIONSERVER("regionserver");
+    HBASE_REGIONSERVER("regionserver"),
+    ZOOKEEPER("zookeeper");
 
     private String name;
 
@@ -117,6 +118,14 @@ public abstract class ClusterManager extends Configured {
    */
   public abstract boolean isRunning(ServiceType service, String hostname) throws IOException;
 
+
+  /**
+   * Throws an exception if it can't reach the remote machine. Interesting on a distributed cluster
+   *  only
+   */
+  public void checkAccessible(String hostname) throws Exception{
+    // do nothing by default (local cluster case).
+  }
 
   /**
    * Simulate an unplug of a remote host. Always calls replug after!

@@ -32,9 +32,33 @@ import java.io.IOException;
 /**
  * An integration test to measure the time needed to recover when we loose a regionserver.
  * Makes sense only with a distributed cluster.
+ *
+ *
+ * We try to use default config as much as possible.
+ * So:
+ * We need 4 boxes, because we have a replication factor of 3. If we kill a box, we still need
+ *  3 live boxes to make keep happy.
+ * We have a single ZK, on the master box. This partly minimizes the ZK cost. Partly, because
+ *  this box is also a DN, so ZK with fight with the DN for i/o resources.
+ *
+ * Scenario:
+ *  - start 3 boxes
+ *  - create a table
+ *  - have all regions of this table on a single one
+ *  - start another box
+ *  - kill the box with all regions
+ *  - measure time.
  */
 @Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTable {
+
+  protected String mainBox = "127.0.0.1";
+  protected String willDieBox = "azwaw";
+  protected String willSurviveBox = "marc";
+  protected String lateBox = "aa";
+
+
+
 
   private static final String CLASS_NAME
       = IntegrationTestRecoveryEmptyTable.class.getSimpleName();
@@ -50,10 +74,9 @@ public class IntegrationTestRecoveryEmptyTable {
   protected static final String TIMEOUT_MINUTES_KEY
       = String.format("hbase.%s.timeoutMinutes", CLASS_NAME);
 
-  protected static final int REGION_COUNT = 100;
+  protected static final int REGION_COUNT = 10;
 
-  protected String masterBox = "127.0.0.1";
-  protected String willDieBox = "azwaw";
+
 
 
   protected static final IntegrationTestingUtility util = new IntegrationTestingUtility();
@@ -63,11 +86,8 @@ public class IntegrationTestRecoveryEmptyTable {
 
   @Before
   public void setUp() throws Exception {
-    // We need a replication factor of two to use only 3 nodes.
-    util.getConfiguration().setInt("dfs.replication", 2);
-
     // ideally we would start only one node
-    util.initializeCluster(2);
+    util.initializeCluster(3);
     LOG.info("Cluster initialized");
 
     HBaseAdmin admin = util.getHBaseAdmin();
@@ -77,10 +97,11 @@ public class IntegrationTestRecoveryEmptyTable {
       admin.deleteTable(TABLE_NAME);
       LOG.info(String.format("Existing table %s deleted.", TABLE_NAME));
     }
-    dhc = (DistributedHBaseCluster) util.getHBaseClusterInterface();
-    hcm = (HBaseClusterManager) dhc.getClusterManager();
-    LOG.info("Cluster ready");
+
   }
+
+
+
 
   @After
   public void tearDown() throws IOException {
@@ -111,25 +132,57 @@ public class IntegrationTestRecoveryEmptyTable {
         (endTime - startTime)));
   }
 
-  @Test
-  public void testUnplugRS() throws Exception {
-    hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willDieBox);
-    // ideally, we should wait here. If we start the DN too early,the blocks will be written
-    // to another datanode. It's not critical in this test as the table is empty.
-
-    hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, willDieBox);
-    // Here it would be better to wait as well: if not the regions will be created on another regionserver
-
-    createTable();
-
-    // Again, we need to wait to have the regions fully available.
-
+  private void waitForNoTransition() throws Exception {
     HBaseAdmin admin = util.getHBaseAdmin();
 
     while (admin.getClusterStatus().getRegionsInTransition().size() >0){
       Thread.sleep(1000);
     }
+  }
 
+  private void genericStart() throws Exception {
+    // I want to automate everything, man. So I start the cluster here.
+
+    util.initializeCluster(0);
+
+    dhc = (DistributedHBaseCluster) util.getHBaseClusterInterface();
+    hcm = (HBaseClusterManager) dhc.getClusterManager();
+    LOG.info("Cluster ready");
+
+    hcm.start(ClusterManager.ServiceType.HADOOP_NAMENODE, mainBox);
+
+    Thread.sleep(40000);// Need to wait
+
+    hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willDieBox);
+    hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willSurviveBox);
+    hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, mainBox);
+
+    hcm.start(ClusterManager.ServiceType.ZOOKEEPER, mainBox);
+    Thread.sleep(40000);// Need to wait
+
+    hcm.start(ClusterManager.ServiceType.HBASE_MASTER, mainBox);
+
+    hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, willDieBox);
+    hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, willSurviveBox);
+    hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, mainBox);
+    Thread.sleep(40000);// Need to wait
+  }
+
+  private void testMachines() throws Exception{
+    hcm.checkAccessible(mainBox);
+  }
+
+
+  @Test
+  public void testUnplugRS() throws Exception {
+
+    genericStart();
+
+    createTable();
+
+    //moveTable();
+
+    HBaseAdmin admin = util.getHBaseAdmin();
     final long startTime = System.currentTimeMillis();
     final long failureDetectedTime;
     final long failureFixedTime;

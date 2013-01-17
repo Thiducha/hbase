@@ -49,7 +49,7 @@ public class HBaseClusterManager extends ClusterManager {
     private String sshOptions = System.getenv("HBASE_SSH_OPTS"); //from conf/hbase-env.sh
 
     public RemoteShell(String hostname, String[] execString, File dir, Map<String, String> env,
-        long timeout) {
+                       long timeout) {
       super(execString, dir, env, timeout);
       this.hostname = hostname;
     }
@@ -71,9 +71,9 @@ public class HBaseClusterManager extends ClusterManager {
 
     @Override
     public String[] getExecString() {
-      return new String[] {
+      return new String[]{
           "bash", "-c",
-          StringUtils.join(new String[] { sshCmd,
+          StringUtils.join(new String[]{sshCmd,
               sshOptions == null ? "" : sshOptions,
               hostname,
               "\"" + StringUtils.join(super.getExecString(), " ") + "\""
@@ -134,40 +134,86 @@ public class HBaseClusterManager extends ClusterManager {
    */
   static class HBaseShellCommandProvider extends CommandProvider {
     private String getHBaseHome() {
-      return System.getenv("HBASE_HOME");
+      return "/home/liochon/tmp-recotest/hbase";
     }
 
     private String getConfig() {
-      String confDir = System.getenv("HBASE_CONF_DIR");
-      if (confDir != null) {
-        return String.format("--config %s", confDir);
-      }
-      return "";
+      return "/home/liochon/tmp-recotest/hbase/conf";
     }
 
     @Override
     public String getCommand(ServiceType service, Operation op) {
-      return String.format("%s/bin/hbase-daemon.sh %s %s %s", getHBaseHome(), getConfig(),
+      String cmd = "";
+      cmd += "JAVA_HOME=/opt/jdk1.6";
+      cmd += "export HADOOP_SSH_OPTS='-A'";
+      cmd += "export HBASE_HEAPSIZE=500;";
+      cmd += "export HBASE_CONF_DIR=" + getConfig() + ";";
+      cmd += "export HBASE_HOME=" + getHBaseHome() + ";";
+      return cmd + String.format("%s/bin/hbase-daemon%s.sh %s  %s",
+          service.equals(ServiceType.ZOOKEEPER) ? "s" : "",
+          getHBaseHome(),
           op.toString().toLowerCase(), service);
     }
 
-    public String getDevSupportCommand(String cmd, String param1 ) {
+    public String getDevSupportCommand(String cmd, String param1) {
       return String.format("%s/dev-support/%s %s", getHBaseHome(), cmd, param1);
     }
   }
+
+
+  /**
+   * CommandProvider to manage the service using bin/hbase-* scripts
+   */
+  static class HadoopShellCommandProvider extends CommandProvider {
+    private String getConfig() {
+      return "/home/liochon/tmp-recotest/conf/conf-dn/";
+    }
+
+    @Override
+    public String getCommand(ServiceType service, Operation op) {
+      String hadoopCommonHome = "/home/liochon/tmp-recotest/hadoop-common/build/hadoop-1.1-NICO_2";
+
+
+      String cmd = "";
+      cmd += "JAVA_HOME=/opt/jdk1.6";
+      cmd = "export HADOOP_COMMON_HOME=" + hadoopCommonHome + ";";
+      cmd += "export HADOOP_HDFS_HOME=/home/liochon/tmp-recotest/hadoop-common/build/hadoop-1.1-NICO_2;";
+
+      // can only start hadoop commands
+      return cmd + String.format("%s/bin/hadoop --config %s %s", hadoopCommonHome, getConfig(), service);
+    }
+
+    public String getDevSupportCommand(String cmd, String param1) {
+      return "";
+    }
+  }
+
 
   public HBaseClusterManager() {
     super();
   }
 
-  protected CommandProvider getCommandProvider(ServiceType service) {
-    //TODO: make it pluggable, or auto-detect the best command provider, should work with
-    //hadoop daemons as well
-    return new HBaseShellCommandProvider();
+  protected CommandProvider getCommandProvider(final ServiceType service) {
+
+    switch (service) {
+      case HBASE_MASTER:
+        return new HBaseShellCommandProvider();
+      case HBASE_REGIONSERVER:
+        return new HBaseShellCommandProvider();
+      case ZOOKEEPER:
+        return new HBaseShellCommandProvider();
+      case HADOOP_DATANODE:
+        return new HadoopShellCommandProvider();
+      case HADOOP_NAMENODE:
+        return new HadoopShellCommandProvider();
+      default:
+        throw new IllegalStateException();
+    }
   }
 
   /**
    * Execute the given command on the host using SSH
+   *
    * @return pair of exit code and command output
    * @throws IOException if something goes wrong.
    */
@@ -212,6 +258,14 @@ public class HBaseClusterManager extends ClusterManager {
     String ret = exec(hostname, getCommandProvider(service).isRunningCommand(service))
         .getSecond();
     return ret.length() > 0;
+  }
+
+  public void checkAccessible(String hostname) throws Exception {
+    Process p = Runtime.getRuntime().exec("ping -c 1 " + hostname);
+    p.waitFor();
+    if (p.exitValue() != 0) {
+      throw new Exception("Can't ping " + hostname + " I can't access it");
+    }
   }
 
 

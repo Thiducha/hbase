@@ -73,7 +73,7 @@ public class IntegrationTestingUtility extends HBaseTestingUtility {
   public void initializeCluster(int numSlaves) throws Exception {
     if (isDistributedCluster()) {
       createDistributedHBaseCluster();
-      checkNodeCount(numSlaves);
+      if (numSlaves>0) checkNodeCount(numSlaves);
     } else {
       startMiniCluster(numSlaves);
     }
