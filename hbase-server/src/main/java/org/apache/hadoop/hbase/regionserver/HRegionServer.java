@@ -769,8 +769,7 @@ public class  HRegionServer implements ClientProtocol,
     blockAndCheckIfStopped(this.clusterStatusTracker);
 
     // Create the catalog tracker and start it;
-    this.catalogTracker = new CatalogTracker(this.zooKeeper, this.conf,
-      this, this.conf.getInt("hbase.regionserver.catalog.timeout", 600000));
+    this.catalogTracker = new CatalogTracker(this.zooKeeper, this.conf, this);
     catalogTracker.start();
 
     // Retrieve clusterId
@@ -2948,6 +2947,7 @@ public class  HRegionServer implements ClientProtocol,
         RegionScannerHolder rsh = null;
         boolean moreResults = true;
         boolean closeScanner = false;
+        Long resultsWireSize = null;
         ScanResponse.Builder builder = ScanResponse.newBuilder();
         if (request.hasCloseScanner()) {
           closeScanner = request.getCloseScanner();
@@ -2973,6 +2973,8 @@ public class  HRegionServer implements ClientProtocol,
           if (!isLoadingCfsOnDemandSet) {
             scan.setLoadColumnFamiliesOnDemand(region.isLoadingCfsOnDemandDefault());
           }
+          byte[] hasMetrics = scan.getAttribute(Scan.SCAN_ATTRIBUTES_METRICS_ENABLE);
+          resultsWireSize = (hasMetrics != null && Bytes.toBoolean(hasMetrics)) ? 0L : null;
           region.prepareScanner(scan);
           if (region.getCoprocessorHost() != null) {
             scanner = region.getCoprocessorHost().preScannerOpen(scan);
@@ -3019,8 +3021,10 @@ public class  HRegionServer implements ClientProtocol,
                 scanner, results, rows);
               if (!results.isEmpty()) {
                 for (Result r : results) {
-                  for (KeyValue kv : r.raw()) {
-                    currentScanResultSize += kv.heapSize();
+                  if (maxScannerResultSize < Long.MAX_VALUE){
+                    for (KeyValue kv : r.raw()) {
+                      currentScanResultSize += kv.heapSize();
+                    }
                   }
                 }
               }
@@ -3045,8 +3049,10 @@ public class  HRegionServer implements ClientProtocol,
                     // Collect values to be returned here
                     boolean moreRows = scanner.nextRaw(values);
                     if (!values.isEmpty()) {
-                      for (KeyValue kv : values) {
-                        currentScanResultSize += kv.heapSize();
+                      if (maxScannerResultSize < Long.MAX_VALUE){
+                        for (KeyValue kv : values) {
+                          currentScanResultSize += kv.heapSize();
+                        }
                       }
                       results.add(new Result(values));
                     }
@@ -3076,8 +3082,15 @@ public class  HRegionServer implements ClientProtocol,
             } else {
               for (Result result: results) {
                 if (result != null) {
-                  builder.addResult(ProtobufUtil.toResult(result));
+                  ClientProtos.Result pbResult = ProtobufUtil.toResult(result);
+                  if (resultsWireSize != null) {
+                    resultsWireSize += pbResult.getSerializedSize();
+                  }
+                  builder.addResult(pbResult);
                 }
+              }
+              if (resultsWireSize != null) {
+                builder.setResultSizeBytes(resultsWireSize.longValue());
               }
             }
           } finally {
