@@ -323,9 +323,8 @@ public class HBaseClusterManager extends ClusterManager {
   public void unplug(String hostname) throws Exception {
     File exec = getDevSupportCmd("it_tests_blockmachine_wrapper");
 
-
-    LOG.info("Executing locally "+ exec.getAbsolutePath()+" "+hostname);
-    Process p = Runtime.getRuntime().exec("bash", new String[]{"-c", exec.getAbsolutePath()+" "+hostname});
+    LOG.info("Executing locally "+ exec.getAbsolutePath()+" "+hostname+ "; in "+exec.getParentFile().getPath());
+    Process p = Runtime.getRuntime().exec(exec.getAbsolutePath()+" "+hostname, null, exec.getParentFile());
     p.waitFor();
     if (p.exitValue() != 0) {
       throw new Exception("Can't unplug " + hostname +" result is " +p.exitValue());
@@ -336,11 +335,11 @@ public class HBaseClusterManager extends ClusterManager {
   public void replug(String hostname) throws Exception {
     File exec = getDevSupportCmd("it_tests_unblockmachine_wrapper");
 
-    LOG.info("Executing locally "+ exec.getAbsolutePath()+" "+hostname);
-    Process p = Runtime.getRuntime().exec("bash", new String[]{"-c", exec.getAbsolutePath()+" "+hostname});
+    LOG.info("Executing locally "+ exec.getAbsolutePath()+" "+hostname+ "; in "+exec.getParentFile().getPath());
+    Process p = Runtime.getRuntime().exec(exec.getAbsolutePath()+" "+hostname, null, exec.getParentFile());
     p.waitFor();
     if (p.exitValue() != 0) {
-      throw new Exception("Can't unplug " + hostname +" result is " +p.exitValue());
+      throw new Exception("Can't replug " + hostname +" result is " +p.exitValue());
     }
   }
 
