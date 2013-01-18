@@ -22,6 +22,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Map;
 
+import junit.framework.Assert;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hbase.HBaseClusterManager.CommandProvider.Operation;
@@ -144,14 +145,15 @@ public class HBaseClusterManager extends ClusterManager {
     @Override
     public String getCommand(ServiceType service, Operation op) {
       String cmd = "";
-      cmd += "JAVA_HOME=/opt/jdk1.6";
-      cmd += "export HADOOP_SSH_OPTS='-A'";
+      cmd += "export HBASE_OPTS=-Djava.net.preferIPv4Stack=true;";
+      cmd += "export JAVA_HOME=/opt/jdk1.6;";
+      cmd += "export HADOOP_SSH_OPTS='-A';";
       cmd += "export HBASE_HEAPSIZE=500;";
       cmd += "export HBASE_CONF_DIR=" + getConfig() + ";";
       cmd += "export HBASE_HOME=" + getHBaseHome() + ";";
       return cmd + String.format("%s/bin/hbase-daemon%s.sh %s  %s",
-          service.equals(ServiceType.ZOOKEEPER) ? "s" : "",
           getHBaseHome(),
+          service.equals(ServiceType.ZOOKEEPER) ? "s" : "",
           op.toString().toLowerCase(), service);
     }
 
@@ -166,21 +168,31 @@ public class HBaseClusterManager extends ClusterManager {
    */
   static class HadoopShellCommandProvider extends CommandProvider {
     private String getConfig() {
-      return "/home/liochon/tmp-recotest/conf/conf-dn/";
+      return "/home/liochon/tmp-recotest/conf/conf-hadoop/";
     }
 
     @Override
     public String getCommand(ServiceType service, Operation op) {
-      String hadoopCommonHome = "/home/liochon/tmp-recotest/hadoop-common/build/hadoop-1.1-NICO_2";
+      return getCommand(service, op.toString());
+    }
 
+    public String getCommand(ServiceType service, String op) {
+      //String hadoopCommonHome = "/home/liochon/tmp-recotest/hadoop-common/build/hadoop-1.1-NICO_2";
+      String hadoopCommonHome = "/home/liochon/tmp-recotest/hadoop-common/hadoop-common-project/hadoop-common/target/hadoop-common-2.0.3-NICO";
+      String hdfsHome = "/home/liochon/tmp-recotest/hadoop-common/hadoop-hdfs-project/hadoop-hdfs/target/hadoop-hdfs-2.0.3-NICO";
 
       String cmd = "";
-      cmd += "JAVA_HOME=/opt/jdk1.6";
-      cmd = "export HADOOP_COMMON_HOME=" + hadoopCommonHome + ";";
-      cmd += "export HADOOP_HDFS_HOME=/home/liochon/tmp-recotest/hadoop-common/build/hadoop-1.1-NICO_2;";
+      cmd += "export JAVA_HOME=/opt/jdk1.6;";
+      cmd += "export HADOOP_COMMON_HOME=" + hadoopCommonHome + ";";
+      cmd += "export HADOOP_HDFS_HOME=" + hdfsHome + ";";
 
+      if ("START".equals(op)) {
+        op = null;
+      }
+
+      return cmd + String.format("%s/bin/hdfs --config %s %s %s", hdfsHome, getConfig(), service, op != null ? op : "");
       // can only start hadoop commands
-      return cmd + String.format("%s/bin/hadoop --config %s %s", hadoopCommonHome, getConfig(), service);
+      // return cmd + String.format("%s/bin/hadoop --config %s %s", hadoopCommonHome, getConfig(), service);
     }
 
     public String getDevSupportCommand(String cmd, String param1) {
@@ -229,8 +241,25 @@ public class HBaseClusterManager extends ClusterManager {
     return new Pair<Integer, String>(shell.getExitCode(), shell.getOutput());
   }
 
+  private void execAsync(final String hostname, final String... cmd) throws IOException {
+    Thread t = new Thread() {
+      public void run() {
+        try {
+          exec(hostname, cmd);
+        } catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      }
+    };
+    t.start();
+  }
+
   private void exec(String hostname, ServiceType service, Operation op) throws IOException {
-    exec(hostname, getCommandProvider(service).getCommand(service, op));
+    if (service.getName().equals("namenode") || service.getName().equals("datanode") ) {
+      execAsync(hostname, getCommandProvider(service).getCommand(service, op));
+    } else {
+      exec(hostname, getCommandProvider(service).getCommand(service, op));
+    }
   }
 
   @Override
@@ -268,17 +297,67 @@ public class HBaseClusterManager extends ClusterManager {
     }
   }
 
+  public void formatNN(String hostname) throws IOException {
+    exec(hostname, new HadoopShellCommandProvider().getCommand(ServiceType.HADOOP_NAMENODE, "-format"));
+  }
 
-  @Override
-  public void unplug(String hostname) throws IOException {
-    exec("127.0.0.1", new HBaseShellCommandProvider().
-        getDevSupportCommand("it_tests_unblockmachine_wrapper", hostname));
+
+  private File getDevSupportCmd(String prg){
+    File case1 = new File("." + File.separator + "dev-support" + File.separator + prg);
+    File case2 = new File(".." + File.separator + "dev-support" + File.separator + prg);
+    File toCheck = null;
+    if (case1.exists()){
+      toCheck = case1;
+    }else if (case2.exists()){
+      toCheck = case2;
+    }
+    Assert.assertNotNull("Can't find " + case1.getAbsolutePath()+" or "+case2.getAbsolutePath(), toCheck);
+    Assert.assertTrue(toCheck.canRead());
+    Assert.assertTrue(toCheck.isFile());
+    Assert.assertTrue(toCheck.canExecute());
+    //todo with jdk 1.7 is easy to check the owner
+    return toCheck;
   }
 
   @Override
-  public void replug(String hostname) throws IOException {
-    exec("127.0.0.1", new HBaseShellCommandProvider().
-        getDevSupportCommand("it_tests_blockmachine_wrapper", hostname));
+  public void unplug(String hostname) throws Exception {
+    File exec = getDevSupportCmd("it_tests_blockmachine_wrapper");
+
+
+    LOG.info("Executing locally "+ exec.getAbsolutePath()+" "+hostname);
+    Process p = Runtime.getRuntime().exec("bash", new String[]{"-c", exec.getAbsolutePath()+" "+hostname});
+    p.waitFor();
+    if (p.exitValue() != 0) {
+      throw new Exception("Can't unplug " + hostname +" result is " +p.exitValue());
+    }
   }
 
+  @Override
+  public void replug(String hostname) throws Exception {
+    File exec = getDevSupportCmd("it_tests_unblockmachine_wrapper");
+
+    LOG.info("Executing locally "+ exec.getAbsolutePath()+" "+hostname);
+    Process p = Runtime.getRuntime().exec("bash", new String[]{"-c", exec.getAbsolutePath()+" "+hostname});
+    p.waitFor();
+    if (p.exitValue() != 0) {
+      throw new Exception("Can't unplug " + hostname +" result is " +p.exitValue());
+    }
+  }
+
+  public void killJavas(String hostname) throws IOException {
+    try {
+      exec(hostname, "ps -ef | grep java | grep Dproc_ | cut -c 10-15 | xargs kill -9 2>/dev/null 1>/dev/null");
+    } catch (Throwable ignored) {
+      // it fails when there is no java process to kill
+    }
+  }
+
+
+  public void rmDataDir(String hostname) throws IOException {
+    try {
+      exec(hostname, "rm -rf /tmp/*");
+    } catch (Throwable ignored) {
+      // it fails when we cannot delete everything. Ignoring
+    }
+  }
 }

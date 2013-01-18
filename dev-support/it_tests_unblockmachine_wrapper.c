@@ -27,7 +27,7 @@ int main (int argc, char **argv) {
 		return errno;
 	}
 
-	path = strcat(path, "./it_tests_unblockmachine.sh");
+	path = strcat(path, "/it_tests_unblockmachine.sh");
 	
 	if (path == NULL) {
 		return EXIT_FAILURE;

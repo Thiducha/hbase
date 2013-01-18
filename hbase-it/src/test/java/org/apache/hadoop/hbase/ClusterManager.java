@@ -131,13 +131,13 @@ public abstract class ClusterManager extends Configured {
    * Simulate an unplug of a remote host. Always calls replug after!
    * @param hostname
    */
-  public abstract void unplug(String hostname) throws IOException;
+  public abstract void unplug(String hostname) throws Exception;
 
   /**
    * Simulates a replug of a hostname after being unplug.
    * @param hostname
    */
-  public abstract void replug(String hostname) throws IOException;
+  public abstract void replug(String hostname) throws IOException, Exception;
 
   /* TODO: further API ideas:
    *

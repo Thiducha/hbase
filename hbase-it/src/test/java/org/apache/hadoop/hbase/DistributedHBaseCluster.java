@@ -22,6 +22,7 @@ import java.util.HashMap;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.hbase.ClusterManager.ServiceType;
 import org.apache.hadoop.hbase.client.AdminProtocol;
 import org.apache.hadoop.hbase.client.ClientProtocol;
@@ -33,6 +34,7 @@ import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ServerInfo;
 import org.apache.hadoop.hbase.util.Threads;
 
 import com.google.common.collect.Sets;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
 
 /**
  * Manages the interactions with an already deployed distributed cluster (as opposed to
@@ -53,6 +55,19 @@ public class DistributedHBaseCluster extends HBaseCluster {
     this.initialClusterStatus = getClusterStatus();
   }
 
+  public DistributedHBaseCluster(Configuration conf)
+      throws IOException {
+    super(conf);
+
+  }
+
+  public static DistributedHBaseCluster createUnconnectedDistributedHBaseCluster(
+      Configuration conf, ClusterManager clusterManager) throws IOException {
+    DistributedHBaseCluster d = new DistributedHBaseCluster(conf);
+    d.clusterManager = clusterManager;
+    return d;
+  }
+
   public void setClusterManager(ClusterManager clusterManager) {
     this.clusterManager = clusterManager;
   }
@@ -67,7 +82,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
    */
   @Override
   public ClusterStatus getClusterStatus() throws IOException {
-    return admin.getClusterStatus();
+    return getAdmin().getClusterStatus();
   }
 
   @Override
@@ -76,20 +91,27 @@ public class DistributedHBaseCluster extends HBaseCluster {
   }
 
   @Override
-  public void close() throws IOException {
+  public synchronized  void close() throws IOException {
     if (this.admin != null) {
       admin.close();
     }
   }
 
+  public synchronized HBaseAdmin getAdmin() throws IOException {
+    if (admin ==null){
+      admin = new HBaseAdmin(conf);
+    }
+    return admin;
+  }
+
   @Override
   public AdminProtocol getAdminProtocol(ServerName serverName) throws IOException {
-    return admin.getConnection().getAdmin(serverName.getHostname(), serverName.getPort());
+    return getAdmin().getConnection().getAdmin(serverName.getHostname(), serverName.getPort());
   }
 
   @Override
   public ClientProtocol getClientProtocol(ServerName serverName) throws IOException {
-    return admin.getConnection().getClient(serverName.getHostname(), serverName.getPort());
+    return getAdmin().getConnection().getClient(serverName.getHostname(), serverName.getPort());
   }
 
   @Override
@@ -183,7 +205,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
 
   @Override
   public ServerName getServerHoldingRegion(byte[] regionName) throws IOException {
-    HConnection connection = admin.getConnection();
+    HConnection connection = getAdmin().getConnection();
     HRegionLocation regionLoc = connection.locateRegion(regionName);
     if (regionLoc == null) {
       return null;
@@ -192,6 +214,18 @@ public class DistributedHBaseCluster extends HBaseCluster {
     AdminProtocol client = connection.getAdmin(regionLoc.getHostname(), regionLoc.getPort());
     ServerInfo info = ProtobufUtil.getServerInfo(client);
     return ProtobufUtil.toServerName(info.getServerName());
+  }
+
+  public void waitForDatanodesRegistered(int minDatanodes) throws Exception {
+    DistributedFileSystem fs = (DistributedFileSystem)FileSystem.get(conf) ;
+    while (fs.getDataNodeStats().length <  minDatanodes){
+       Thread.sleep(1000);
+    }
+  }
+
+  public void waitForNamenodeAvailable() throws Exception {
+    DistributedFileSystem fs = (DistributedFileSystem)FileSystem.get(conf) ;
+    // todo
   }
 
   @Override

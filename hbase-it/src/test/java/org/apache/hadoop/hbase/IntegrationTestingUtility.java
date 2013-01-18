@@ -72,8 +72,12 @@ public class IntegrationTestingUtility extends HBaseTestingUtility {
    */
   public void initializeCluster(int numSlaves) throws Exception {
     if (isDistributedCluster()) {
-      createDistributedHBaseCluster();
-      if (numSlaves>0) checkNodeCount(numSlaves);
+      if (numSlaves > 0) {
+        createDistributedHBaseCluster();
+        checkNodeCount(numSlaves);
+      } else {
+        createUnconnectedDistributedHBaseCluster();
+      }
     } else {
       startMiniCluster(numSlaves);
     }
@@ -118,7 +122,7 @@ public class IntegrationTestingUtility extends HBaseTestingUtility {
    */
   private boolean isDistributedCluster() {
     Configuration conf = getConfiguration();
-    boolean isDistributedCluster = false;
+    boolean isDistributedCluster;
     isDistributedCluster = Boolean.parseBoolean(System.getProperty(IS_DISTRIBUTED_CLUSTER, "false"));
     if (!isDistributedCluster) {
       isDistributedCluster = conf.getBoolean(IS_DISTRIBUTED_CLUSTER, false);
@@ -133,7 +137,15 @@ public class IntegrationTestingUtility extends HBaseTestingUtility {
     ClusterManager clusterManager = ReflectionUtils.newInstance(
       clusterManagerClass, conf);
     setHBaseCluster(new DistributedHBaseCluster(conf, clusterManager));
-    getHBaseAdmin();
+  }
+
+  private void createUnconnectedDistributedHBaseCluster() throws IOException {
+    Configuration conf = getConfiguration();
+    Class<? extends ClusterManager> clusterManagerClass = conf.getClass(HBASE_CLUSTER_MANAGER_CLASS,
+        DEFAULT_HBASE_CLUSTER_MANAGER_CLASS, ClusterManager.class);
+    ClusterManager clusterManager = ReflectionUtils.newInstance(
+        clusterManagerClass, conf);
+    setHBaseCluster(DistributedHBaseCluster.createUnconnectedDistributedHBaseCluster(conf, clusterManager));
   }
 
 }

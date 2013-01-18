@@ -32,7 +32,8 @@ public class MetricsHBaseServerSourceFactoryImpl extends MetricsHBaseServerSourc
 
   @Override
   public MetricsHBaseServerSource create(String serverName, MetricsHBaseServerWrapper wrapper) {
-    return getSource(serverName, wrapper);
+    throw new RuntimeException("eeeeeeeeeeeeeee");
+    //return getSource(serverName, wrapper);
   }
 
   private static synchronized MetricsHBaseServerSource getSource(String serverName,

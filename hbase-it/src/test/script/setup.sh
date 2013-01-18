@@ -1,5 +1,10 @@
 #!/bin/bash
 ORIG_HBASE_DIR=~/dev/hbase
+ORIG_HDFS_DIR=~/dev/hadoop-common
+
+BOX2=192.168.1.12
+BOX3=192.168.1.13
+BOX4=192.168.1.15
 
 
 ORIG_CONF=$ORIG_HBASE_DIR/hbase-it/src/test/resources/
@@ -9,8 +14,6 @@ HDFS_REP=~/tmp-recotest/hadoop-common
 CONF_DIR=~/tmp-recotest/conf
 
 #the dev directory for hdfs (1.x or 2.x)
-ORIG_HDFS_DIR=~/dev/hadoop-common
-
 
 
 echo "preparing working data dir"
@@ -22,17 +25,26 @@ mkdir ~/tmp-recotest/data
 rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest
 rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest
 
-cp $ORIG_CONF/* $CONF_DIR/conf-hadoop
-cp $ORIG_CONF/* $HBASE_REP/conf
+mkdir -p $CONF_DIR/conf-hadoop
+cp $ORIG_CONF/it-core-site.xml $CONF_DIR/conf-hadoop/core-site.xml
+cp $ORIG_CONF/it-hdfs-site.xml $CONF_DIR/conf-hadoop/core-hdfs.xml
+
+cp $ORIG_CONF/it-core-site.xml $HBASE_REP/conf/core-site.xml
+cp $ORIG_CONF/it-hbase-site.xml $HBASE_REP/conf/hbase-site.xml
 
 rm -rf $HBASE_REP/.git
 rm -rf $HDFS_REP/.git
 
-echo ready now copy
-rsync -az -e "ssh  -i $HOME/.ssh/unsecure.priv" ~/.m2/* $BOX2:~/.m2
-rsync -az -e "ssh  -i $HOME/.ssh/unsecure.priv" ~/.m2/* $BOX3:~/.m2
-rsync -az -e "ssh  -i $HOME/.ssh/unsecure.priv" ~/.m2/* $BOX4:~/.m2
+echo ready - now copying maven repos
+rsync -az -e "ssh  -i $HOME/.ssh/unsecure.priv" ~/.m2/* $BOX2:~/.m2 &
+rsync -az -e "ssh  -i $HOME/.ssh/unsecure.priv" ~/.m2/* $BOX3:~/.m2 &
+rsync -az -e "ssh  -i $HOME/.ssh/unsecure.priv" ~/.m2/* $BOX4:~/.m2 &
 
-rsync -az --delete -e "ssh  -i $HOME/.ssh/unsecure.priv" ~/tmp-recotest/* $BOX2:~/tmp-recotest/
-rsync -az --delete -e "ssh  -i $HOME/.ssh/unsecure.priv" ~/tmp-recotest/* $BOX3:~/tmp-recotest/
-rsync -az --delete -e "ssh  -i $HOME/.ssh/unsecure.priv" ~/tmp-recotest/* $BOX4:~/tmp-recotest/
+wait
+
+echo sync .m2 done, now copying the hbase and hdfs directories
+rsync -az --delete -e "ssh  -i $HOME/.ssh/unsecure.priv" ~/tmp-recotest/* $BOX2:~/tmp-recotest/ &
+rsync -az --delete -e "ssh  -i $HOME/.ssh/unsecure.priv" ~/tmp-recotest/* $BOX3:~/tmp-recotest/ &
+rsync -az --delete -e "ssh  -i $HOME/.ssh/unsecure.priv" ~/tmp-recotest/* $BOX4:~/tmp-recotest/ &
+
+wait
