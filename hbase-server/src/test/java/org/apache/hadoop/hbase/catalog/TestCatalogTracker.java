@@ -115,7 +115,7 @@ public class TestCatalogTracker {
   private CatalogTracker constructAndStartCatalogTracker(final HConnection c)
   throws IOException, InterruptedException {
     CatalogTracker ct = new CatalogTracker(this.watcher, UTIL.getConfiguration(),
-      c, this.abortable, 0);
+      c, this.abortable);
     ct.start();
     return ct;
   }
@@ -177,7 +177,7 @@ public class TestCatalogTracker {
       // Join the thread... should exit shortly.
       t.join();
     } finally {
-      HConnectionManager.deleteConnection(UTIL.getConfiguration(), true);
+      HConnectionManager.deleteConnection(UTIL.getConfiguration());
     }
   }
 
@@ -234,10 +234,8 @@ public class TestCatalogTracker {
           @Override
           public void run() {
             try {
-              metaSet.set(ct.waitForMetaServerConnectionDefault() !=  null);
-            } catch (NotAllMetaRegionsOnlineException e) {
-              throw new RuntimeException(e);
-            } catch (IOException e) {
+              metaSet.set(ct.waitForMetaServerConnection(100000) !=  null);
+            } catch (Exception e) {
               throw new RuntimeException(e);
             }
           }
@@ -257,7 +255,7 @@ public class TestCatalogTracker {
       }
     } finally {
       // Clear out our doctored connection or could mess up subsequent tests.
-      HConnectionManager.deleteConnection(UTIL.getConfiguration(), true);
+      HConnectionManager.deleteConnection(UTIL.getConfiguration());
     }
   }
 
@@ -284,7 +282,7 @@ public class TestCatalogTracker {
       }
     } finally {
       // Clear out our doctored connection or could mess up subsequent tests.
-      HConnectionManager.deleteConnection(UTIL.getConfiguration(), true);
+      HConnectionManager.deleteConnection(UTIL.getConfiguration());
     }
   }
 
@@ -370,7 +368,7 @@ public class TestCatalogTracker {
       final CatalogTracker ct = constructAndStartCatalogTracker(connection);
       ct.waitForMeta(100);
     } finally {
-      HConnectionManager.deleteConnection(UTIL.getConfiguration(), true);
+      HConnectionManager.deleteConnection(UTIL.getConfiguration());
     }
   }
 
@@ -462,7 +460,7 @@ public class TestCatalogTracker {
       // Now meta is available.
       Assert.assertTrue(ct.waitForMeta(10000).equals(SN));
     } finally {
-      HConnectionManager.deleteConnection(UTIL.getConfiguration(), true);
+      HConnectionManager.deleteConnection(UTIL.getConfiguration());
     }
   }
 
@@ -477,7 +475,7 @@ public class TestCatalogTracker {
    * {@link HConnection#getAdmin(String, int)} is called, returns the passed
    * {@link ClientProtocol} instance when {@link HConnection#getClient(String, int)}
    * is called (Be sure call
-   * {@link HConnectionManager#deleteConnection(org.apache.hadoop.conf.Configuration, boolean)}
+   * {@link HConnectionManager#deleteConnection(org.apache.hadoop.conf.Configuration)}
    * when done with this mocked Connection.
    * @throws IOException
    */

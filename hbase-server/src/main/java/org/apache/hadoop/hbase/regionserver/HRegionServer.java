@@ -107,6 +107,8 @@ import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.ipc.HBaseClientRPC;
 import org.apache.hadoop.hbase.ipc.HBaseRPCErrorHandler;
 import org.apache.hadoop.hbase.ipc.HBaseServerRPC;
+import org.apache.hadoop.hbase.ipc.ProtobufRpcClientEngine;
+import org.apache.hadoop.hbase.ipc.RpcClientEngine;
 import org.apache.hadoop.hbase.ipc.RpcServer;
 import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.ipc.ServerRpcController;
@@ -327,6 +329,9 @@ public class  HRegionServer implements ClientProtocol,
   // Server to handle client requests. Default access so can be accessed by
   // unit tests.
   RpcServer rpcServer;
+
+  // RPC client for communicating with master
+  RpcClientEngine rpcClientEngine;
 
   private final InetSocketAddress isa;
   private UncaughtExceptionHandler uncaughtExceptionHandler;
@@ -769,8 +774,7 @@ public class  HRegionServer implements ClientProtocol,
     blockAndCheckIfStopped(this.clusterStatusTracker);
 
     // Create the catalog tracker and start it;
-    this.catalogTracker = new CatalogTracker(this.zooKeeper, this.conf,
-      this, this.conf.getInt("hbase.regionserver.catalog.timeout", 600000));
+    this.catalogTracker = new CatalogTracker(this.zooKeeper, this.conf, this);
     catalogTracker.start();
 
     // Retrieve clusterId
@@ -842,6 +846,9 @@ public class  HRegionServer implements ClientProtocol,
 
     // Create the thread to clean the moved regions list
     movedRegionsCleaner = MovedRegionsCleaner.createAndStart(this);
+
+    // Setup RPC client for master communication
+    rpcClientEngine = new ProtobufRpcClientEngine(conf);
   }
 
   /**
@@ -990,9 +997,9 @@ public class  HRegionServer implements ClientProtocol,
 
     // Make sure the proxy is down.
     if (this.hbaseMaster != null) {
-      HBaseClientRPC.stopProxy(this.hbaseMaster);
       this.hbaseMaster = null;
     }
+    this.rpcClientEngine.close();
     this.leases.close();
 
     if (!killed) {
@@ -1473,11 +1480,14 @@ public class  HRegionServer implements ClientProtocol,
 
   protected List<WALActionsListener> getMetaWALActionListeners() {
     List<WALActionsListener> listeners = new ArrayList<WALActionsListener>();
-    // Log roller.
-    this.metaHLogRoller = new MetaLogRoller(this, this);
+    // Using a tmp log roller to ensure metaLogRoller is alive once it is not
+    // null
+    MetaLogRoller tmpLogRoller = new MetaLogRoller(this, this);
     String n = Thread.currentThread().getName();
-    Threads.setDaemonThreadRunning(this.metaHLogRoller.getThread(), 
+    Threads.setDaemonThreadRunning(tmpLogRoller.getThread(),
         n + "MetaLogRoller", uncaughtExceptionHandler);
+    this.metaHLogRoller = tmpLogRoller;
+    tmpLogRoller = null;
     listeners.add(this.metaHLogRoller);
     return listeners;
   }
@@ -1858,10 +1868,8 @@ public class  HRegionServer implements ClientProtocol,
       try {
         // Do initial RPC setup. The final argument indicates that the RPC
         // should retry indefinitely.
-        master = (RegionServerStatusProtocol) HBaseClientRPC.waitForProxy(
-            RegionServerStatusProtocol.class,
-            isa, this.conf, -1,
-            this.rpcTimeout, this.rpcTimeout);
+        master = HBaseClientRPC.waitForProxy(rpcClientEngine, RegionServerStatusProtocol.class,
+            isa, this.conf, -1, this.rpcTimeout, this.rpcTimeout);
         LOG.info("Connected to master at " + isa);
       } catch (IOException e) {
         e = e instanceof RemoteException ?
@@ -2945,6 +2953,7 @@ public class  HRegionServer implements ClientProtocol,
         RegionScannerHolder rsh = null;
         boolean moreResults = true;
         boolean closeScanner = false;
+        Long resultsWireSize = null;
         ScanResponse.Builder builder = ScanResponse.newBuilder();
         if (request.hasCloseScanner()) {
           closeScanner = request.getCloseScanner();
@@ -2970,6 +2979,8 @@ public class  HRegionServer implements ClientProtocol,
           if (!isLoadingCfsOnDemandSet) {
             scan.setLoadColumnFamiliesOnDemand(region.isLoadingCfsOnDemandDefault());
           }
+          byte[] hasMetrics = scan.getAttribute(Scan.SCAN_ATTRIBUTES_METRICS_ENABLE);
+          resultsWireSize = (hasMetrics != null && Bytes.toBoolean(hasMetrics)) ? 0L : null;
           region.prepareScanner(scan);
           if (region.getCoprocessorHost() != null) {
             scanner = region.getCoprocessorHost().preScannerOpen(scan);
@@ -3016,8 +3027,10 @@ public class  HRegionServer implements ClientProtocol,
                 scanner, results, rows);
               if (!results.isEmpty()) {
                 for (Result r : results) {
-                  for (KeyValue kv : r.raw()) {
-                    currentScanResultSize += kv.heapSize();
+                  if (maxScannerResultSize < Long.MAX_VALUE){
+                    for (KeyValue kv : r.raw()) {
+                      currentScanResultSize += kv.heapSize();
+                    }
                   }
                 }
               }
@@ -3042,8 +3055,10 @@ public class  HRegionServer implements ClientProtocol,
                     // Collect values to be returned here
                     boolean moreRows = scanner.nextRaw(values);
                     if (!values.isEmpty()) {
-                      for (KeyValue kv : values) {
-                        currentScanResultSize += kv.heapSize();
+                      if (maxScannerResultSize < Long.MAX_VALUE){
+                        for (KeyValue kv : values) {
+                          currentScanResultSize += kv.heapSize();
+                        }
                       }
                       results.add(new Result(values));
                     }
@@ -3073,8 +3088,15 @@ public class  HRegionServer implements ClientProtocol,
             } else {
               for (Result result: results) {
                 if (result != null) {
-                  builder.addResult(ProtobufUtil.toResult(result));
+                  ClientProtos.Result pbResult = ProtobufUtil.toResult(result);
+                  if (resultsWireSize != null) {
+                    resultsWireSize += pbResult.getSerializedSize();
+                  }
+                  builder.addResult(pbResult);
                 }
+              }
+              if (resultsWireSize != null) {
+                builder.setResultSizeBytes(resultsWireSize.longValue());
               }
             }
           } finally {

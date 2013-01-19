@@ -70,6 +70,7 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.hbase.CompoundConfiguration;
 import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.DroppedSnapshotException;
 import org.apache.hadoop.hbase.FailedSanityCheckException;
@@ -436,7 +437,7 @@ public class HRegion implements HeapSize { // , Writable{
     this.baseConf = confParam;
     this.conf = new CompoundConfiguration()
       .add(confParam)
-      .add(htd.getValues());
+      .addWritableMap(htd.getValues());
     this.rowLockWaitDuration = conf.getInt("hbase.rowlock.wait.duration",
                     DEFAULT_ROWLOCK_WAIT_DURATION);
 
@@ -753,27 +754,49 @@ public class HRegion implements HeapSize { // , Writable{
     return this.memstoreSize.getAndAdd(memStoreSize);
   }
 
-  /*
-   * Write out an info file under the region directory.  Useful recovering
-   * mangled regions.
+  /**
+   * Write out an info file under the stored region directory. Useful recovering mangled regions.
    * @throws IOException
    */
   private void checkRegioninfoOnFilesystem() throws IOException {
-    Path regioninfoPath = new Path(this.regiondir, REGIONINFO_FILE);
-    // Compose the content of the file so we can compare to length in filesystem.  If not same,
-    // rewrite it (it may have been written in the old format using Writables instead of pb).  The
+    checkRegioninfoOnFilesystem(this.regiondir);
+  }
+
+  /**
+   * Write out an info file under the region directory. Useful recovering mangled regions.
+   * @param regiondir directory under which to write out the region info
+   * @throws IOException
+   */
+  private void checkRegioninfoOnFilesystem(Path regiondir) throws IOException {
+    writeRegioninfoOnFilesystem(regionInfo, regiondir, getFilesystem(), conf);
+  }
+
+  /**
+   * Write out an info file under the region directory. Useful recovering mangled regions. If the
+   * regioninfo already exists on disk and there is information in the file, then we fast exit.
+   * @param regionInfo information about the region
+   * @param regiondir directory under which to write out the region info
+   * @param fs {@link FileSystem} on which to write the region info
+   * @param conf {@link Configuration} from which to extract specific file locations
+   * @throws IOException on unexpected error.
+   */
+  public static void writeRegioninfoOnFilesystem(HRegionInfo regionInfo, Path regiondir,
+      FileSystem fs, Configuration conf) throws IOException {
+    Path regioninfoPath = new Path(regiondir, REGIONINFO_FILE);
+    // Compose the content of the file so we can compare to length in filesystem. If not same,
+    // rewrite it (it may have been written in the old format using Writables instead of pb). The
     // pb version is much shorter -- we write now w/o the toString version -- so checking length
-    // only should be sufficient.  I don't want to read the file every time to check if it pb
+    // only should be sufficient. I don't want to read the file every time to check if it pb
     // serialized.
-    byte [] content = getDotRegionInfoFileContent(this.getRegionInfo());
-    boolean exists = this.fs.exists(regioninfoPath);
-    FileStatus status = exists? this.fs.getFileStatus(regioninfoPath): null;
+    byte[] content = getDotRegionInfoFileContent(regionInfo);
+    boolean exists = fs.exists(regioninfoPath);
+    FileStatus status = exists ? fs.getFileStatus(regioninfoPath) : null;
     if (status != null && status.getLen() == content.length) {
       // Then assume the content good and move on.
       return;
     }
     // Create in tmpdir and then move into place in case we crash after
-    // create but before close.  If we don't successfully close the file,
+    // create but before close. If we don't successfully close the file,
     // subsequent region reopens will fail the below because create is
     // registered in NN.
 
@@ -781,7 +804,7 @@ public class HRegion implements HeapSize { // , Writable{
     FsPermission perms = FSUtils.getFilePermissions(fs, conf, HConstants.DATA_FILE_UMASK_KEY);
 
     // And then create the file
-    Path tmpPath = new Path(getTmpDir(), REGIONINFO_FILE);
+    Path tmpPath = new Path(getTmpDir(regiondir), REGIONINFO_FILE);
 
     // If datanode crashes or if the RS goes down just before the close is called while trying to
     // close the created regioninfo file in the .tmp directory then on next
@@ -1227,7 +1250,15 @@ public class HRegion implements HeapSize { // , Writable{
    * will have its contents removed when the region is reopened.
    */
   Path getTmpDir() {
-    return new Path(getRegionDir(), REGION_TEMP_SUBDIR);
+    return getTmpDir(getRegionDir());
+  }
+
+  /**
+   * Get the temporary directory for the specified region. This directory
+   * will have its contents removed when the region is reopened.
+   */
+  static Path getTmpDir(Path regionDir) {
+    return new Path(regionDir, REGION_TEMP_SUBDIR);
   }
 
   void triggerMajorCompaction() {
@@ -3254,17 +3285,25 @@ public class HRegion implements HeapSize { // , Writable{
     return multipleFamilies;
   }
 
+
+  public boolean bulkLoadHFiles(List<Pair<byte[], String>> familyPaths,
+                                boolean assignSeqId) throws IOException {
+    return bulkLoadHFiles(familyPaths, assignSeqId, null);
+  }
+
   /**
    * Attempts to atomically load a group of hfiles.  This is critical for loading
    * rows with multiple column families atomically.
    *
    * @param familyPaths List of Pair<byte[] column family, String hfilePath>
+   * @param bulkLoadListener Internal hooks enabling massaging/preparation of a
+   * file about to be bulk loaded
    * @param assignSeqId
    * @return true if successful, false if failed recoverably
    * @throws IOException if failed unrecoverably.
    */
-  public boolean bulkLoadHFiles(List<Pair<byte[], String>> familyPaths,
-      boolean assignSeqId) throws IOException {
+  public boolean bulkLoadHFiles(List<Pair<byte[], String>> familyPaths, boolean assignSeqId,
+      BulkLoadListener bulkLoadListener) throws IOException {
     Preconditions.checkNotNull(familyPaths);
     // we need writeLock for multi-family bulk load
     startBulkRegionOperation(hasMultipleColumnFamilies(familyPaths));
@@ -3324,7 +3363,14 @@ public class HRegion implements HeapSize { // , Writable{
         String path = p.getSecond();
         Store store = getStore(familyName);
         try {
-          store.bulkLoadHFile(path, assignSeqId ? this.log.obtainSeqNum() : -1);
+          String finalPath = path;
+          if(bulkLoadListener != null) {
+            finalPath = bulkLoadListener.prepareBulkLoad(familyName, path);
+          }
+          store.bulkLoadHFile(finalPath, assignSeqId ? this.log.obtainSeqNum() : -1);
+          if(bulkLoadListener != null) {
+            bulkLoadListener.doneBulkLoad(familyName, path);
+          }
         } catch (IOException ioe) {
           // A failure here can cause an atomicity violation that we currently
           // cannot recover from since it is likely a failed HDFS operation.
@@ -3332,6 +3378,14 @@ public class HRegion implements HeapSize { // , Writable{
           // TODO Need a better story for reverting partial failures due to HDFS.
           LOG.error("There was a partial failure due to IO when attempting to" +
               " load " + Bytes.toString(p.getFirst()) + " : "+ p.getSecond(), ioe);
+          if(bulkLoadListener != null) {
+            try {
+              bulkLoadListener.failedBulkLoad(familyName, path);
+            } catch (Exception ex) {
+              LOG.error("Error while calling failedBulkLoad for family "+
+                  Bytes.toString(familyName)+" with path "+path, ex);
+            }
+          }
           throw ioe;
         }
       }
@@ -3381,7 +3435,6 @@ public class HRegion implements HeapSize { // , Writable{
     private final KeyValue KV_LIMIT = new KeyValue();
     private final byte [] stopRow;
     private Filter filter;
-    private List<KeyValue> results = new ArrayList<KeyValue>();
     private int batch;
     private int isScan;
     private boolean filterClosed = false;
@@ -3508,11 +3561,16 @@ public class HRegion implements HeapSize { // , Writable{
     @Override
     public boolean nextRaw(List<KeyValue> outResults, int limit,
         String metric) throws IOException {
-      results.clear();
-
-      boolean returnResult = nextInternal(limit, metric);
-
-      outResults.addAll(results);
+      boolean returnResult;
+      if (outResults.isEmpty()) {
+        // Usually outResults is empty. This is true when next is called
+        // to handle scan or get operation.
+        returnResult = nextInternal(outResults, limit, metric);
+      } else {
+        List<KeyValue> tmpList = new ArrayList<KeyValue>();
+        returnResult = nextInternal(tmpList, limit, metric);
+        outResults.addAll(tmpList);
+      }
       resetFilters();
       if (isFilterDone()) {
         return false;
@@ -3534,10 +3592,12 @@ public class HRegion implements HeapSize { // , Writable{
       return next(outResults, batch, metric);
     }
 
-    private void populateFromJoinedHeap(int limit, String metric) throws IOException {
+    private void populateFromJoinedHeap(List<KeyValue> results, int limit, String metric) 
+        throws IOException {
       assert joinedContinuationRow != null;
-      KeyValue kv = populateResult(this.joinedHeap, limit, joinedContinuationRow.getBuffer(),
-        joinedContinuationRow.getRowOffset(), joinedContinuationRow.getRowLength(), metric);
+      KeyValue kv = populateResult(results, this.joinedHeap, limit, 
+          joinedContinuationRow.getBuffer(), joinedContinuationRow.getRowOffset(), 
+          joinedContinuationRow.getRowLength(), metric);
       if (kv != KV_LIMIT) {
         // We are done with this row, reset the continuation.
         joinedContinuationRow = null;
@@ -3549,6 +3609,7 @@ public class HRegion implements HeapSize { // , Writable{
 
     /**
      * Fetches records with currentRow into results list, until next row or limit (if not -1).
+     * @param results
      * @param heap KeyValueHeap to fetch data from.It must be positioned on correct row before call.
      * @param limit Max amount of KVs to place in result list, -1 means no limit.
      * @param currentRow Byte array with key we are fetching.
@@ -3557,8 +3618,8 @@ public class HRegion implements HeapSize { // , Writable{
      * @param metric Metric key to be passed into KeyValueHeap::next().
      * @return KV_LIMIT if limit reached, next KeyValue otherwise.
      */
-    private KeyValue populateResult(KeyValueHeap heap, int limit, byte[] currentRow, int offset,
-        short length, String metric) throws IOException {
+    private KeyValue populateResult(List<KeyValue> results, KeyValueHeap heap, int limit, 
+        byte[] currentRow, int offset, short length, String metric) throws IOException {
       KeyValue nextKv;
       do {
         heap.next(results, limit - results.size(), metric);
@@ -3578,7 +3639,11 @@ public class HRegion implements HeapSize { // , Writable{
       return this.filter != null && this.filter.filterAllRemaining();
     }
 
-    private boolean nextInternal(int limit, String metric) throws IOException {
+    private boolean nextInternal(List<KeyValue> results, int limit, String metric)
+    throws IOException {
+      if (!results.isEmpty()) {
+        throw new IllegalArgumentException("First parameter should be an empty list");
+      }
       RpcCallContext rpcCall = HBaseServer.getCurrentCall();
       // The loop here is used only when at some point during the next we determine
       // that due to effects of filters or otherwise, we have an empty row in the result.
@@ -3621,11 +3686,12 @@ public class HRegion implements HeapSize { // , Writable{
           // Technically, if we hit limits before on this row, we don't need this call.
           if (filterRowKey(currentRow, offset, length)) {
             nextRow(currentRow, offset, length);
+            results.clear();
             continue;
           }
 
-          KeyValue nextKv = populateResult(this.storeHeap, limit, currentRow, offset, length,
-            metric);
+          KeyValue nextKv = populateResult(results, this.storeHeap, limit, currentRow, offset,
+              length, metric);
           // Ok, we are good, let's try to get some results from the main heap.
           if (nextKv == KV_LIMIT) {
             if (this.filter != null && filter.hasFilterRow()) {
@@ -3646,13 +3712,8 @@ public class HRegion implements HeapSize { // , Writable{
             filter.filterRow(results);
           }
           if (isEmptyRow) {
-            // this seems like a redundant step - we already consumed the row
-            // there're no left overs.
-            // the reasons for calling this method are:
-            // 1. reset the filters.
-            // 2. provide a hook to fast forward the row (used by subclasses)
             nextRow(currentRow, offset, length);
-
+            results.clear();
             // This row was totally filtered out, if this is NOT the last row,
             // we should continue on. Otherwise, nothing else to do.
             if (!stopRow) continue;
@@ -3672,12 +3733,12 @@ public class HRegion implements HeapSize { // , Writable{
               || this.joinedHeap.seek(KeyValue.createFirstOnRow(currentRow, offset, length));
             if (mayHaveData) {
               joinedContinuationRow = current;
-              populateFromJoinedHeap(limit, metric);
+              populateFromJoinedHeap(results, limit, metric);
             }
           }
         } else {
           // Populating from the joined heap was stopped by limits, populate some more.
-          populateFromJoinedHeap(limit, metric);
+          populateFromJoinedHeap(results, limit, metric);
         }
 
         // We may have just called populateFromJoinedMap and hit the limits. If that is
@@ -3710,7 +3771,6 @@ public class HRegion implements HeapSize { // , Writable{
       while ((next = this.storeHeap.peek()) != null && next.matchingRow(currentRow, offset, length)) {
         this.storeHeap.next(MOCKED_LIST);
       }
-      results.clear();
       resetFilters();
     }
 
@@ -3901,6 +3961,8 @@ public class HRegion implements HeapSize { // , Writable{
     Path regionDir = HRegion.getRegionDir(tableDir, info.getEncodedName());
     FileSystem fs = FileSystem.get(conf);
     fs.mkdirs(regionDir);
+    // Write HRI to a file in case we need to recover .META.
+    writeRegioninfoOnFilesystem(info, regionDir, fs, conf);
     HLog effectiveHLog = hlog;
     if (hlog == null && !ignoreHLog) {
       effectiveHLog = HLogFactory.createHLog(fs, regionDir,
@@ -3981,15 +4043,15 @@ public class HRegion implements HeapSize { // , Writable{
     return r.openHRegion(reporter);
   }
 
-  public static HRegion openHRegion(Path tableDir, final HRegionInfo info,
+  public static HRegion openHRegion(Path rootDir, final HRegionInfo info,
       final HTableDescriptor htd, final HLog wal, final Configuration conf)
   throws IOException {
-    return openHRegion(tableDir, info, htd, wal, conf, null, null);
+    return openHRegion(rootDir, info, htd, wal, conf, null, null);
   }
 
   /**
    * Open a Region.
-   * @param tableDir Table directory
+   * @param rootDir Root directory for HBase instance
    * @param info Info for region to be opened.
    * @param wal HLog for region to use. This method will call
    * HLog#setSequenceNumber(long) passing the result of the call to
@@ -4001,7 +4063,7 @@ public class HRegion implements HeapSize { // , Writable{
    *
    * @throws IOException
    */
-  public static HRegion openHRegion(final Path tableDir, final HRegionInfo info,
+  public static HRegion openHRegion(final Path rootDir, final HRegionInfo info,
       final HTableDescriptor htd, final HLog wal, final Configuration conf,
       final RegionServerServices rsServices,
       final CancelableProgressable reporter)
@@ -4011,7 +4073,7 @@ public class HRegion implements HeapSize { // , Writable{
     if (LOG.isDebugEnabled()) {
       LOG.debug("Opening region: " + info);
     }
-    Path dir = HTableDescriptor.getTableDir(tableDir, info.getTableName());
+    Path dir = HTableDescriptor.getTableDir(rootDir, info.getTableName());
     HRegion r = HRegion.newHRegion(dir, wal, FileSystem.get(conf), conf, info, htd, rsServices);
     return r.openHRegion(reporter);
   }
@@ -5451,5 +5513,39 @@ public class HRegion implements HeapSize { // , Writable{
        BlockCache bc = new CacheConfig(c).getBlockCache();
        if (bc != null) bc.shutdown();
     }
+  }
+
+  /**
+   * Listener class to enable callers of
+   * bulkLoadHFile() to perform any necessary
+   * pre/post processing of a given bulkload call
+   */
+  public static interface BulkLoadListener {
+
+    /**
+     * Called before an HFile is actually loaded
+     * @param family family being loaded to
+     * @param srcPath path of HFile
+     * @return final path to be used for actual loading
+     * @throws IOException
+     */
+    String prepareBulkLoad(byte[] family, String srcPath) throws IOException;
+
+    /**
+     * Called after a successful HFile load
+     * @param family family being loaded to
+     * @param srcPath path of HFile
+     * @throws IOException
+     */
+    void doneBulkLoad(byte[] family, String srcPath) throws IOException;
+
+    /**
+     * Called after a failed HFile load
+     * @param family family being loaded to
+     * @param srcPath path of HFile
+     * @throws IOException
+     */
+    void failedBulkLoad(byte[] family, String srcPath) throws IOException;
+
   }
 }

@@ -1,4 +1,4 @@
-/**
+/*
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -16,24 +16,32 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.hadoop.hbase.replication;
 
-package org.apache.hadoop.hbase.ipc;
+import java.io.Closeable;
 
-import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.IpcProtocol;
-import org.apache.hadoop.hbase.security.User;
+import org.apache.zookeeper.KeeperException;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-
-/** An RPC implementation for the client */
-@InterfaceAudience.Private
-public interface RpcClientEngine {
-  /** Construct a client-side proxy object. */
-  <T extends IpcProtocol> T getProxy(Class<T> protocol, InetSocketAddress addr,
-      Configuration conf, int rpcTimeout) throws IOException;
-
-  /** Shutdown this instance */
-  void close();
+/**
+ * This provides an interface for getting and setting the replication state of a
+ * cluster. This state is used to indicate whether replication is enabled or
+ * disabled on a cluster.
+ */
+public interface ReplicationStateInterface extends Closeable {
+	
+  /**
+   * Get the current state of replication (i.e. ENABLED or DISABLED).
+   * 
+   * @return true if replication is enabled, false otherwise
+   * @throws KeeperException
+   */
+  public boolean getState() throws KeeperException;
+	
+  /**
+   * Set the state of replication.
+   * 
+   * @param newState
+   * @throws KeeperException
+   */
+  public void setState(boolean newState) throws KeeperException;
 }
