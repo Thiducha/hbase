@@ -64,7 +64,7 @@ import java.util.List;
  */
 
 public abstract class AbstractIntegrationTestRecovery {
-
+  // todo: take this from something else. May be env variable?
   protected String mainBox = "127.0.0.1";
   protected String willDieBox = "192.168.1.13";
   protected String willSurviveBox = "192.168.1.12";
