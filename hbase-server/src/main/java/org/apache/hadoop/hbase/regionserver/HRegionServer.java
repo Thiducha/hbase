@@ -78,7 +78,6 @@ import org.apache.hadoop.hbase.RemoteExceptionHandler;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.Stoppable;
 import org.apache.hadoop.hbase.TableDescriptors;
-import org.apache.hadoop.hbase.UnknownRowLockException;
 import org.apache.hadoop.hbase.UnknownScannerException;
 import org.apache.hadoop.hbase.YouAreDeadException;
 import org.apache.hadoop.hbase.ZNodeClearer;
@@ -107,6 +106,8 @@ import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.ipc.HBaseClientRPC;
 import org.apache.hadoop.hbase.ipc.HBaseRPCErrorHandler;
 import org.apache.hadoop.hbase.ipc.HBaseServerRPC;
+import org.apache.hadoop.hbase.ipc.ProtobufRpcClientEngine;
+import org.apache.hadoop.hbase.ipc.RpcClientEngine;
 import org.apache.hadoop.hbase.ipc.RpcServer;
 import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.ipc.ServerRpcController;
@@ -149,8 +150,6 @@ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServic
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.GetRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.GetResponse;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.LockRowRequest;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.LockRowResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate;
@@ -159,8 +158,6 @@ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutateRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutateResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ScanRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ScanResponse;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.UnlockRowRequest;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.UnlockRowResponse;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.Coprocessor;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.NameStringPair;
@@ -327,6 +324,9 @@ public class  HRegionServer implements ClientProtocol,
   // Server to handle client requests. Default access so can be accessed by
   // unit tests.
   RpcServer rpcServer;
+
+  // RPC client for communicating with master
+  RpcClientEngine rpcClientEngine;
 
   private final InetSocketAddress isa;
   private UncaughtExceptionHandler uncaughtExceptionHandler;
@@ -608,8 +608,6 @@ public class  HRegionServer implements ClientProtocol,
         GetRequest.class,
         MutateRequest.class,
         ScanRequest.class,
-        LockRowRequest.class,
-        UnlockRowRequest.class,
         MultiRequest.class
     };
 
@@ -841,6 +839,9 @@ public class  HRegionServer implements ClientProtocol,
 
     // Create the thread to clean the moved regions list
     movedRegionsCleaner = MovedRegionsCleaner.createAndStart(this);
+
+    // Setup RPC client for master communication
+    rpcClientEngine = new ProtobufRpcClientEngine(conf);
   }
 
   /**
@@ -989,9 +990,9 @@ public class  HRegionServer implements ClientProtocol,
 
     // Make sure the proxy is down.
     if (this.hbaseMaster != null) {
-      HBaseClientRPC.stopProxy(this.hbaseMaster);
       this.hbaseMaster = null;
     }
+    this.rpcClientEngine.close();
     this.leases.close();
 
     if (!killed) {
@@ -1860,10 +1861,8 @@ public class  HRegionServer implements ClientProtocol,
       try {
         // Do initial RPC setup. The final argument indicates that the RPC
         // should retry indefinitely.
-        master = (RegionServerStatusProtocol) HBaseClientRPC.waitForProxy(
-            RegionServerStatusProtocol.class,
-            isa, this.conf, -1,
-            this.rpcTimeout, this.rpcTimeout);
+        master = HBaseClientRPC.waitForProxy(rpcClientEngine, RegionServerStatusProtocol.class,
+            isa, this.conf, -1, this.rpcTimeout, this.rpcTimeout);
         LOG.info("Connected to master at " + isa);
       } catch (IOException e) {
         e = e instanceof RemoteException ?
@@ -2333,28 +2332,6 @@ public class  HRegionServer implements ClientProtocol,
   }
 
   /**
-   * Instantiated as a row lock lease. If the lease times out, the row lock is
-   * released
-   */
-  private class RowLockListener implements LeaseListener {
-    private final String lockName;
-    private final HRegion region;
-
-    RowLockListener(final String lockName, final HRegion region) {
-      this.lockName = lockName;
-      this.region = region;
-    }
-
-    public void leaseExpired() {
-      LOG.info("Row Lock " + this.lockName + " lease expired");
-      Integer r = rowlocks.remove(this.lockName);
-      if (r != null) {
-        region.releaseRowLock(r);
-      }
-    }
-  }
-
-  /**
    * Instantiated as a scanner lease. If the lease times out, the scanner is
    * closed
    */
@@ -2389,29 +2366,6 @@ public class  HRegionServer implements ClientProtocol,
         LOG.info("Scanner " + this.scannerName + " lease expired");
       }
     }
-  }
-
-  /**
-   * Method to get the Integer lock identifier used internally from the long
-   * lock identifier used by the client.
-   *
-   * @param lockId
-   *          long row lock identifier from client
-   * @return intId Integer row lock used internally in HRegion
-   * @throws IOException
-   *           Thrown if this is not a valid client lock id.
-   */
-  Integer getLockFromId(long lockId) throws IOException {
-    if (lockId == -1L) {
-      return null;
-    }
-    String lockName = String.valueOf(lockId);
-    Integer rl = rowlocks.get(lockName);
-    if (rl == null) {
-      throw new UnknownRowLockException("Invalid row lock");
-    }
-    this.leases.renewLease(lockName);
-    return rl;
   }
 
   /**
@@ -2691,18 +2645,6 @@ public class  HRegionServer implements ClientProtocol,
     return this.fsOk;
   }
 
-  protected long addRowLock(Integer r, HRegion region) throws LeaseStillHeldException {
-    String lockName = null;
-    long lockId;
-    do {
-      lockId = nextLong();
-      lockName = String.valueOf(lockId);
-    } while (rowlocks.putIfAbsent(lockName, r) != null);
-    this.leases.createLease(lockName, this.rowLockLeaseTimeoutPeriod, new RowLockListener(lockName,
-        region));
-    return lockId;
-  }
-
   protected long addScanner(RegionScanner s) throws LeaseStillHeldException {
     long scannerId = -1;
     while (true) {
@@ -2770,8 +2712,7 @@ public class  HRegionServer implements ClientProtocol,
           existence = region.getCoprocessorHost().preExists(clientGet);
         }
         if (existence == null) {
-          Integer lock = getLockFromId(clientGet.getLockId());
-          r = region.get(clientGet, lock);
+          r = region.get(clientGet);
           if (request.getExistenceOnly()) {
             boolean exists = r != null && !r.isEmpty();
             if (region.getCoprocessorHost() != null) {
@@ -2825,7 +2766,6 @@ public class  HRegionServer implements ClientProtocol,
         break;
       case PUT:
         Put put = ProtobufUtil.toPut(mutate);
-        lock = getLockFromId(put.getLockId());
         if (request.hasCondition()) {
           Condition condition = request.getCondition();
           byte[] row = condition.getRow().toByteArray();
@@ -2840,7 +2780,7 @@ public class  HRegionServer implements ClientProtocol,
           }
           if (processed == null) {
             boolean result = region.checkAndMutate(row, family,
-              qualifier, compareOp, comparator, put, lock, true);
+              qualifier, compareOp, comparator, put, true);
             if (region.getCoprocessorHost() != null) {
               result = region.getCoprocessorHost().postCheckAndPut(row, family,
                 qualifier, compareOp, comparator, put, result);
@@ -2848,13 +2788,12 @@ public class  HRegionServer implements ClientProtocol,
             processed = result;
           }
         } else {
-          region.put(put, lock);
+          region.put(put);
           processed = Boolean.TRUE;
         }
         break;
       case DELETE:
         Delete delete = ProtobufUtil.toDelete(mutate);
-        lock = getLockFromId(delete.getLockId());
         if (request.hasCondition()) {
           Condition condition = request.getCondition();
           byte[] row = condition.getRow().toByteArray();
@@ -2869,7 +2808,7 @@ public class  HRegionServer implements ClientProtocol,
           }
           if (processed == null) {
             boolean result = region.checkAndMutate(row, family,
-              qualifier, compareOp, comparator, delete, lock, true);
+              qualifier, compareOp, comparator, delete, true);
             if (region.getCoprocessorHost() != null) {
               result = region.getCoprocessorHost().postCheckAndDelete(row, family,
                 qualifier, compareOp, comparator, delete, result);
@@ -2877,7 +2816,7 @@ public class  HRegionServer implements ClientProtocol,
             processed = result;
           }
         } else {
-          region.delete(delete, lock, delete.getWriteToWAL());
+          region.delete(delete, delete.getWriteToWAL());
           processed = Boolean.TRUE;
         }
         break;
@@ -3141,78 +3080,6 @@ public class  HRegionServer implements ClientProtocol,
   }
 
   /**
-   * Lock a row in a table.
-   *
-   * @param controller the RPC controller
-   * @param request the lock row request
-   * @throws ServiceException
-   */
-  @Override
-  public LockRowResponse lockRow(final RpcController controller,
-      final LockRowRequest request) throws ServiceException {
-    try {
-      if (request.getRowCount() != 1) {
-        throw new DoNotRetryIOException(
-          "lockRow supports only one row now, not " + request.getRowCount() + " rows");
-      }
-      requestCount.increment();
-      HRegion region = getRegion(request.getRegion());
-      byte[] row = request.getRow(0).toByteArray();
-      try {
-        Integer r = region.obtainRowLock(row);
-        long lockId = addRowLock(r, region);
-        LOG.debug("Row lock " + lockId + " explicitly acquired by client");
-        LockRowResponse.Builder builder = LockRowResponse.newBuilder();
-        builder.setLockId(lockId);
-        return builder.build();
-      } catch (Throwable t) {
-        throw convertThrowableToIOE(cleanup(t,
-          "Error obtaining row lock (fsOk: " + this.fsOk + ")"));
-      }
-    } catch (IOException ie) {
-      throw new ServiceException(ie);
-    }
-  }
-
-  /**
-   * Unlock a locked row in a table.
-   *
-   * @param controller the RPC controller
-   * @param request the unlock row request
-   * @throws ServiceException
-   */
-  @Override
-  @QosPriority(priority=HConstants.HIGH_QOS)
-  public UnlockRowResponse unlockRow(final RpcController controller,
-      final UnlockRowRequest request) throws ServiceException {
-    try {
-      requestCount.increment();
-      HRegion region = getRegion(request.getRegion());
-      if (!request.hasLockId()) {
-        throw new DoNotRetryIOException(
-          "Invalid unlock rowrequest, missing lock id");
-      }
-      long lockId = request.getLockId();
-      String lockName = String.valueOf(lockId);
-      try {
-        Integer r = rowlocks.remove(lockName);
-        if (r == null) {
-          throw new UnknownRowLockException(lockName);
-        }
-        region.releaseRowLock(r);
-        this.leases.cancelLease(lockName);
-        LOG.debug("Row lock " + lockId
-            + " has been explicitly released by client");
-        return UnlockRowResponse.newBuilder().build();
-      } catch (Throwable t) {
-        throw convertThrowableToIOE(cleanup(t));
-      }
-    } catch (IOException ie) {
-      throw new ServiceException(ie);
-    }
-  }
-
-  /**
    * Atomically bulk load several HFiles into an open region
    * @return true if successful, false is failed but recoverably (no action)
    * @throws IOException if failed unrecoverably
@@ -3305,8 +3172,7 @@ public class  HRegionServer implements ClientProtocol,
             ClientProtos.Result result = null;
             if (actionUnion.hasGet()) {
               Get get = ProtobufUtil.toGet(actionUnion.getGet());
-              Integer lock = getLockFromId(get.getLockId());
-              Result r = region.get(get, lock);
+              Result r = region.get(get);
               if (r != null) {
                 result = ProtobufUtil.toResult(r);
               }
@@ -3839,8 +3705,7 @@ public class  HRegionServer implements ClientProtocol,
       r = region.getCoprocessorHost().preAppend(append);
     }
     if (r == null) {
-      Integer lock = getLockFromId(append.getLockId());
-      r = region.append(append, lock, append.getWriteToWAL());
+      r = region.append(append, append.getWriteToWAL());
       if (region.getCoprocessorHost() != null) {
         region.getCoprocessorHost().postAppend(append, r);
       }
@@ -3866,8 +3731,7 @@ public class  HRegionServer implements ClientProtocol,
       r = region.getCoprocessorHost().preIncrement(increment);
     }
     if (r == null) {
-      Integer lock = getLockFromId(increment.getLockId());
-      r = region.increment(increment, lock, increment.getWriteToWAL());
+      r = region.increment(increment, increment.getWriteToWAL());
       if (region.getCoprocessorHost() != null) {
         r = region.getCoprocessorHost().postIncrement(increment, r);
       }
@@ -3903,8 +3767,7 @@ public class  HRegionServer implements ClientProtocol,
           mutation = ProtobufUtil.toDelete(m);
           batchContainsDelete = true;
         }
-        Integer lock = getLockFromId(mutation.getLockId());
-        mutationsWithLocks[i++] = new Pair<Mutation, Integer>(mutation, lock);
+        mutationsWithLocks[i++] = new Pair<Mutation, Integer>(mutation, null);
         builder.addResult(result);
       }
 
