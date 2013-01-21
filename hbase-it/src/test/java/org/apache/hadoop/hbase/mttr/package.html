@@ -1,0 +1,40 @@
+
+
+This packages contains tests decidated to MTTR validations. The umbrella JIRA is HBASE-5843.
+
+
+MTTR tests makes sense mainly on a real cluster, even if sometimes some sub parts can be tested
+with a minicluster.
+
+There are 4 ways to lose a process:
+- clean stop
+- kill 15 - this leaves room for shutdown hooks.
+- kill 9 - no shutdown hooks possible, but the OS will close the socket, and remote process will
+    know if they want to connect to this process again.
+- box disappeared - then the network layer cannot distinguish between a slow box and a dead box. We
+    then rely on timemouts.
+
+
+As well you can lose a regionserver or a regionserver and a datanode. Losing a datanode is much
+ more complex than losing a single regionserver, as we are also losing the data, and as we have
+ now a dependency on HDFS recovery.
+
+For this reason, MTTR tests use HDFS versions built locally.
+
+
+Lastly, to simulate a dead box, we rely on firewall configuration. This requires a C program own by
+ root with the sticky bit on.
+
+So to use the mttr test you must:
+ 1) Compile the C program in dev-support with 'sudo dev-support/it_test_make.sh'. This should be done
+        only once per installation.
+ 2) Compile Hadoop. Step to be redone if you change Hadoop of course.
+ 3) Then HBase on top of the Hadoop version built. Step to be redone if you change Hadoop or HBase of course.
+ 4) Have a proper configuration on all the machine you're using: Java version, user accounts, SSH config & so on.
+ 5) Copy the products just build on all the machine you're going to use. This is done by the script
+      in hase-it/src/test/scripts/setup.sh. This requires a proper installation of ssh.
+      This setp should be redone after each rebuild of Hadoop or HBase
+ 6) Run the integration tests with
+mvn package test verify -Dit.test="IntegrationTestRecoveryEmptyTable*" -Dtest=nonono -pl hbase-it -Dhadoop.profile=2.0
+
+ If you modify just the tests, you don't have to rerun the previous tests.

@@ -29,15 +29,12 @@ import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.IntegrationTestingUtility;
-import org.apache.hadoop.hbase.IntegrationTests;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.util.RegionSplitter;
-import org.junit.After;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.junit.experimental.categories.Category;
 
 import java.io.File;
 import java.io.IOException;
@@ -46,7 +43,7 @@ import java.net.URL;
 import java.util.List;
 
 /**
- * An integration test to measure the time needed to recover when we loose a regionserver.
+ * An integration test to measure the time needed to recover when we lose a regionserver.
  * Makes sense only with a distributed cluster.
  * <p/>
  * <p/>
@@ -62,43 +59,42 @@ import java.util.List;
  * - create a table
  * - have all regions of this table on a single one
  * - start another box
- * - kill the box with all regions
+ * - kill the region server or the box with all regions
  * - measure time.
  */
-@Category(IntegrationTests.class)
-public class IntegrationTestRecoveryEmptyTable {
+
+public abstract class AbstractIntegrationTestRecovery {
 
   protected String mainBox = "127.0.0.1";
   protected String willDieBox = "192.168.1.13";
   protected String willSurviveBox = "192.168.1.12";
   protected String lateBox = "192.168.1.15";
 
-
-  private static final String CLASS_NAME
-      = IntegrationTestRecoveryEmptyTable.class.getSimpleName();
-
   protected static final Log LOG
-      = LogFactory.getLog(IntegrationTestRecoveryEmptyTable.class);
-  protected static final String TABLE_NAME = CLASS_NAME;
+      = LogFactory.getLog(AbstractIntegrationTestRecovery.class);
+  protected final String TABLE_NAME = this.getClass().getName();
   protected static final String COLUMN_NAME = "f";
-  protected static final String REGION_COUNT_KEY
-      = String.format("hbase.%s.regions", CLASS_NAME);
-  protected static final String REGIONSERVER_COUNT_KEY
-      = String.format("hbase.%s.regionServers", CLASS_NAME);
-  protected static final String TIMEOUT_MINUTES_KEY
-      = String.format("hbase.%s.timeoutMinutes", CLASS_NAME);
-
-  protected static final int REGION_COUNT = 10;
+  protected final int REGION_COUNT;
 
 
   protected static IntegrationTestingUtility util;
   protected DistributedHBaseCluster dhc;
   protected HBaseClusterManager hcm;
 
+  AbstractIntegrationTestRecovery() {
+    REGION_COUNT = 10;
+  }
+
+  AbstractIntegrationTestRecovery(int regCount) {
+    REGION_COUNT = regCount;
+  }
 
   private static URL getConfFile(String file) throws MalformedURLException {
-    File case1 = new File(".." + File.separator + "hbase-it" + File.separator + "src" + File.separator + "test" + File.separator + "resources" + File.separator + file);
-    File case2 = new File("hbase-it" + File.separator + "src" + File.separator + "test" + File.separator + "resources" + File.separator + file);
+    // 2 tries: one inside an editor, once inside maven
+    File case1 = new File(".." + File.separator + "hbase-it" + File.separator + "src" +
+        File.separator + "test" + File.separator + "resources" + File.separator + file);
+    File case2 = new File("hbase-it" + File.separator + "src" + File.separator +
+        "test" + File.separator + "resources" + File.separator + file);
 
     if (case1.exists() && case1.canRead()) {
       return case1.toURI().toURL();
@@ -108,12 +104,13 @@ public class IntegrationTestRecoveryEmptyTable {
       return case2.toURI().toURL();
     }
 
-    throw new RuntimeException("Can't find " + file + " tried " + case1.getAbsolutePath() + " and " + case2.getAbsolutePath());
+    throw new RuntimeException(
+        "Can't find " + file + " tried " + case1.getAbsolutePath() +
+            " and " + case2.getAbsolutePath());
   }
 
   @BeforeClass
   public static void setUp() throws Exception {
-    // ideally we would start only one node
     Configuration c = new Configuration();
     c.clear();
 
@@ -125,14 +122,6 @@ public class IntegrationTestRecoveryEmptyTable {
 
     IntegrationTestingUtility.setUseDistributedCluster(c);
     util = new IntegrationTestingUtility(c);
-  }
-
-
-  @After
-  public void tearDown() throws IOException {
-    LOG.info("Cleaning up after test.");
-    LOG.info("Restoring cluster.");
-    LOG.info("Cluster restored.");
   }
 
   private void createTable() throws Exception {
@@ -147,29 +136,27 @@ public class IntegrationTestRecoveryEmptyTable {
     HBaseAdmin admin = util.getHBaseAdmin();
     admin.createTable(desc, splits);
 
-    while (util.getHBaseAdmin().getClusterStatus().getRegionsCount() != REGION_COUNT + 2 || !util.getHBaseAdmin().getClusterStatus().getRegionsInTransition().isEmpty()) {
+    while (util.getHBaseAdmin().getClusterStatus().getRegionsCount() != REGION_COUNT + 2) {
       Thread.sleep(1000);
     }
+    waitForNoTransition();
 
     endTime = System.currentTimeMillis();
 
-    LOG.info(String.format("Pre-split table created successfully in %dms.",
-        (endTime - startTime)));
+    LOG.info(String.format("Pre-split table created successfully in %dms.", (endTime - startTime)));
   }
 
   private void waitForNoTransition() throws Exception {
     HBaseAdmin admin = util.getHBaseAdmin();
 
-    while (admin.getClusterStatus().getRegionsInTransition().size() > 0) {
+    while (!admin.getClusterStatus().getRegionsInTransition().isEmpty()) {
       Thread.sleep(1000);
     }
   }
 
   private void genericStart() throws Exception {
-    // I want to automate everything, man. So I start the cluster here.
-
+    // Initialize an empty cluster. We will start all services where we want to start them.
     util.initializeCluster(0);
-
     dhc = (DistributedHBaseCluster) util.getHBaseClusterInterface();
     hcm = (HBaseClusterManager) dhc.getClusterManager();
 
@@ -180,10 +167,10 @@ public class IntegrationTestRecoveryEmptyTable {
 
     // locally, you(re suppose to do the work yourself between the tests
     //  that's because you may have multiple java process on the main box.
-    hcm.killJavas(mainBox);
-    hcm.killJavas(willDieBox);
-    hcm.killJavas(willSurviveBox);
-    hcm.killJavas(lateBox);
+    hcm.killAllServices(mainBox);
+    hcm.killAllServices(willDieBox);
+    hcm.killAllServices(willSurviveBox);
+    hcm.killAllServices(lateBox);
 
     hcm.rmDataDir(mainBox);
     hcm.rmDataDir(willDieBox);
@@ -200,9 +187,10 @@ public class IntegrationTestRecoveryEmptyTable {
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willDieBox);
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willSurviveBox);
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, mainBox);
+    hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, lateBox);
 
-    Thread.sleep(10000);
-    dhc.waitForDatanodesRegistered(3);
+    dhc.waitForNamenodeAvailable();
+    dhc.waitForDatanodesRegistered(4);
 
 
     hcm.start(ClusterManager.ServiceType.HBASE_MASTER, mainBox);
@@ -210,7 +198,7 @@ public class IntegrationTestRecoveryEmptyTable {
     hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, mainBox);
     // We want meta & root on the main server.
 
-    Thread.sleep(10000);
+    Thread.sleep(20000);
     while (util.getHBaseAdmin().getClusterStatus().getServersSize() == 0) {
       Thread.sleep(1000);
     }
@@ -218,14 +206,15 @@ public class IntegrationTestRecoveryEmptyTable {
     boolean masterOk = false;
     while (!masterOk) {
       try {
-        masterOk = util.getHBaseAdmin().isMasterRunning() && util.getHBaseAdmin().getClusterStatus().getRegionsCount()==2;
+        masterOk = util.getHBaseAdmin().isMasterRunning() &&
+            util.getHBaseAdmin().getClusterStatus().getRegionsCount() == 2;
       } catch (Exception e) {
         Thread.sleep(1000);
       }
     }
 
 
-    // No balance here.
+    // No balance please
     util.getHBaseAdmin().setBalancerRunning(false, true);
 
     hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, willDieBox);
@@ -233,17 +222,27 @@ public class IntegrationTestRecoveryEmptyTable {
       Thread.sleep(1000);
     }
 
-
     // Now we have 2 region servers and 3 datanodes.
   }
 
-  private void testMachines() throws Exception {
-    hcm.checkAccessible(mainBox);
+  /**
+   * Kills all processes and delete the data dir. It's often better to not do that, as it allows
+   * inspecting the cluster manually if something is strange.
+   */
+  private void genericStop() throws IOException {
+    hcm.killAllServices(mainBox);
+    hcm.killAllServices(willDieBox);
+    hcm.killAllServices(willSurviveBox);
+    hcm.killAllServices(lateBox);
+
+    hcm.rmDataDir(mainBox);
+    hcm.rmDataDir(willDieBox);
+    hcm.rmDataDir(willSurviveBox);
+    hcm.rmDataDir(lateBox);
   }
 
-
   @Test
-  public void testUnplugRS() throws Exception {
+  public void testKillRS() throws Exception {
 
     genericStart();
 
@@ -257,8 +256,8 @@ public class IntegrationTestRecoveryEmptyTable {
 
     // todo: find a less horrible way to get this servername
     ServerName otherSN = null;
-    for (HRegionInfo hri:regs){
-      if (!dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)){
+    for (HRegionInfo hri : regs) {
+      if (!dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
         otherSN = dhc.getServerHoldingRegion(hri.getRegionName());
         break;
       }
@@ -266,43 +265,53 @@ public class IntegrationTestRecoveryEmptyTable {
     Assert.assertNotNull(otherSN);
     Assert.assertNotEquals(mainSN, otherSN);
 
-    for (HRegionInfo hri:regs){
-      if (dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)){
-        admin.move(hri.getEncodedNameAsBytes(), otherSN.getVersionedBytes() );
+    int toMove = 0;
+    for (HRegionInfo hri : regs) {
+      if (dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
+        admin.move(hri.getEncodedNameAsBytes(), otherSN.getVersionedBytes());
+        toMove++;
       }
     }
 
     // wait for the moves to be done
-    while (util.getHBaseAdmin().getClusterStatus().getRegionsCount() != REGION_COUNT + 2 ||
-        !util.getHBaseAdmin().getClusterStatus().getRegionsInTransition().isEmpty()) {
-      Thread.sleep(1000);
+    waitForNoTransition();
+
+    // Check that they have been moved
+    int moved = 0;
+    for (HRegionInfo hri : regs) {
+      if (dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
+        moved++;
+      }
     }
 
-    // Adding a new datanode
-    hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, lateBox);
-    dhc.waitForDatanodesRegistered(4);
-
+    System.out.println("toMove=" + toMove + ", moved=" + moved);
+    // todo: it differs sometimes, it should not!
 
     // Now killing
-
     final long startTime = System.currentTimeMillis();
     final long failureDetectedTime;
     final long failureFixedTime;
-    hcm.unplug(willDieBox);
+
+    kill(willDieBox);
+
     try {
+      // How long does it take to discover that we need to do something?
       while (admin.getClusterStatus().getRegionsInTransition().size() == 0) {
         Thread.sleep(1000);
       }
       failureDetectedTime = System.currentTimeMillis();
-      while (admin.getClusterStatus().getRegionsInTransition().size() != 0) {
-        Thread.sleep(1000);
-      }
+
+      // Now, how long does it take to recover?
+      waitForNoTransition();
       failureFixedTime = System.currentTimeMillis();
 
     } finally {
+      // If it was an unplug, we replug it now
       hcm.replug(willDieBox);
     }
     System.out.println("Detection took: " + (failureDetectedTime - startTime));
     System.out.println("Failure fix took: " + (failureFixedTime - failureDetectedTime));
   }
+
+  protected abstract void kill(String willDieBox) throws Exception;
 }

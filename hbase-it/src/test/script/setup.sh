@@ -16,14 +16,14 @@ CONF_DIR=~/tmp-recotest/conf
 #the dev directory for hdfs (1.x or 2.x)
 
 
-echo "preparing working data dir"
+echo "preparing working data dir. If the tmp-recotest exists, we keep it, but we delete the data dir"
 mkdir -p ~/tmp-recotest
 rm -rf ~/tmp-recotest/data
 mkdir ~/tmp-recotest/data
 
-
-rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest
-rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest
+echo "updating the local tmp-recotest with hdfs & hbase dirs content"
+rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude dev-support
+rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src'
 
 mkdir -p $CONF_DIR/conf-hadoop
 cp $ORIG_CONF/it-core-site.xml $CONF_DIR/conf-hadoop/core-site.xml
@@ -31,9 +31,6 @@ cp $ORIG_CONF/it-hdfs-site.xml $CONF_DIR/conf-hadoop/core-hdfs.xml
 
 cp $ORIG_CONF/it-core-site.xml $HBASE_REP/conf/core-site.xml
 cp $ORIG_CONF/it-hbase-site.xml $HBASE_REP/conf/hbase-site.xml
-
-rm -rf $HBASE_REP/.git
-rm -rf $HDFS_REP/.git
 
 echo ready - now copying maven repos
 rsync -az -e "ssh  -i $HOME/.ssh/unsecure.priv" ~/.m2/* $BOX2:~/.m2 &

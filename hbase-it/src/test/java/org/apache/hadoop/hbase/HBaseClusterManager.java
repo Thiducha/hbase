@@ -22,9 +22,10 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Map;
 
-import junit.framework.Assert;
+import org.junit.Assert;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HBaseClusterManager.CommandProvider.Operation;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.util.Shell;
@@ -130,23 +131,38 @@ public class HBaseClusterManager extends ClusterManager {
     }
   }
 
+  static String getITestDirectory() {
+    return System.getenv("HOME") + Path.SEPARATOR + "tmp-recotest";
+  }
+
+  /**
+   * We want everybody to use the same java dir, this allows to test multiple Java versions
+   */
+  static String getJavaHome() {
+    return System.getenv("JAVA_HOME");
+  }
+
+  static String getHadoopVersion() {
+    return System.getenv("HADOOP_VERSION");
+  }
+
   /**
    * CommandProvider to manage the service using bin/hbase-* scripts
    */
   static class HBaseShellCommandProvider extends CommandProvider {
     private String getHBaseHome() {
-      return "/home/liochon/tmp-recotest/hbase";
+      return getITestDirectory() + Path.SEPARATOR + "hbase";
     }
 
     private String getConfig() {
-      return "/home/liochon/tmp-recotest/hbase/conf";
+      return getHBaseHome() + Path.SEPARATOR + "conf";
     }
 
     @Override
     public String getCommand(ServiceType service, Operation op) {
       String cmd = "";
       cmd += "export HBASE_OPTS=-Djava.net.preferIPv4Stack=true;";
-      cmd += "export JAVA_HOME=/opt/jdk1.6;";
+      cmd += "export JAVA_HOME=" + getJavaHome() + ";";
       cmd += "export HADOOP_SSH_OPTS='-A';";
       cmd += "export HBASE_HEAPSIZE=500;";
       cmd += "export HBASE_CONF_DIR=" + getConfig() + ";";
@@ -156,10 +172,6 @@ public class HBaseClusterManager extends ClusterManager {
           service.equals(ServiceType.ZOOKEEPER) ? "s" : "",
           op.toString().toLowerCase(), service);
     }
-
-    public String getDevSupportCommand(String cmd, String param1) {
-      return String.format("%s/dev-support/%s %s", getHBaseHome(), cmd, param1);
-    }
   }
 
 
@@ -167,8 +179,30 @@ public class HBaseClusterManager extends ClusterManager {
    * CommandProvider to manage the service using bin/hbase-* scripts
    */
   static class HadoopShellCommandProvider extends CommandProvider {
+    private String getHadoopHome() {
+      return getITestDirectory();
+    }
+
     private String getConfig() {
-      return "/home/liochon/tmp-recotest/conf/conf-hadoop/";
+      return getHadoopHome() + Path.SEPARATOR + "conf" + Path.SEPARATOR + "conf-hadoop";
+    }
+
+    private String getHadoopCommonHome() {
+      if (getHadoopVersion().startsWith("1")) {
+        return getHadoopHome() + Path.SEPARATOR + "hadoop-common/build/hadoop-" + getHadoopVersion();
+      } else {
+        return getHadoopHome() +  Path.SEPARATOR +
+            "hadoop-common/hadoop-common-project/hadoop-common/target/hadoop-common-" + getHadoopVersion();
+      }
+    }
+
+    private String getHDFSHome() {
+      if (getHadoopVersion().startsWith("1")) {
+        return getHadoopCommonHome();
+      } else {
+      return getHadoopHome() + Path.SEPARATOR +
+          "hadoop-common/hadoop-hdfs-project/hadoop-hdfs/target/hadoop-hdfs-" + getHadoopVersion();
+      }
     }
 
     @Override
@@ -177,26 +211,17 @@ public class HBaseClusterManager extends ClusterManager {
     }
 
     public String getCommand(ServiceType service, String op) {
-      //String hadoopCommonHome = "/home/liochon/tmp-recotest/hadoop-common/build/hadoop-1.1-NICO_2";
-      String hadoopCommonHome = "/home/liochon/tmp-recotest/hadoop-common/hadoop-common-project/hadoop-common/target/hadoop-common-2.0.3-NICO";
-      String hdfsHome = "/home/liochon/tmp-recotest/hadoop-common/hadoop-hdfs-project/hadoop-hdfs/target/hadoop-hdfs-2.0.3-NICO";
-
       String cmd = "";
       cmd += "export JAVA_HOME=/opt/jdk1.6;";
-      cmd += "export HADOOP_COMMON_HOME=" + hadoopCommonHome + ";";
-      cmd += "export HADOOP_HDFS_HOME=" + hdfsHome + ";";
+      cmd += "export HADOOP_COMMON_HOME=" + getHadoopCommonHome() + ";";
+      cmd += "export HADOOP_HDFS_HOME=" + getHDFSHome() + ";";
 
       if ("START".equals(op)) {
         op = null;
       }
 
-      return cmd + String.format("%s/bin/hdfs --config %s %s %s", hdfsHome, getConfig(), service, op != null ? op : "");
-      // can only start hadoop commands
-      // return cmd + String.format("%s/bin/hadoop --config %s %s", hadoopCommonHome, getConfig(), service);
-    }
-
-    public String getDevSupportCommand(String cmd, String param1) {
-      return "";
+      return cmd + String.format("%s/bin/hdfs --config %s %s %s",
+          getHDFSHome(), getConfig(), service, op != null ? op : "");
     }
   }
 
@@ -255,7 +280,7 @@ public class HBaseClusterManager extends ClusterManager {
   }
 
   private void exec(String hostname, ServiceType service, Operation op) throws IOException {
-    if (service.getName().equals("namenode") || service.getName().equals("datanode") ) {
+    if (service.getName().equals("namenode") || service.getName().equals("datanode")) {
       execAsync(hostname, getCommandProvider(service).getCommand(service, op));
     } else {
       exec(hostname, getCommandProvider(service).getCommand(service, op));
@@ -289,65 +314,64 @@ public class HBaseClusterManager extends ClusterManager {
     return ret.length() > 0;
   }
 
-  public void checkAccessible(String hostname) throws Exception {
-    Process p = Runtime.getRuntime().exec("ping -c 1 " + hostname);
-    p.waitFor();
-    if (p.exitValue() != 0) {
-      throw new Exception("Can't ping " + hostname + " I can't access it");
-    }
-  }
 
   public void formatNN(String hostname) throws IOException {
-    exec(hostname, new HadoopShellCommandProvider().getCommand(ServiceType.HADOOP_NAMENODE, "-format"));
+    exec(hostname,
+        new HadoopShellCommandProvider().getCommand(ServiceType.HADOOP_NAMENODE, "-format"));
   }
 
 
-  private File getDevSupportCmd(String prg){
+  private File getDevSupportCmd(String prg) {
     File case1 = new File("." + File.separator + "dev-support" + File.separator + prg);
     File case2 = new File(".." + File.separator + "dev-support" + File.separator + prg);
     File toCheck = null;
-    if (case1.exists()){
+    if (case1.exists()) {
       toCheck = case1;
-    }else if (case2.exists()){
+    } else if (case2.exists()) {
       toCheck = case2;
     }
-    Assert.assertNotNull("Can't find " + case1.getAbsolutePath()+" or "+case2.getAbsolutePath(), toCheck);
+    Assert.assertNotNull(
+        "Can't find " + case1.getAbsolutePath() + " or " + case2.getAbsolutePath(), toCheck);
     Assert.assertTrue(toCheck.canRead());
     Assert.assertTrue(toCheck.isFile());
     Assert.assertTrue(toCheck.canExecute());
-    //todo with jdk 1.7 is easy to check the owner
+
     return toCheck;
   }
 
+  // Kept in this class because it depends on HBase deployment by getDevSupportCmd
   @Override
   public void unplug(String hostname) throws Exception {
     File exec = getDevSupportCmd("it_tests_blockmachine_wrapper");
-
-    LOG.info("Executing locally "+ exec.getAbsolutePath()+" "+hostname+ "; in "+exec.getParentFile().getPath());
-    Process p = Runtime.getRuntime().exec(exec.getAbsolutePath()+" "+hostname, null, exec.getParentFile());
-    p.waitFor();
-    if (p.exitValue() != 0) {
-      throw new Exception("Can't unplug " + hostname +" result is " +p.exitValue());
-    }
+    String toExec = exec.getAbsolutePath() + " " + hostname;
+    execLocally(toExec, exec.getParentFile());
   }
 
   @Override
-  public void replug(String hostname) throws Exception {
+  public void replug(String hostname) throws IOException, InterruptedException {
     File exec = getDevSupportCmd("it_tests_unblockmachine_wrapper");
+    String toExec = exec.getAbsolutePath() + " " + hostname;
+    execLocally(toExec, exec.getParentFile());
+  }
 
-    LOG.info("Executing locally "+ exec.getAbsolutePath()+" "+hostname+ "; in "+exec.getParentFile().getPath());
-    Process p = Runtime.getRuntime().exec(exec.getAbsolutePath()+" "+hostname, null, exec.getParentFile());
+  private void execLocally(String toExec, File path) throws InterruptedException, IOException {
+    LOG.info("Executing locally " + toExec + "; in " + path.getAbsolutePath());
+    Process p = Runtime.getRuntime().exec(toExec, null, path);
     p.waitFor();
     if (p.exitValue() != 0) {
-      throw new Exception("Can't replug " + hostname +" result is " +p.exitValue());
+      throw new IOException("Error executing " + toExec + " result is " + p.exitValue());
     }
   }
 
-  public void killJavas(String hostname) throws IOException {
+  /**
+   * Kills all the java processus running on a computer
+   */
+  // Not in ClusterManager because it uses 'exec'
+  public void killAllServices(String hostname) throws IOException {
     try {
-      exec(hostname, "ps -ef | grep java | grep Dproc_ | cut -c 10-15 | xargs kill -9 2>/dev/null 1>/dev/null");
+      exec(hostname, "ps -ef | grep java | grep Dproc_ | cut -c 10-15 | xargs kill -9 ");
     } catch (Throwable ignored) {
-      // it fails when there is no java process to kill
+      // it fails when there is no java process to kill - we ignore it
     }
   }
 
@@ -358,5 +382,15 @@ public class HBaseClusterManager extends ClusterManager {
     } catch (Throwable ignored) {
       // it fails when we cannot delete everything. Ignoring
     }
+  }
+
+  /**
+   * Check that we can access to a remove server by pinging it.
+   *
+   * @throws IOException          if it can"t connect
+   * @throws InterruptedException if interrupted during the wait for the ping
+   */
+  public void checkAccessible(String hostname) throws IOException, InterruptedException {
+    execLocally("ping -c 1 " + hostname, new File("."));
   }
 }

@@ -120,22 +120,12 @@ public abstract class ClusterManager extends Configured {
 
 
   /**
-   * Throws an exception if it can't reach the remote machine. Interesting on a distributed cluster
-   *  only
-   */
-  public void checkAccessible(String hostname) throws Exception{
-    // do nothing by default (local cluster case).
-  }
-
-  /**
    * Simulate an unplug of a remote host. Always calls replug after!
-   * @param hostname
    */
   public abstract void unplug(String hostname) throws Exception;
 
   /**
    * Simulates a replug of a hostname after being unplug.
-   * @param hostname
    */
   public abstract void replug(String hostname) throws IOException, Exception;
 

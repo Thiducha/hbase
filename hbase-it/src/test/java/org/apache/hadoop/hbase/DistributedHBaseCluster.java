@@ -23,6 +23,7 @@ import java.util.HashMap;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.ClusterManager.ServiceType;
 import org.apache.hadoop.hbase.client.AdminProtocol;
 import org.apache.hadoop.hbase.client.ClientProtocol;
@@ -223,9 +224,17 @@ public class DistributedHBaseCluster extends HBaseCluster {
     }
   }
 
-  public void waitForNamenodeAvailable() throws Exception {
-    DistributedFileSystem fs = (DistributedFileSystem)FileSystem.get(conf) ;
-    // todo
+  public void waitForNamenodeAvailable() throws InterruptedException {
+    boolean ok = false;
+    do {
+      try {
+        DistributedFileSystem fs = (DistributedFileSystem) FileSystem.get(conf);
+        ok = (fs.getContentSummary(new Path( "/")) != null);
+      } catch (IOException ignored) {
+        Thread.sleep(1000);
+      }
+
+    }while (!ok);
   }
 
   @Override
