@@ -27,7 +27,7 @@ Lastly, to simulate a dead box, we rely on firewall configuration. This requires
 
 So to use the mttr test you must:
  1) Compile the C program in dev-support with 'sudo dev-support/it_test_make.sh'. This should be done
-        only once per installation.
+        only once per installation (i.e. if the C source file does not change you don't have to do it again).
  2) Compile Hadoop. Step to be redone if you change Hadoop of course.
  3) Then HBase on top of the Hadoop version built. Step to be redone if you change Hadoop or HBase of course.
  4) Have a proper configuration on all the machine you're using: Java version, user accounts, SSH config & so on.
@@ -35,6 +35,6 @@ So to use the mttr test you must:
       in hase-it/src/test/scripts/setup.sh. This requires a proper installation of ssh.
       This setp should be redone after each rebuild of Hadoop or HBase
  6) Run the integration tests with
-mvn package test verify -Dit.test="IntegrationTestRecoveryEmptyTable*" -Dtest=nonono -pl hbase-it -Dhadoop.profile=2.0
+mvn clean package test verify -Dit.test="IntegrationTestRecoveryEmptyTable*" -Dtest=nonono -pl hbase-it -Dhadoop.profile=2.0
 
- If you modify just the tests, you don't have to rerun the previous tests.
+ If you modify just the tests, you don't have to rerun the previous steps (i.e. copying the files on all targets).
