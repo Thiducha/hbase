@@ -189,10 +189,12 @@ public class HBaseClusterManager extends ClusterManager {
 
     private String getHadoopCommonHome() {
       if (getHadoopVersion().startsWith("1")) {
-        return getHadoopHome() + Path.SEPARATOR + "hadoop-common/build/hadoop-" + getHadoopVersion();
+        return getHadoopHome() + Path.SEPARATOR + "hadoop-common/build/hadoop-" +
+            getHadoopVersion();
       } else {
-        return getHadoopHome() +  Path.SEPARATOR +
-            "hadoop-common/hadoop-common-project/hadoop-common/target/hadoop-common-" + getHadoopVersion();
+        return getHadoopHome() + Path.SEPARATOR +
+            "hadoop-common/hadoop-common-project/hadoop-common/target/hadoop-common-" +
+            getHadoopVersion();
       }
     }
 
@@ -200,8 +202,9 @@ public class HBaseClusterManager extends ClusterManager {
       if (getHadoopVersion().startsWith("1")) {
         return getHadoopCommonHome();
       } else {
-      return getHadoopHome() + Path.SEPARATOR +
-          "hadoop-common/hadoop-hdfs-project/hadoop-hdfs/target/hadoop-hdfs-" + getHadoopVersion();
+        return getHadoopHome() + Path.SEPARATOR +
+            "hadoop-common/hadoop-hdfs-project/hadoop-hdfs/target/hadoop-hdfs-" +
+            getHadoopVersion();
       }
     }
 
@@ -220,8 +223,9 @@ public class HBaseClusterManager extends ClusterManager {
         op = null;
       }
 
-      return cmd + String.format("%s/bin/hdfs --config %s %s %s",
-          getHDFSHome(), getConfig(), service, op != null ? op : "");
+      return cmd + String.format("%s/bin/%s --config %s %s %s",
+          getHDFSHome(), getHadoopVersion().startsWith("1") ? "hadoop" : "hdfs",
+          getConfig(), service, op != null ? op : "");
     }
   }
 

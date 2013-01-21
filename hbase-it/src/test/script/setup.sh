@@ -28,8 +28,8 @@ echo "updating the local tmp-recotest with hdfs & hbase dirs content"
 rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude dev-support
 rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src'
 
-#todo: this is for HDFS 2 - Comment it for HDFS 1. it seems to be a bug in HBase, to be looked at.
-rm -rf $HBASE_REP/hbase-hadoop1-compat/target/
+#todo: this is for HDFS 2 - Comment it for HDFS 1. it's a bug, see HBASE-7637
+#rm -rf $HBASE_REP/hbase-hadoop1-compat/target/
 
 mkdir -p $CONF_DIR/conf-hadoop
 cp $ORIG_CONF/it-core-site.xml $CONF_DIR/conf-hadoop/core-site.xml
@@ -39,9 +39,9 @@ cp $ORIG_CONF/it-core-site.xml $HBASE_REP/conf/core-site.xml
 cp $ORIG_CONF/it-hbase-site.xml $HBASE_REP/conf/hbase-site.xml
 
 echo ready - now copying maven repos
-rsync -az  $MAVEN_DIR/* $BOX2:$MAVEN_DIR &
-rsync -az  $MAVEN_DIR/* $BOX3:$MAVEN_DIR &
-rsync -az  $MAVEN_DIR/* $BOX4:$MAVEN_DIR &
+rsync -az  ${MAVEN_DIR}/* $BOX2:${MAVEN_DIR} &
+rsync -az  ${MAVEN_DIR}/* $BOX3:${MAVEN_DIR} &
+rsync -az  ${MAVEN_DIR}/* $BOX4:${MAVEN_DIR} &
 
 wait
 
