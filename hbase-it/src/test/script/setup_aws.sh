@@ -42,6 +42,9 @@ scp ~/soft/$MAVEN $BOX1:
 ssh $BOX1 "tar xvf ~/$MAVEN"
 ssh $BOX1 "mv ~/$MAVENS /opt/apache-maven"
 
+echo "resolving dependencies - this can fail as hdfs is local, but save time"
+
+
 echo "Now doing the global setup"
 ./setup.sh $*
 
