@@ -284,11 +284,15 @@ public class HRegion implements HeapSize { // , Writable{
   private final ConcurrentHashMap<RegionScanner, Long> scannerReadPoints;
 
   /**
+   * The sequence ID that was encountered when this region was opened.
+   */
+  private long openSeqNum = HConstants.NO_SEQNUM;
+
+  /**
    * The default setting for whether to enable on-demand CF loading for
    * scan requests to this region. Requests can override it.
    */
   private boolean isLoadingCfsOnDemandDefault = false;
-
 
   /**
    * @return The smallest mvcc readPoint across all the scanners in this
@@ -1549,17 +1553,26 @@ public class HRegion implements HeapSize { // , Writable{
     long flushsize = this.memstoreSize.get();
     status.setStatus("Preparing to flush by snapshotting stores");
     List<StoreFlusher> storeFlushers = new ArrayList<StoreFlusher>(stores.size());
-    long completeSeqId = -1L;
+    long flushSeqId = -1L;
     try {
       // Record the mvcc for all transactions in progress.
       w = mvcc.beginMemstoreInsert();
       mvcc.advanceMemstore(w);
 
-      sequenceId = (wal == null)? myseqid:
-        wal.startCacheFlush(this.regionInfo.getEncodedNameAsBytes());
-      completeSeqId = this.getCompleteCacheFlushSequenceId(sequenceId);
+      if (wal != null) {
+        Long startSeqId = wal.startCacheFlush(this.regionInfo.getEncodedNameAsBytes());
+        if (startSeqId == null) {
+          status.setStatus("Flush will not be started for [" + this.regionInfo.getEncodedName()
+              + "] - WAL is going away");
+          return false;
+        }
+        flushSeqId = startSeqId.longValue();
+      } else {
+        flushSeqId = myseqid;
+      }
+
       for (Store s : stores.values()) {
-        storeFlushers.add(s.getStoreFlusher(completeSeqId));
+        storeFlushers.add(s.getStoreFlusher(flushSeqId));
       }
 
       // prepare flush (take a snapshot)
@@ -1628,22 +1641,14 @@ public class HRegion implements HeapSize { // , Writable{
       throw dse;
     }
 
-    // If we get to here, the HStores have been written. If we get an
-    // error in completeCacheFlush it will release the lock it is holding
-
-    // B.  Write a FLUSHCACHE-COMPLETE message to the log.
-    //     This tells future readers that the HStores were emitted correctly,
-    //     and that all updates to the log for this regionName that have lower
-    //     log-sequence-ids can be safely ignored.
+    // If we get to here, the HStores have been written.
     if (wal != null) {
-      wal.completeCacheFlush(this.regionInfo.getEncodedNameAsBytes(),
-        regionInfo.getTableName(), completeSeqId,
-        this.getRegionInfo().isMetaRegion());
+      wal.completeCacheFlush(this.regionInfo.getEncodedNameAsBytes());
     }
 
     // Update the last flushed sequence id for region
     if (this.rsServices != null) {
-      completeSequenceId = completeSeqId;
+      completeSequenceId = flushSeqId;
     }
 
     // C. Finally notify anyone waiting on memstore to clear:
@@ -1666,18 +1671,6 @@ public class HRegion implements HeapSize { // , Writable{
     this.recentFlushes.add(new Pair<Long,Long>(time/1000, flushsize));
 
     return compactionRequested;
-  }
-
-   /**
-   * Get the sequence number to be associated with this cache flush. Used by
-   * TransactionalRegion to not complete pending transactions.
-   *
-   *
-   * @param currentSequenceId
-   * @return sequence id to complete the cache flush with
-   */
-  protected long getCompleteCacheFlushSequenceId(long currentSequenceId) {
-    return currentSequenceId;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -3402,7 +3395,7 @@ public class HRegion implements HeapSize { // , Writable{
       }
 
       this.batch = scan.getBatch();
-      if (Bytes.equals(scan.getStopRow(), HConstants.EMPTY_END_ROW)) {
+      if (Bytes.equals(scan.getStopRow(), HConstants.EMPTY_END_ROW) && !scan.isGetScan()) {
         this.stopRow = null;
       } else {
         this.stopRow = scan.getStopRow();
@@ -4037,10 +4030,11 @@ public class HRegion implements HeapSize { // , Writable{
   throws IOException {
     checkCompressionCodecs();
 
-    long seqid = initialize(reporter);
+    this.openSeqNum = initialize(reporter);
     if (this.log != null) {
-      this.log.setSequenceNumber(seqid);
+      this.log.setSequenceNumber(this.openSeqNum);
     }
+
     return this;
   }
 
@@ -4990,7 +4984,7 @@ public class HRegion implements HeapSize { // , Writable{
       ClassSize.OBJECT +
       ClassSize.ARRAY +
       39 * ClassSize.REFERENCE + 2 * Bytes.SIZEOF_INT +
-      (9 * Bytes.SIZEOF_LONG) +
+      (10 * Bytes.SIZEOF_LONG) +
       Bytes.SIZEOF_BOOLEAN);
 
   public static final long DEEP_OVERHEAD = FIXED_OVERHEAD +
@@ -5454,6 +5448,13 @@ public class HRegion implements HeapSize { // , Writable{
   }
 
   /**
+   * Gets the latest sequence number that was read from storage when this region was opened.
+   */
+  public long getOpenSeqNum() {
+    return this.openSeqNum;
+  }
+
+  /**
    * Listener class to enable callers of
    * bulkLoadHFile() to perform any necessary
    * pre/post processing of a given bulkload call
@@ -5484,6 +5485,5 @@ public class HRegion implements HeapSize { // , Writable{
      * @throws IOException
      */
     void failedBulkLoad(byte[] family, String srcPath) throws IOException;
-
   }
 }
