@@ -80,12 +80,12 @@ public interface HTableInterface extends Closeable {
   boolean exists(Get get) throws IOException;
 
   /**
-   * Method that does a batch call on Deletes, Gets and Puts. The ordering of
-   * execution of the actions is not defined. Meaning if you do a Put and a
+   * Method that does a batch call on Deletes, Gets, Puts, Increments, Appends and RowMutations.
+   * The ordering of execution of the actions is not defined. Meaning if you do a Put and a
    * Get in the same {@link #batch} call, you will not necessarily be
    * guaranteed that the Get returns what the Put had put.
    *
-   * @param actions list of Get, Put, Delete objects
+   * @param actions list of Get, Put, Delete, Increment, Append, RowMutations objects
    * @param results Empty Object[], same size as actions. Provides access to partial
    *                results, in case an exception is thrown. A null in the result array means that
    *                the call for that action failed, even after retries
@@ -98,7 +98,7 @@ public interface HTableInterface extends Closeable {
    * Same as {@link #batch(List, Object[])}, but returns an array of
    * results instead of using a results parameter reference.
    *
-   * @param actions list of Get, Put, Delete objects
+   * @param actions list of Get, Put, Delete, Increment, Append, RowMutations objects
    * @return the results from the actions. A null in the return array means that
    *         the call for that action failed, even after retries
    * @throws IOException
@@ -392,27 +392,6 @@ public interface HTableInterface extends Closeable {
    * @throws IOException if a remote or network exception occurs.
    */
   void close() throws IOException;
-
-  /**
-   * Obtains a lock on a row.
-   *
-   * @param row The row to lock.
-   * @return A {@link RowLock} containing the row and lock id.
-   * @throws IOException if a remote or network exception occurs.
-   * @see RowLock
-   * @see #unlockRow
-   */
-  RowLock lockRow(byte[] row) throws IOException;
-
-  /**
-   * Releases a row lock.
-   *
-   * @param rl The row lock to release.
-   * @throws IOException if a remote or network exception occurs.
-   * @see RowLock
-   * @see #unlockRow
-   */
-  void unlockRow(RowLock rl) throws IOException;
 
   /**
    * Creates and returns a {@link com.google.protobuf.RpcChannel} instance connected to the

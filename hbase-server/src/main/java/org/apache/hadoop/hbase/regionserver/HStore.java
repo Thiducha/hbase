@@ -44,6 +44,7 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.CompoundConfiguration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
@@ -155,6 +156,10 @@ public class HStore implements Store, StoreConfiguration {
 
   private final Compactor compactor;
 
+  private static final int DEFAULT_FLUSH_RETRIES_NUMBER = 10;
+  private static int flush_retries_number;
+  private static int pauseTime;
+
   /**
    * Constructor
    * @param basedir qualified path under which the region directory lives;
@@ -181,7 +186,7 @@ public class HStore implements Store, StoreConfiguration {
     // 'conf' renamed to 'confParam' b/c we use this.conf in the constructor
     this.conf = new CompoundConfiguration()
       .add(confParam)
-      .add(family.getValues());
+      .addWritableMap(family.getValues());
     this.blocksize = family.getBlocksize();
 
     this.dataBlockEncoder =
@@ -222,6 +227,17 @@ public class HStore implements Store, StoreConfiguration {
     this.compactor = new Compactor(conf);
     // Create a compaction manager.
     this.compactionPolicy = new CompactionPolicy(conf, this);
+    if (HStore.flush_retries_number == 0) {
+      HStore.flush_retries_number = conf.getInt(
+          "hbase.hstore.flush.retries.number", DEFAULT_FLUSH_RETRIES_NUMBER);
+      HStore.pauseTime = conf.getInt(HConstants.HBASE_SERVER_PAUSE,
+          HConstants.DEFAULT_HBASE_SERVER_PAUSE);
+      if (HStore.flush_retries_number <= 0) {
+        throw new IllegalArgumentException(
+            "hbase.hstore.flush.retries.number must be > 0, not "
+                + HStore.flush_retries_number);
+      }
+    }
   }
 
   /**
@@ -577,7 +593,11 @@ public class HStore implements Store, StoreConfiguration {
     // Copy the file if it's on another filesystem
     FileSystem srcFs = srcPath.getFileSystem(conf);
     FileSystem desFs = fs instanceof HFileSystem ? ((HFileSystem)fs).getBackingFs() : fs;
-    if (!srcFs.equals(desFs)) {
+    //We can't compare FileSystem instances as
+    //equals() includes UGI instance as part of the comparison
+    //and won't work when doing SecureBulkLoad
+    //TODO deal with viewFS
+    if (!srcFs.getUri().equals(desFs.getUri())) {
       LOG.info("Bulk-load file " + srcPath + " is on different filesystem than " +
           "the destination store. Copying file over to destination filesystem.");
       Path tmpPath = getTmpPath();
@@ -713,8 +733,43 @@ public class HStore implements Store, StoreConfiguration {
     // If an exception happens flushing, we let it out without clearing
     // the memstore snapshot.  The old snapshot will be returned when we say
     // 'snapshot', the next time flush comes around.
-    return internalFlushCache(
-        snapshot, logCacheFlushId, snapshotTimeRangeTracker, flushedSize, status);
+    // Retry after catching exception when flushing, otherwise server will abort
+    // itself
+    IOException lastException = null;
+    for (int i = 0; i < HStore.flush_retries_number; i++) {
+      try {
+        Path pathName = internalFlushCache(snapshot, logCacheFlushId,
+            snapshotTimeRangeTracker, flushedSize, status);
+        try {
+          // Path name is null if there is no entry to flush
+          if (pathName != null) {
+            validateStoreFile(pathName);
+          }
+          return pathName;
+        } catch (Exception e) {
+          LOG.warn("Failed validating store file " + pathName
+              + ", retring num=" + i, e);
+          if (e instanceof IOException) {
+            lastException = (IOException) e;
+          } else {
+            lastException = new IOException(e);
+          }
+        }
+      } catch (IOException e) {
+        LOG.warn("Failed flushing store file, retring num=" + i, e);
+        lastException = e;
+      }
+      if (lastException != null) {
+        try {
+          Thread.sleep(pauseTime);
+        } catch (InterruptedException e) {
+          IOException iie = new InterruptedIOException();
+          iie.initCause(e);
+          throw iie;
+        }
+      }
+    }
+    throw lastException;
   }
 
   /*
@@ -836,7 +891,6 @@ public class HStore implements Store, StoreConfiguration {
     // Write-out finished successfully, move into the right spot
     String fileName = path.getName();
     Path dstPath = new Path(homedir, fileName);
-    validateStoreFile(path);
     String msg = "Renaming flushed file at " + path + " to " + dstPath;
     LOG.debug(msg);
     status.setStatus("Flushing " + this + ": " + msg);

@@ -78,7 +78,6 @@ import org.apache.hadoop.hbase.RemoteExceptionHandler;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.Stoppable;
 import org.apache.hadoop.hbase.TableDescriptors;
-import org.apache.hadoop.hbase.UnknownRowLockException;
 import org.apache.hadoop.hbase.UnknownScannerException;
 import org.apache.hadoop.hbase.YouAreDeadException;
 import org.apache.hadoop.hbase.ZNodeClearer;
@@ -107,6 +106,8 @@ import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.ipc.HBaseClientRPC;
 import org.apache.hadoop.hbase.ipc.HBaseRPCErrorHandler;
 import org.apache.hadoop.hbase.ipc.HBaseServerRPC;
+import org.apache.hadoop.hbase.ipc.ProtobufRpcClientEngine;
+import org.apache.hadoop.hbase.ipc.RpcClientEngine;
 import org.apache.hadoop.hbase.ipc.RpcServer;
 import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.ipc.ServerRpcController;
@@ -149,8 +150,6 @@ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServic
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.GetRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.GetResponse;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.LockRowRequest;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.LockRowResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate;
@@ -159,8 +158,6 @@ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutateRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutateResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ScanRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ScanResponse;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.UnlockRowRequest;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.UnlockRowResponse;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.Coprocessor;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.NameStringPair;
@@ -327,6 +324,9 @@ public class  HRegionServer implements ClientProtocol,
   // Server to handle client requests. Default access so can be accessed by
   // unit tests.
   RpcServer rpcServer;
+
+  // RPC client for communicating with master
+  RpcClientEngine rpcClientEngine;
 
   private final InetSocketAddress isa;
   private UncaughtExceptionHandler uncaughtExceptionHandler;
@@ -608,8 +608,6 @@ public class  HRegionServer implements ClientProtocol,
         GetRequest.class,
         MutateRequest.class,
         ScanRequest.class,
-        LockRowRequest.class,
-        UnlockRowRequest.class,
         MultiRequest.class
     };
 
@@ -769,8 +767,7 @@ public class  HRegionServer implements ClientProtocol,
     blockAndCheckIfStopped(this.clusterStatusTracker);
 
     // Create the catalog tracker and start it;
-    this.catalogTracker = new CatalogTracker(this.zooKeeper, this.conf,
-      this, this.conf.getInt("hbase.regionserver.catalog.timeout", 600000));
+    this.catalogTracker = new CatalogTracker(this.zooKeeper, this.conf, this);
     catalogTracker.start();
 
     // Retrieve clusterId
@@ -842,6 +839,9 @@ public class  HRegionServer implements ClientProtocol,
 
     // Create the thread to clean the moved regions list
     movedRegionsCleaner = MovedRegionsCleaner.createAndStart(this);
+
+    // Setup RPC client for master communication
+    rpcClientEngine = new ProtobufRpcClientEngine(conf);
   }
 
   /**
@@ -990,9 +990,9 @@ public class  HRegionServer implements ClientProtocol,
 
     // Make sure the proxy is down.
     if (this.hbaseMaster != null) {
-      HBaseClientRPC.stopProxy(this.hbaseMaster);
       this.hbaseMaster = null;
     }
+    this.rpcClientEngine.close();
     this.leases.close();
 
     if (!killed) {
@@ -1473,11 +1473,14 @@ public class  HRegionServer implements ClientProtocol,
 
   protected List<WALActionsListener> getMetaWALActionListeners() {
     List<WALActionsListener> listeners = new ArrayList<WALActionsListener>();
-    // Log roller.
-    this.metaHLogRoller = new MetaLogRoller(this, this);
+    // Using a tmp log roller to ensure metaLogRoller is alive once it is not
+    // null
+    MetaLogRoller tmpLogRoller = new MetaLogRoller(this, this);
     String n = Thread.currentThread().getName();
-    Threads.setDaemonThreadRunning(this.metaHLogRoller.getThread(), 
+    Threads.setDaemonThreadRunning(tmpLogRoller.getThread(),
         n + "MetaLogRoller", uncaughtExceptionHandler);
+    this.metaHLogRoller = tmpLogRoller;
+    tmpLogRoller = null;
     listeners.add(this.metaHLogRoller);
     return listeners;
   }
@@ -1682,21 +1685,27 @@ public class  HRegionServer implements ClientProtocol,
         getCompactionRequester().requestCompaction(r, s, "Opening Region");
       }
     }
+    long openSeqNum = r.getOpenSeqNum();
+    if (openSeqNum == HConstants.NO_SEQNUM) {
+      // If we opened a region, we should have read some sequence number from it.
+      LOG.error("No sequence number found when opening " + r.getRegionNameAsString());
+      openSeqNum = 0;
+    }
     // Update ZK, ROOT or META
     if (r.getRegionInfo().isRootRegion()) {
       RootRegionTracker.setRootLocation(getZooKeeper(),
        this.serverNameFromMasterPOV);
     } else if (r.getRegionInfo().isMetaRegion()) {
       MetaEditor.updateMetaLocation(ct, r.getRegionInfo(),
-        this.serverNameFromMasterPOV);
+        this.serverNameFromMasterPOV, openSeqNum);
     } else {
       if (daughter) {
         // If daughter of a split, update whole row, not just location.
         MetaEditor.addDaughter(ct, r.getRegionInfo(),
-          this.serverNameFromMasterPOV);
+          this.serverNameFromMasterPOV, openSeqNum);
       } else {
         MetaEditor.updateRegionLocation(ct, r.getRegionInfo(),
-          this.serverNameFromMasterPOV);
+          this.serverNameFromMasterPOV, openSeqNum);
       }
     }
     LOG.info("Done with post open deploy task for region=" +
@@ -1858,10 +1867,8 @@ public class  HRegionServer implements ClientProtocol,
       try {
         // Do initial RPC setup. The final argument indicates that the RPC
         // should retry indefinitely.
-        master = (RegionServerStatusProtocol) HBaseClientRPC.waitForProxy(
-            RegionServerStatusProtocol.class,
-            isa, this.conf, -1,
-            this.rpcTimeout, this.rpcTimeout);
+        master = HBaseClientRPC.waitForProxy(rpcClientEngine, RegionServerStatusProtocol.class,
+            isa, this.conf, -1, this.rpcTimeout, this.rpcTimeout);
         LOG.info("Connected to master at " + isa);
       } catch (IOException e) {
         e = e instanceof RemoteException ?
@@ -2331,28 +2338,6 @@ public class  HRegionServer implements ClientProtocol,
   }
 
   /**
-   * Instantiated as a row lock lease. If the lease times out, the row lock is
-   * released
-   */
-  private class RowLockListener implements LeaseListener {
-    private final String lockName;
-    private final HRegion region;
-
-    RowLockListener(final String lockName, final HRegion region) {
-      this.lockName = lockName;
-      this.region = region;
-    }
-
-    public void leaseExpired() {
-      LOG.info("Row Lock " + this.lockName + " lease expired");
-      Integer r = rowlocks.remove(this.lockName);
-      if (r != null) {
-        region.releaseRowLock(r);
-      }
-    }
-  }
-
-  /**
    * Instantiated as a scanner lease. If the lease times out, the scanner is
    * closed
    */
@@ -2387,29 +2372,6 @@ public class  HRegionServer implements ClientProtocol,
         LOG.info("Scanner " + this.scannerName + " lease expired");
       }
     }
-  }
-
-  /**
-   * Method to get the Integer lock identifier used internally from the long
-   * lock identifier used by the client.
-   *
-   * @param lockId
-   *          long row lock identifier from client
-   * @return intId Integer row lock used internally in HRegion
-   * @throws IOException
-   *           Thrown if this is not a valid client lock id.
-   */
-  Integer getLockFromId(long lockId) throws IOException {
-    if (lockId == -1L) {
-      return null;
-    }
-    String lockName = String.valueOf(lockId);
-    Integer rl = rowlocks.get(lockName);
-    if (rl == null) {
-      throw new UnknownRowLockException("Invalid row lock");
-    }
-    this.leases.renewLease(lockName);
-    return rl;
   }
 
   /**
@@ -2546,11 +2508,20 @@ public class  HRegionServer implements ClientProtocol,
 
 
   @Override
-  public boolean removeFromOnlineRegions(final String encodedRegionName, ServerName destination) {
-    HRegion toReturn = this.onlineRegions.remove(encodedRegionName);
+  public boolean removeFromOnlineRegions(final HRegion r, ServerName destination) {
+    HRegion toReturn = this.onlineRegions.remove(r.getRegionInfo().getEncodedName());
 
-    if (destination != null){
-      addToMovedRegions(encodedRegionName, destination);
+    if (destination != null) {
+      HLog wal = getWAL();
+      long closeSeqNum = wal.getEarliestMemstoreSeqNum(r.getRegionInfo().getEncodedNameAsBytes());
+      if (closeSeqNum == HConstants.NO_SEQNUM) {
+        // No edits in WAL for this region; get the sequence number when the region was opened.
+        closeSeqNum = r.getOpenSeqNum();
+        if (closeSeqNum == HConstants.NO_SEQNUM) {
+          closeSeqNum = 0;
+        }
+      }
+      addToMovedRegions(r.getRegionInfo().getEncodedName(), destination, closeSeqNum);
     }
 
     return toReturn != null;
@@ -2572,12 +2543,12 @@ public class  HRegionServer implements ClientProtocol,
 
   protected HRegion getRegionByEncodedName(String encodedRegionName)
     throws NotServingRegionException {
-
     HRegion region = this.onlineRegions.get(encodedRegionName);
     if (region == null) {
-      ServerName sn = getMovedRegion(encodedRegionName);
-      if (sn != null) {
-        throw new RegionMovedException(sn.getHostname(), sn.getPort());
+      MovedRegionInfo moveInfo = getMovedRegion(encodedRegionName);
+      if (moveInfo != null) {
+        throw new RegionMovedException(moveInfo.getServerName().getHostname(),
+            moveInfo.getServerName().getPort(), moveInfo.getSeqNum());
       } else {
         throw new NotServingRegionException("Region is not online: " + encodedRegionName);
       }
@@ -2689,18 +2660,6 @@ public class  HRegionServer implements ClientProtocol,
     return this.fsOk;
   }
 
-  protected long addRowLock(Integer r, HRegion region) throws LeaseStillHeldException {
-    String lockName = null;
-    long lockId;
-    do {
-      lockId = nextLong();
-      lockName = String.valueOf(lockId);
-    } while (rowlocks.putIfAbsent(lockName, r) != null);
-    this.leases.createLease(lockName, this.rowLockLeaseTimeoutPeriod, new RowLockListener(lockName,
-        region));
-    return lockId;
-  }
-
   protected long addScanner(RegionScanner s) throws LeaseStillHeldException {
     long scannerId = -1;
     while (true) {
@@ -2768,8 +2727,7 @@ public class  HRegionServer implements ClientProtocol,
           existence = region.getCoprocessorHost().preExists(clientGet);
         }
         if (existence == null) {
-          Integer lock = getLockFromId(clientGet.getLockId());
-          r = region.get(clientGet, lock);
+          r = region.get(clientGet);
           if (request.getExistenceOnly()) {
             boolean exists = r != null && !r.isEmpty();
             if (region.getCoprocessorHost() != null) {
@@ -2823,7 +2781,6 @@ public class  HRegionServer implements ClientProtocol,
         break;
       case PUT:
         Put put = ProtobufUtil.toPut(mutate);
-        lock = getLockFromId(put.getLockId());
         if (request.hasCondition()) {
           Condition condition = request.getCondition();
           byte[] row = condition.getRow().toByteArray();
@@ -2838,7 +2795,7 @@ public class  HRegionServer implements ClientProtocol,
           }
           if (processed == null) {
             boolean result = region.checkAndMutate(row, family,
-              qualifier, compareOp, comparator, put, lock, true);
+              qualifier, compareOp, comparator, put, true);
             if (region.getCoprocessorHost() != null) {
               result = region.getCoprocessorHost().postCheckAndPut(row, family,
                 qualifier, compareOp, comparator, put, result);
@@ -2846,13 +2803,12 @@ public class  HRegionServer implements ClientProtocol,
             processed = result;
           }
         } else {
-          region.put(put, lock);
+          region.put(put);
           processed = Boolean.TRUE;
         }
         break;
       case DELETE:
         Delete delete = ProtobufUtil.toDelete(mutate);
-        lock = getLockFromId(delete.getLockId());
         if (request.hasCondition()) {
           Condition condition = request.getCondition();
           byte[] row = condition.getRow().toByteArray();
@@ -2867,7 +2823,7 @@ public class  HRegionServer implements ClientProtocol,
           }
           if (processed == null) {
             boolean result = region.checkAndMutate(row, family,
-              qualifier, compareOp, comparator, delete, lock, true);
+              qualifier, compareOp, comparator, delete, true);
             if (region.getCoprocessorHost() != null) {
               result = region.getCoprocessorHost().postCheckAndDelete(row, family,
                 qualifier, compareOp, comparator, delete, result);
@@ -2875,7 +2831,7 @@ public class  HRegionServer implements ClientProtocol,
             processed = result;
           }
         } else {
-          region.delete(delete, lock, delete.getWriteToWAL());
+          region.delete(delete, delete.getWriteToWAL());
           processed = Boolean.TRUE;
         }
         break;
@@ -2945,6 +2901,7 @@ public class  HRegionServer implements ClientProtocol,
         RegionScannerHolder rsh = null;
         boolean moreResults = true;
         boolean closeScanner = false;
+        Long resultsWireSize = null;
         ScanResponse.Builder builder = ScanResponse.newBuilder();
         if (request.hasCloseScanner()) {
           closeScanner = request.getCloseScanner();
@@ -2970,6 +2927,8 @@ public class  HRegionServer implements ClientProtocol,
           if (!isLoadingCfsOnDemandSet) {
             scan.setLoadColumnFamiliesOnDemand(region.isLoadingCfsOnDemandDefault());
           }
+          byte[] hasMetrics = scan.getAttribute(Scan.SCAN_ATTRIBUTES_METRICS_ENABLE);
+          resultsWireSize = (hasMetrics != null && Bytes.toBoolean(hasMetrics)) ? 0L : null;
           region.prepareScanner(scan);
           if (region.getCoprocessorHost() != null) {
             scanner = region.getCoprocessorHost().preScannerOpen(scan);
@@ -3016,8 +2975,10 @@ public class  HRegionServer implements ClientProtocol,
                 scanner, results, rows);
               if (!results.isEmpty()) {
                 for (Result r : results) {
-                  for (KeyValue kv : r.raw()) {
-                    currentScanResultSize += kv.heapSize();
+                  if (maxScannerResultSize < Long.MAX_VALUE){
+                    for (KeyValue kv : r.raw()) {
+                      currentScanResultSize += kv.heapSize();
+                    }
                   }
                 }
               }
@@ -3042,8 +3003,10 @@ public class  HRegionServer implements ClientProtocol,
                     // Collect values to be returned here
                     boolean moreRows = scanner.nextRaw(values);
                     if (!values.isEmpty()) {
-                      for (KeyValue kv : values) {
-                        currentScanResultSize += kv.heapSize();
+                      if (maxScannerResultSize < Long.MAX_VALUE){
+                        for (KeyValue kv : values) {
+                          currentScanResultSize += kv.heapSize();
+                        }
                       }
                       results.add(new Result(values));
                     }
@@ -3073,8 +3036,15 @@ public class  HRegionServer implements ClientProtocol,
             } else {
               for (Result result: results) {
                 if (result != null) {
-                  builder.addResult(ProtobufUtil.toResult(result));
+                  ClientProtos.Result pbResult = ProtobufUtil.toResult(result);
+                  if (resultsWireSize != null) {
+                    resultsWireSize += pbResult.getSerializedSize();
+                  }
+                  builder.addResult(pbResult);
                 }
+              }
+              if (resultsWireSize != null) {
+                builder.setResultSizeBytes(resultsWireSize.longValue());
               }
             }
           } finally {
@@ -3117,78 +3087,6 @@ public class  HRegionServer implements ClientProtocol,
             t instanceof NotServingRegionException) {
           scanners.remove(scannerName);
         }
-        throw convertThrowableToIOE(cleanup(t));
-      }
-    } catch (IOException ie) {
-      throw new ServiceException(ie);
-    }
-  }
-
-  /**
-   * Lock a row in a table.
-   *
-   * @param controller the RPC controller
-   * @param request the lock row request
-   * @throws ServiceException
-   */
-  @Override
-  public LockRowResponse lockRow(final RpcController controller,
-      final LockRowRequest request) throws ServiceException {
-    try {
-      if (request.getRowCount() != 1) {
-        throw new DoNotRetryIOException(
-          "lockRow supports only one row now, not " + request.getRowCount() + " rows");
-      }
-      requestCount.increment();
-      HRegion region = getRegion(request.getRegion());
-      byte[] row = request.getRow(0).toByteArray();
-      try {
-        Integer r = region.obtainRowLock(row);
-        long lockId = addRowLock(r, region);
-        LOG.debug("Row lock " + lockId + " explicitly acquired by client");
-        LockRowResponse.Builder builder = LockRowResponse.newBuilder();
-        builder.setLockId(lockId);
-        return builder.build();
-      } catch (Throwable t) {
-        throw convertThrowableToIOE(cleanup(t,
-          "Error obtaining row lock (fsOk: " + this.fsOk + ")"));
-      }
-    } catch (IOException ie) {
-      throw new ServiceException(ie);
-    }
-  }
-
-  /**
-   * Unlock a locked row in a table.
-   *
-   * @param controller the RPC controller
-   * @param request the unlock row request
-   * @throws ServiceException
-   */
-  @Override
-  @QosPriority(priority=HConstants.HIGH_QOS)
-  public UnlockRowResponse unlockRow(final RpcController controller,
-      final UnlockRowRequest request) throws ServiceException {
-    try {
-      requestCount.increment();
-      HRegion region = getRegion(request.getRegion());
-      if (!request.hasLockId()) {
-        throw new DoNotRetryIOException(
-          "Invalid unlock rowrequest, missing lock id");
-      }
-      long lockId = request.getLockId();
-      String lockName = String.valueOf(lockId);
-      try {
-        Integer r = rowlocks.remove(lockName);
-        if (r == null) {
-          throw new UnknownRowLockException(lockName);
-        }
-        region.releaseRowLock(r);
-        this.leases.cancelLease(lockName);
-        LOG.debug("Row lock " + lockId
-            + " has been explicitly released by client");
-        return UnlockRowResponse.newBuilder().build();
-      } catch (Throwable t) {
         throw convertThrowableToIOE(cleanup(t));
       }
     } catch (IOException ie) {
@@ -3289,8 +3187,7 @@ public class  HRegionServer implements ClientProtocol,
             ClientProtos.Result result = null;
             if (actionUnion.hasGet()) {
               Get get = ProtobufUtil.toGet(actionUnion.getGet());
-              Integer lock = getLockFromId(get.getLockId());
-              Result r = region.get(get, lock);
+              Result r = region.get(get);
               if (r != null) {
                 result = ProtobufUtil.toResult(r);
               }
@@ -3489,7 +3386,7 @@ public class  HRegionServer implements ClientProtocol,
           } else {
             LOG.warn("The region " + region.getEncodedName() + " is online on this server" +
                 " but META does not have this server - continue opening.");
-            removeFromOnlineRegions(region.getEncodedName(), null);
+            removeFromOnlineRegions(onlineRegion, null);
           }
         }
         LOG.info("Received request to open region: " + region.getRegionNameAsString() + " on "
@@ -3823,8 +3720,7 @@ public class  HRegionServer implements ClientProtocol,
       r = region.getCoprocessorHost().preAppend(append);
     }
     if (r == null) {
-      Integer lock = getLockFromId(append.getLockId());
-      r = region.append(append, lock, append.getWriteToWAL());
+      r = region.append(append, append.getWriteToWAL());
       if (region.getCoprocessorHost() != null) {
         region.getCoprocessorHost().postAppend(append, r);
       }
@@ -3850,8 +3746,7 @@ public class  HRegionServer implements ClientProtocol,
       r = region.getCoprocessorHost().preIncrement(increment);
     }
     if (r == null) {
-      Integer lock = getLockFromId(increment.getLockId());
-      r = region.increment(increment, lock, increment.getWriteToWAL());
+      r = region.increment(increment, increment.getWriteToWAL());
       if (region.getCoprocessorHost() != null) {
         r = region.getCoprocessorHost().postIncrement(increment, r);
       }
@@ -3887,8 +3782,7 @@ public class  HRegionServer implements ClientProtocol,
           mutation = ProtobufUtil.toDelete(m);
           batchContainsDelete = true;
         }
-        Integer lock = getLockFromId(mutation.getLockId());
-        mutationsWithLocks[i++] = new Pair<Mutation, Integer>(mutation, lock);
+        mutationsWithLocks[i++] = new Pair<Mutation, Integer>(mutation, null);
         builder.addResult(result);
       }
 
@@ -3971,34 +3865,55 @@ public class  HRegionServer implements ClientProtocol,
     region.mutateRow(rm);
   }
 
+  private static class MovedRegionInfo {
+    private final ServerName serverName;
+    private final long seqNum;
+    private final long ts;
+
+    public MovedRegionInfo(ServerName serverName, long closeSeqNum) {
+      this.serverName = serverName;
+      this.seqNum = closeSeqNum;
+      ts = EnvironmentEdgeManager.currentTimeMillis();
+     }
+
+    public ServerName getServerName() {
+      return serverName;
+    }
+
+    public long getSeqNum() {
+      return seqNum;
+    }
+
+    public long getMoveTime() {
+      return ts;
+    }
+  }
 
   // This map will contains all the regions that we closed for a move.
   //  We add the time it was moved as we don't want to keep too old information
-  protected Map<String, Pair<Long, ServerName>> movedRegions =
-      new ConcurrentHashMap<String, Pair<Long, ServerName>>(3000);
+  protected Map<String, MovedRegionInfo> movedRegions =
+      new ConcurrentHashMap<String, MovedRegionInfo>(3000);
 
   // We need a timeout. If not there is a risk of giving a wrong information: this would double
   //  the number of network calls instead of reducing them.
   private static final int TIMEOUT_REGION_MOVED = (2 * 60 * 1000);
 
-  protected void addToMovedRegions(HRegionInfo hri, ServerName destination){
-    addToMovedRegions(hri.getEncodedName(), destination);
-  }
-
-  protected void addToMovedRegions(String encodedName, ServerName destination){
-    final  Long time = System.currentTimeMillis();
-
+  protected void addToMovedRegions(String encodedName, ServerName destination, long closeSeqNum) {
+    LOG.info("Adding moved region record: " + encodedName + " to "
+        + destination.getServerName() + ":" + destination.getPort()
+        + " as of " + closeSeqNum);
     movedRegions.put(
         encodedName,
-        new Pair<Long, ServerName>(time, destination));
+        new MovedRegionInfo(destination, closeSeqNum));
   }
 
-  private ServerName getMovedRegion(final String encodedRegionName) {
-    Pair<Long, ServerName> dest = movedRegions.get(encodedRegionName);
+  private MovedRegionInfo getMovedRegion(final String encodedRegionName) {
+    MovedRegionInfo dest = movedRegions.get(encodedRegionName);
 
+    long now = EnvironmentEdgeManager.currentTimeMillis();
     if (dest != null) {
-      if (dest.getFirst() > (System.currentTimeMillis() - TIMEOUT_REGION_MOVED)) {
-        return dest.getSecond();
+      if (dest.getMoveTime() > (now - TIMEOUT_REGION_MOVED)) {
+        return dest;
       } else {
         movedRegions.remove(encodedRegionName);
       }
@@ -4012,11 +3927,11 @@ public class  HRegionServer implements ClientProtocol,
    */
   protected void cleanMovedRegions(){
     final long cutOff = System.currentTimeMillis() - TIMEOUT_REGION_MOVED;
-    Iterator<Entry<String, Pair<Long, ServerName>>> it = movedRegions.entrySet().iterator();
+    Iterator<Entry<String, MovedRegionInfo>> it = movedRegions.entrySet().iterator();
 
     while (it.hasNext()){
-      Map.Entry<String, Pair<Long, ServerName>> e = it.next();
-      if (e.getValue().getFirst() < cutOff){
+      Map.Entry<String, MovedRegionInfo> e = it.next();
+      if (e.getValue().getMoveTime() < cutOff) {
         it.remove();
       }
     }

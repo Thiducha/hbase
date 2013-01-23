@@ -1,4 +1,4 @@
-/**
+/*
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -16,30 +16,32 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.hbase;
+package org.apache.hadoop.hbase.replication;
 
-import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.classification.InterfaceStability;
+import java.io.Closeable;
 
+import org.apache.zookeeper.KeeperException;
 
 /**
- * Thrown if a region server is passed an unknown row lock id
+ * This provides an interface for getting and setting the replication state of a
+ * cluster. This state is used to indicate whether replication is enabled or
+ * disabled on a cluster.
  */
-@InterfaceAudience.Public
-@InterfaceStability.Stable
-public class UnknownRowLockException extends DoNotRetryIOException {
-  private static final long serialVersionUID = 993179627856392526L;
-
-  /** constructor */
-  public UnknownRowLockException() {
-    super();
-  }
-
+public interface ReplicationStateInterface extends Closeable {
+	
   /**
-   * Constructor
-   * @param s message
+   * Get the current state of replication (i.e. ENABLED or DISABLED).
+   * 
+   * @return true if replication is enabled, false otherwise
+   * @throws KeeperException
    */
-  public UnknownRowLockException(String s) {
-    super(s);
-  }
+  public boolean getState() throws KeeperException;
+	
+  /**
+   * Set the state of replication.
+   * 
+   * @param newState
+   * @throws KeeperException
+   */
+  public void setState(boolean newState) throws KeeperException;
 }

@@ -240,7 +240,9 @@ public class RowResource extends ResourceBase {
     } finally {
       if (table != null) try {
         table.close();
-      } catch (IOException ioe) { }
+      } catch (IOException ioe) {
+        LOG.debug("Exception received while closing the table", ioe);
+      }
     }
   }
 
@@ -363,7 +365,7 @@ public class RowResource extends ResourceBase {
     }
     Delete delete = null;
     if (rowspec.hasTimestamp())
-      delete = new Delete(rowspec.getRow(), rowspec.getTimestamp(), null);
+      delete = new Delete(rowspec.getRow(), rowspec.getTimestamp());
     else
       delete = new Delete(rowspec.getRow());
 
@@ -555,7 +557,9 @@ public class RowResource extends ResourceBase {
     } finally {
       if (table != null) try {
         table.close();
-      } catch (IOException ioe) { }
+      } catch (IOException ioe) {
+        LOG.debug("Exception received while closing the table", ioe);
+      }
     }
   }
 }

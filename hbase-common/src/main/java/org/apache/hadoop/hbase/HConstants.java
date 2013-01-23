@@ -18,12 +18,13 @@
 package org.apache.hadoop.hbase;
 
 import java.nio.charset.Charset;
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import org.apache.commons.lang.ArrayUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 
@@ -343,6 +344,9 @@ public final class HConstants {
   /** The startcode column qualifier */
   public static final byte [] STARTCODE_QUALIFIER = toBytes("serverstartcode");
 
+  /** The open seqnum column qualifier */
+  public static final byte [] SEQNUM_QUALIFIER = toBytes("seqnumDuringOpen");
+
   /** The lower-half split region column qualifier */
   public static final byte [] SPLITA_QUALIFIER = toBytes("splitA");
 
@@ -446,7 +450,7 @@ public final class HConstants {
   public static final String NAME = "NAME";
   public static final String VERSIONS = "VERSIONS";
   public static final String IN_MEMORY = "IN_MEMORY";
-  public static final String CONFIG = "CONFIG";
+  public static final String METADATA = "METADATA";
 
   /**
    * This is a retry backoff multiplier table similar to the BSD TCP syn
@@ -509,6 +513,17 @@ public final class HConstants {
    * Default value of {@link #HBASE_CLIENT_PAUSE}.
    */
   public static long DEFAULT_HBASE_CLIENT_PAUSE = 1000;
+
+  /**
+   * Parameter name for server pause value, used mostly as value to wait before
+   * running a retry of a failed operation.
+   */
+  public static String HBASE_SERVER_PAUSE = "hbase.server.pause";
+
+  /**
+   * Default value of {@link #HBASE_SERVER_PAUSE}.
+   */
+  public static int DEFAULT_HBASE_SERVER_PAUSE = 1000;
 
   /**
    * Parameter name for maximum retries, used as maximum for all retryable
@@ -608,6 +623,12 @@ public final class HConstants {
    * Default value of {@link #HBASE_RPC_TIMEOUT_KEY}
    */
   public static int DEFAULT_HBASE_RPC_TIMEOUT = 60000;
+
+  /**
+   * Value indicating the server name was saved with no sequence number.
+   */
+  public static final long NO_SEQNUM = -1;
+
 
   /*
    * cluster replication constants.
@@ -737,10 +758,18 @@ public final class HConstants {
   /** Directory under /hbase where archived hfiles are stored */
   public static final String HFILE_ARCHIVE_DIRECTORY = ".archive";
 
-  public static final List<String> HBASE_NON_USER_TABLE_DIRS = new ArrayList<String>(
-      Arrays.asList(new String[] { HREGION_LOGDIR_NAME, HREGION_OLDLOGDIR_NAME, CORRUPT_DIR_NAME,
-          toString(META_TABLE_NAME), toString(ROOT_TABLE_NAME), SPLIT_LOGDIR_NAME,
-          HBCK_SIDELINEDIR_NAME, HFILE_ARCHIVE_DIRECTORY }));
+  /** Directories that are not HBase table directories */
+  public static final List<String> HBASE_NON_TABLE_DIRS =
+    Collections.unmodifiableList(Arrays.asList(new String[] { HREGION_LOGDIR_NAME,
+      HREGION_OLDLOGDIR_NAME, CORRUPT_DIR_NAME, SPLIT_LOGDIR_NAME,
+      HBCK_SIDELINEDIR_NAME, HFILE_ARCHIVE_DIRECTORY }));
+
+  /** Directories that are not HBase user table directories */
+  public static final List<String> HBASE_NON_USER_TABLE_DIRS =
+    Collections.unmodifiableList(Arrays.asList((String[])ArrayUtils.addAll(
+      new String[] { toString(META_TABLE_NAME), toString(ROOT_TABLE_NAME) },
+      HBASE_NON_TABLE_DIRS.toArray())));
+
   /** Health script related settings. */
   public static final String HEALTH_SCRIPT_LOC = "hbase.node.health.script.location";
   public static final String HEALTH_SCRIPT_TIMEOUT = "hbase.node.health.script.timeout";
