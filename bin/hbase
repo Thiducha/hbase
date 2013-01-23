@@ -143,13 +143,10 @@ add_maven_deps_to_classpath() {
   # Need to generate classpath from maven pom. This is costly so generate it
   # and cache it. Save the file into our target dir so a mvn clean will get
   # clean it up and force us create a new one.
-  f="${HBASE_HOME}/target/cached_classpath.txt"
-  if [ ! -f "${f}" ]
-  then
-      echo "As this is a development environment, we need ${f} to be generated from maven (command: mvn compile)"
-      exit 1
-  fi
-  CLASSPATH=${CLASSPATH}:`cat "${f}"`
+  # Add libs to CLASSPATH
+  for f in $HBASE_HOME/target/lib/*.jar; do
+    CLASSPATH=${CLASSPATH}:$f;
+  done
 }
 
 

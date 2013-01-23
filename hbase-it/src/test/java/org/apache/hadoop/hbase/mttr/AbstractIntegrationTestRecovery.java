@@ -66,9 +66,12 @@ import java.util.List;
 public abstract class AbstractIntegrationTestRecovery {
   // todo: take this from something else. May be env variable?
   protected String mainBox = "127.0.0.1";
-  protected String willDieBox = "192.168.1.13";
-  protected String willSurviveBox = "192.168.1.12";
-  protected String lateBox = "192.168.1.15";
+  protected String willDieBox = System.getenv("HBASE_IT_WILLDIE_BOX") != null ?
+      System.getenv("HBASE_IT_WILLDIE_BOX") : "192.168.1.13";
+  protected String willSurviveBox = System.getenv("HBASE_IT_WILLSURVIVE_BOX") != null ?
+      System.getenv("HBASE_IT_WILLSURVIVE_BOX") : "192.168.1.12";
+  protected String lateBox = System.getenv("HBASE_IT_LATE_BOX") != null ?
+      System.getenv("HBASE_IT_LATE_BOX") : "192.168.1.15";
 
   protected static final Log LOG
       = LogFactory.getLog(AbstractIntegrationTestRecovery.class);
@@ -160,6 +163,9 @@ public abstract class AbstractIntegrationTestRecovery {
     dhc = (DistributedHBaseCluster) util.getHBaseClusterInterface();
     hcm = (HBaseClusterManager) dhc.getClusterManager();
 
+    // In case we stopped the previous test while is was not connected
+    hcm.replug(willDieBox);
+
     hcm.checkAccessible(mainBox);
     hcm.checkAccessible(willDieBox);
     hcm.checkAccessible(willSurviveBox);
@@ -199,6 +205,9 @@ public abstract class AbstractIntegrationTestRecovery {
     // We want meta & root on the main server.
 
     Thread.sleep(20000);
+    // todo: we have an issue here, we don't know yet if the master has started
+    //  it could make the test fail. "The node /hbase is not in ZooKeeper."
+    //  We could check this is ZK first
     while (util.getHBaseAdmin().getClusterStatus().getServersSize() == 0) {
       Thread.sleep(1000);
     }
@@ -296,13 +305,28 @@ public abstract class AbstractIntegrationTestRecovery {
 
     try {
       // How long does it take to discover that we need to do something?
-      while (admin.getClusterStatus().getRegionsInTransition().size() == 0) {
+      while (admin.getClusterStatus().getDeadServers() == 0) {
         Thread.sleep(1000);
       }
       failureDetectedTime = System.currentTimeMillis();
 
       // Now, how long does it take to recover?
-      waitForNoTransition();
+      boolean ok;
+      do {
+        waitForNoTransition();
+        ok = true;
+        for (HRegionInfo hri : regs) {
+          try {
+            if (!dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
+              ok = false;
+            }
+          }catch (IOException e){
+            // It seems we can receive exceptions if the regionserver is dead...
+            ok = false;
+          }
+        }
+      }while (!ok);
+
       failureFixedTime = System.currentTimeMillis();
 
     } finally {

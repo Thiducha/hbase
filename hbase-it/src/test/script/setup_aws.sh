@@ -12,8 +12,6 @@ BOX1=$1
 
 echo "the $BOX1 will contain the hbase source code to run mvn it tests"
 
-MAVEN_DIR=~/.m2
-
 for CBOX in $*; do
   echo "Doing a first ssh to the box to get it registered - $CBOX"
   ssh -o StrictHostKeyChecking=no $CBOX 'echo yo man'
@@ -27,10 +25,10 @@ for CBOX in $*; do
   ssh $CBOX "mkdir -p ~/.m2"
 
   echo "Now doing ssh to ensure the boxes are recognized between themselves - pipelening 'yes' does not work"
-  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $BOX1 'echo yo man'"
-  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $BOX2 'echo yo man'"
-  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $BOX3 'echo yo man'"
-  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $BOX4 'echo yo man'"
+  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $BOX1 'echo ssh ok from $CBOX to $BOX1'"
+  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $BOX2 'echo ssh ok from $CBOX to $BOX2'"
+  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $BOX3 'echo ssh ok from $CBOX to $BOX3'"
+  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $BOX4 'echo ssh ok from $CBOX to $BOX4'"
 done
 
 echo copying hbase src on box 1
@@ -41,9 +39,6 @@ echo installing maven on box1 - redhat does not have wget by default
 scp ~/soft/$MAVEN $BOX1:
 ssh $BOX1 "tar xvf ~/$MAVEN"
 ssh $BOX1 "mv ~/$MAVENS /opt/apache-maven"
-
-echo "resolving dependencies - this can fail as hdfs is local, but save time"
-
 
 echo "Now doing the global setup"
 ./setup.sh $*
