@@ -20,7 +20,7 @@ rm -rf ~/tmp-recotest/hbase/logs/*
 mkdir ~/tmp-recotest/data
 
 echo "updating the local tmp-recotest with hdfs & hbase dirs content"
-rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude dev-support
+rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude dev-support --exclude 'hbase-*'
 rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src'
 
 echo "preparing conf dirs"

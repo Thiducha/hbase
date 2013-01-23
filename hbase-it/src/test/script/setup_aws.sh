@@ -14,26 +14,30 @@ echo "the $BOX1 will contain the hbase source code to run mvn it tests"
 
 for CBOX in $*; do
   echo "Doing a first ssh to the box to get it registered - $CBOX"
-  ssh -o StrictHostKeyChecking=no $CBOX 'echo yo man'
+  echo "Now doing ssh to ensure the boxes are recognized between themselves - pipelening 'yes' does not work"
+  for CBOX2 in $*; do
+    ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $CBOX2 'echo ssh ok from $CBOX to $CBOX2'"
+  done
 
-  echo installing java from sun
-  scp ~/soft/$JAVA $CBOX:
-  ssh $CBOX "chmod oug+x $JAVA; yes | ~/$JAVA"
-  ssh $CBOX "mv ~/$JAVAS /opt/jdk1.6"
+  if ssh $CBOX "ls $JAVA" >/dev/null; then
+    echo "it seems $JAVA is already installed"
+  else
+    echo installing java from sun
+    scp ~/soft/$JAVA $CBOX:
+    ssh $CBOX "chmod oug+x $JAVA; yes | $JAVA"
+    ssh $CBOX "mv $JAVAS /opt/jdk1.6"
+  fi
 
   echo creating maven repo
   ssh $CBOX "mkdir -p ~/.m2"
-
-  echo "Now doing ssh to ensure the boxes are recognized between themselves - pipelening 'yes' does not work"
-  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $BOX1 'echo ssh ok from $CBOX to $BOX1'"
-  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $BOX2 'echo ssh ok from $CBOX to $BOX2'"
-  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $BOX3 'echo ssh ok from $CBOX to $BOX3'"
-  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $BOX4 'echo ssh ok from $CBOX to $BOX4'"
 done
 
 echo copying hbase src on box 1
-ssh $BOX1 "mkdir -p ~dev; mkdir -p ~dev/hbase"
-rsync -az --delete ~/dev/hbase $BOX1:/dev/hbase --exclude '.git'
+ssh $BOX1 "mkdir -p dev"
+rsync -az --delete ~/dev/hbase $BOX1:dev --exclude '.git'
+
+echo "We need the maven repo as well if we built hadoop"
+rsync -az --delete ~/.m2 root@ec2-54-242-182-117.compute-1.amazonaws.com:
 
 echo installing maven on box1 - redhat does not have wget by default
 scp ~/soft/$MAVEN $BOX1:
@@ -42,6 +46,16 @@ ssh $BOX1 "mv ~/$MAVENS /opt/apache-maven"
 
 echo "Now doing the global setup"
 ./setup.sh $*
+
+
+echo "export JAVA_HOME=/opt/jdk1.6"           > /tmp/env
+echo "export MAVEN_HOME=/opt/apache-maven"    >> /tmp/env
+echo "PATH=$JAVA_HOME/bin:$MAVEN_HOME/bin:\$PATH"    >> /tmp/env
+echo "export HBASE_IT_WILLDIE_BOX=`echo $2 | cut -c 6-`"         >> /tmp/env
+echo "export HBASE_IT_WILLSURVIVE_BOX=`echo $3 | cut -c 6-`"    >> /tmp/env
+echo "export HBASE_IT_LATE_BOX=`echo $4 | cut -c 6-`"            >> /tmp/env
+
+scp /tmp/env $BOX1:
 
 echo "We don't need to set the sticky bits on dev-support firewall config here: we're root on aws"
 
