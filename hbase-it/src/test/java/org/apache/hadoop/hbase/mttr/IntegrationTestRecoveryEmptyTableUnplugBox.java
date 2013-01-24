@@ -8,7 +8,7 @@ import org.junit.experimental.categories.Category;
  *  ZK time + split time + assignment time. Here, the table is empty and there are just a
  *  small number of region, so we expect the recovery time to equals the ZK time.
  */
-@Category(IntegrationTests.class)
+/*@Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableUnplugBox
     extends AbstractIntegrationTestRecovery {
 
@@ -17,3 +17,4 @@ public class IntegrationTestRecoveryEmptyTableUnplugBox
     hcm.unplug(willDieBox);
   }
 }
+*/

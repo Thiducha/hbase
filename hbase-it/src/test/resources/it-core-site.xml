@@ -4,6 +4,11 @@
 <configuration>
 
   <property>
+    <name>hadoop.tmp.dir</name>
+    <value>${user.home}/tmp-recotest/data</value>
+  </property>
+
+  <property>
     <name>fs.default.name</name>
     <value>hdfs://192.168.1.14:9000</value>
     <final>true</final>

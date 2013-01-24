@@ -17,11 +17,10 @@ echo "preparing working data dir. If the tmp-recotest exists, we keep it, but we
 mkdir -p ~/tmp-recotest
 rm -rf ~/tmp-recotest/data
 rm -rf ~/tmp-recotest/hbase/logs/*
-mkdir ~/tmp-recotest/data
 
 echo "updating the local tmp-recotest with hdfs & hbase dirs content"
-rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude dev-support --exclude 'hbase-*'
-rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src'
+rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src'
+rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude target
 
 echo "preparing conf dirs"
 mkdir -p $CONF_DIR/conf-hadoop
@@ -35,20 +34,24 @@ cp $ORIG_CONF/it-hbase-site.xml $HBASE_REP/conf/hbase-site.xml
 echo ready - now copying temp-recotest to the first box
 #We copy to the fist box then from this one to the others for AWS like stuff, when we're going to a remote cluster
 ssh $1 "mkdir -p tmp-recotest"
-rsync -az --delete ~/tmp-recotest/* $1:tmp-recotest/
+rsync -az --delete ~/tmp-recotest/* $1:tmp-recotest
 
 
 for CBOX in $*; do
-  echo "connecting people - $1 and $CBOX"
-  ssh -A $1 "ssh -o StrictHostKeyChecking=no $CBOX 'echo ssh ok from $1 to $CBOX'"
+  echo "Doing a first ssh to the box to get it registered - $CBOX"
+  echo "Now doing ssh to ensure the boxes are recognized between themselves"
+  for CBOX2 in $*; do
+    ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $CBOX2 'echo ssh ok from $CBOX to $CBOX2'"
+  done
 done
-
 
 echo now copying the hbase and hdfs directories
 for CBOX in $*; do
   echo "copying from $1 to $CBOX"
   ssh $CBOX "mkdir -p tmp-recotest"
+  ssh $CBOX "mkdir -p tmp-recotest/data"
   ssh -A $1 "rsync -az --delete tmp-recotest/* $CBOX:tmp-recotest/"
+  rsync -az ~/.m2/* $CBOX:.m2
 done
 
 echo "done"

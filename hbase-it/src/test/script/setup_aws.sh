@@ -8,16 +8,12 @@ JAVAS=jdk1.6.0_38
 MAVEN=apache-maven-3.0.4-bin.tar.gz
 MAVENS=apache-maven-3.0.4
 
-BOX1=$1
+BOX1=root@$1
 
 echo "the $BOX1 will contain the hbase source code to run mvn it tests"
 
 for CBOX in $*; do
-  echo "Doing a first ssh to the box to get it registered - $CBOX"
-  echo "Now doing ssh to ensure the boxes are recognized between themselves - pipelening 'yes' does not work"
-  for CBOX2 in $*; do
-    ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $CBOX2 'echo ssh ok from $CBOX to $CBOX2'"
-  done
+  CBOX=root@$CBOX
 
   if ssh $CBOX "ls $JAVA" >/dev/null; then
     echo "it seems $JAVA is already installed"
@@ -32,31 +28,33 @@ for CBOX in $*; do
   ssh $CBOX "mkdir -p ~/.m2"
 done
 
-echo copying hbase src on box 1
+echo copying hbase src on $BOX1 - you will need to recompile to start the tests
 ssh $BOX1 "mkdir -p dev"
-rsync -az --delete ~/dev/hbase $BOX1:dev --exclude '.git'
+rsync -az --delete ~/dev/hbase $BOX1:dev --exclude '.git' --exclude target
 
-echo "We need the maven repo as well if we built hadoop"
-rsync -az --delete ~/.m2 root@ec2-54-242-182-117.compute-1.amazonaws.com:
+echo copying hadoop src on $BOX1
+rsync -az --delete ~/dev/hadoop-common $BOX1:dev --exclude '.git' --exclude target --exclude src
 
-echo installing maven on box1 - redhat does not have wget by default
+echo "We need the maven repo for hadoop as well if we built hadoop"
+ssh $BOX1 "mkdir -p .m2; mkdir -p .m2/repository; mkdir -p .m2/repository/org; mkdir -p .m2/repository/org/apache;"
+rsync -az ~/.m2/repository/org/apache/hadoop $BOX1:.m2/repository/org/apache
+
+echo installing maven on box1 - redhat does not have wg et by default
 scp ~/soft/$MAVEN $BOX1:
 ssh $BOX1 "tar xvf ~/$MAVEN"
 ssh $BOX1 "mv ~/$MAVENS /opt/apache-maven"
 
-echo "Now doing the global setup"
-./setup.sh $*
-
+echo "Now  doing the global setup"
 
 echo "export JAVA_HOME=/opt/jdk1.6"           > /tmp/env
 echo "export MAVEN_HOME=/opt/apache-maven"    >> /tmp/env
 echo "PATH=$JAVA_HOME/bin:$MAVEN_HOME/bin:\$PATH"    >> /tmp/env
-echo "export HBASE_IT_WILLDIE_BOX=`echo $2 | cut -c 6-`"         >> /tmp/env
-echo "export HBASE_IT_WILLSURVIVE_BOX=`echo $3 | cut -c 6-`"    >> /tmp/env
-echo "export HBASE_IT_LATE_BOX=`echo $4 | cut -c 6-`"            >> /tmp/env
+echo "export HBASE_IT_WILLDIE_BOX=$2"         >> /tmp/env
+echo "export HBASE_IT_WILLSURVIVE_BOX=$3"    >> /tmp/env
+echo "export HBASE_IT_LATE_BOX=$4"            >> /tmp/env
 
 scp /tmp/env $BOX1:
 
 echo "We don't need to set the sticky bits on dev-support firewall config here: we're root on aws"
 
-echo "we're done."
+echo "we're done. You must run the setup locally on $BOX1"

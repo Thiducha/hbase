@@ -4,7 +4,7 @@ package org.apache.hadoop.hbase.mttr;
 import org.apache.hadoop.hbase.ClusterManager;
 import org.apache.hadoop.hbase.IntegrationTests;
 import org.junit.experimental.categories.Category;
-
+                 /*
 @Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableManyRegionsCleanStopBox
     extends AbstractIntegrationTestRecovery {
@@ -18,3 +18,4 @@ public class IntegrationTestRecoveryEmptyTableManyRegionsCleanStopBox
     hcm.stop(ClusterManager.ServiceType.HBASE_REGIONSERVER, willDieBox);
   }
 }
+           */

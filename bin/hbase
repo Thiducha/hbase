@@ -143,15 +143,19 @@ add_maven_deps_to_classpath() {
   # Need to generate classpath from maven pom. This is costly so generate it
   # and cache it. Save the file into our target dir so a mvn clean will get
   # clean it up and force us create a new one.
-  # Add libs to CLASSPATH
-  for f in $HBASE_HOME/target/lib/*.jar; do
-    CLASSPATH=${CLASSPATH}:$f;
-  done
+  f="${HBASE_HOME}/target/cached_classpath.txt"
+  if [ ! -f "${f}" ]
+  then
+      echo "As this is a development environment, we need ${f} to be generated from maven (command: mvn compile)"
+      exit 1
+  fi
+  CLASSPATH=${CLASSPATH}:`cat "${f}"`
 }
 
 
 #Add the development env class path stuff
 if $in_dev_env; then
+  add_maven_main_classes_to_classpath
   add_maven_deps_to_classpath
 fi
 
@@ -175,6 +179,16 @@ done
 if [ "$HBASE_CLASSPATH" != "" ]; then
   CLASSPATH=${CLASSPATH}:${HBASE_CLASSPATH}
 fi
+
+add_maven_jar_to_classpath() {
+ # assumes all modules are named hbase-* in the top level directory
+  IFS=$ORIG_IFS
+  for module in `ls $HBASE_HOME | grep 'hbase-*'`
+  do
+    CLASSPATH=module/target/*.jar:$CLASSPATH
+  done
+}
+
 
 # default log directory & file
 if [ "$HBASE_LOG_DIR" = "" ]; then

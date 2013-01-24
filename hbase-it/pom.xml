@@ -111,18 +111,6 @@
               <outputFile>${project.build.directory}/../../target/cached_classpath.txt</outputFile>
             </configuration>
           </execution>
-          <execution>
-            <!-- generates the file that will be used by the bin/hbase script in the dev env -->
-            <id>copy-hbase-deps</id>
-            <phase>package</phase>
-            <goals>
-              <goal>copy-dependencies</goal>
-            </goals>
-            <configuration>
-              <outputDirectory>${project.build.directory}/../../target/lib</outputDirectory>
-            </configuration>
-          </execution>
-
         </executions>
       </plugin>
       <!--  Run integration tests with mvn verify -->

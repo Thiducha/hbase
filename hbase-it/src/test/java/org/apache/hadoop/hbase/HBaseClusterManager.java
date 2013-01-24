@@ -382,7 +382,7 @@ public class HBaseClusterManager extends ClusterManager {
 
   public void rmDataDir(String hostname) throws IOException {
     try {
-      exec(hostname, "rm -rf /tmp/*");
+      exec(hostname, "rm -rf ~/tmp-recotest/data/*");
     } catch (Throwable ignored) {
       // it fails when we cannot delete everything. Ignoring
     }
