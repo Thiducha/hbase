@@ -13,27 +13,27 @@ BOX1=root@$1
 echo "the $BOX1 will contain the hbase source code to run mvn it tests"
 
 for CBOX in $*; do
-  CBOX=root@$CBOX
+  RCBOX=root@$CBOX
 
-  if ssh $CBOX "ls $JAVA" >/dev/null; then
+  if ssh $RCBOX "ls $JAVA" >/dev/null 2>/dev/null; then
     echo "it seems $JAVA is already installed"
   else
     echo installing java from sun
-    scp ~/soft/$JAVA $CBOX:
-    ssh $CBOX "chmod oug+x $JAVA; yes | $JAVA"
-    ssh $CBOX "mv $JAVAS /opt/jdk1.6"
+    scp ~/soft/$JAVA $RCBOX:
+    ssh $RCBOX "chmod oug+x $JAVA; yes | ./$JAVA"
+    ssh $RCBOX "mv $JAVAS /opt/jdk1.6"
   fi
 
   echo creating maven repo
-  ssh $CBOX "mkdir -p ~/.m2"
+  ssh $RCBOX "mkdir -p ~/.m2"
 done
 
-echo copying hbase src on $BOX1 - you will need to recompile to start the tests
+echo copying hbase src on $BOX1 - you will need to recompile to start the tests anf get the maven repo clean
 ssh $BOX1 "mkdir -p dev"
 rsync -az --delete ~/dev/hbase $BOX1:dev --exclude '.git' --exclude target
 
 echo copying hadoop src on $BOX1
-rsync -az --delete ~/dev/hadoop-common $BOX1:dev --exclude '.git' --exclude target --exclude src
+rsync -az --delete ~/dev/hadoop-common $BOX1:dev --exclude '.git' --exclude classes --exclude src
 
 echo "We need the maven repo for hadoop as well if we built hadoop"
 ssh $BOX1 "mkdir -p .m2; mkdir -p .m2/repository; mkdir -p .m2/repository/org; mkdir -p .m2/repository/org/apache;"

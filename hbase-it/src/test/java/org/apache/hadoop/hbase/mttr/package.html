@@ -38,3 +38,33 @@ So to use the mttr test you must:
 mvn clean package test verify -Dit.test="IntegrationTestRecoveryEmptyTable*" -Dtest=nonono -pl hbase-it -Dhadoop.profile=2.0
 
  If you modify just the tests, you don't have to rerun the previous steps (i.e. copying the files on all targets).
+
+
+ ********************** Example
+
+Full example for AWS, from scratch;
+create a dir tu put the binaries for java and maven ~/soft
+get java 1.6u38 from sun, put the bin in ~/soft
+get maven 3.0.4, put the bin in ~/soft
+
+create a dir for the sources: ~/dev
+clone hadoop-common in ~/dev/hadoop-common
+install it (mvn install -DskipTests -Pdist with hadoop 2)
+
+clone hbase in ~/dev/common
+install it with hadoop (mvn install -DskipTests -Dhadoop.profile=2.0 -Dhadoop.version=2.0.3-SNAPSHOT
+
+
+create the aws cluster (4 nodes)
+add the ssh-key in your local ssh-agent
+run setup_aws.sh with in parameters the list of the aws node
+
+
+ssh -A to the first aws node
+source the env: source ~/.env
+install HBase (mvn install -DskipTests -Phadoop.profile=2.0 -Dhadoop.version=2.0.3-SNAPSHOT)
+
+run setup.sh from hbase-it/src/test/script/src to initiate all the cluster
+execute the integration tests  (mvn verify -pl hbase-it -Dit.test=IntegrationTestRecoveryEmptyTableKill15 -Dhadoop.profile=2.0 -Dhadoop.version=2.0.3-SNAPSHOT)
+
+

@@ -12,15 +12,14 @@ HBASE_REP=~/tmp-recotest/hbase
 HDFS_REP=~/tmp-recotest/hadoop-common
 CONF_DIR=~/tmp-recotest/conf
 
-
 echo "preparing working data dir. If the tmp-recotest exists, we keep it, but we delete the data dir"
 mkdir -p ~/tmp-recotest
 rm -rf ~/tmp-recotest/data
 rm -rf ~/tmp-recotest/hbase/logs/*
 
 echo "updating the local tmp-recotest with hdfs & hbase dirs content"
-rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src'
-rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude target
+rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude classes --exclude test-classes
+rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude classes --exclude test-classes
 
 echo "preparing conf dirs"
 mkdir -p $CONF_DIR/conf-hadoop
@@ -43,13 +42,14 @@ for CBOX in $*; do
   for CBOX2 in $*; do
     ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $CBOX2 'echo ssh ok from $CBOX to $CBOX2'"
   done
+  ssh -A -o StrictHostKeyChecking=no 127.0.0.1
 done
 
 echo now copying the hbase and hdfs directories
 for CBOX in $*; do
   echo "copying from $1 to $CBOX"
   ssh $CBOX "mkdir -p tmp-recotest"
-  ssh $CBOX "mkdir -p tmp-recotest/data"
+  ssh $CBOX "rm -rf tmp-recotest/data"
   ssh -A $1 "rsync -az --delete tmp-recotest/* $CBOX:tmp-recotest/"
   rsync -az ~/.m2/* $CBOX:.m2
 done
