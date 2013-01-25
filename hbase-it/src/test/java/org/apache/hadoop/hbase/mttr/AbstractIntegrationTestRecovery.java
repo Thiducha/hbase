@@ -64,14 +64,10 @@ import java.util.List;
  */
 
 public abstract class AbstractIntegrationTestRecovery {
-  // todo: take this from something else. May be env variable?
-  protected String mainBox = "127.0.0.1";
-  protected String willDieBox = System.getenv("HBASE_IT_WILLDIE_BOX") != null ?
-      System.getenv("HBASE_IT_WILLDIE_BOX") : "192.168.1.13";
-  protected String willSurviveBox = System.getenv("HBASE_IT_WILLSURVIVE_BOX") != null ?
-      System.getenv("HBASE_IT_WILLSURVIVE_BOX") : "192.168.1.12";
-  protected String lateBox = System.getenv("HBASE_IT_LATE_BOX") != null ?
-      System.getenv("HBASE_IT_LATE_BOX") : "192.168.1.15";
+  protected String mainBox = System.getenv("HBASE_IT_MAIN_BOX");
+  protected String willDieBox = System.getenv("HBASE_IT_WILLDIE_BOX");
+  protected String willSurviveBox = System.getenv("HBASE_IT_WILLSURVIVE_BOX");
+  protected String lateBox = System.getenv("HBASE_IT_LATE_BOX");
 
   protected static final Log LOG
       = LogFactory.getLog(AbstractIntegrationTestRecovery.class);

@@ -39,21 +39,24 @@ echo "We need the maven repo for hadoop as well if we built hadoop"
 ssh $BOX1 "mkdir -p .m2; mkdir -p .m2/repository; mkdir -p .m2/repository/org; mkdir -p .m2/repository/org/apache;"
 rsync -az ~/.m2/repository/org/apache/hadoop $BOX1:.m2/repository/org/apache
 
-echo installing maven on box1 - redhat does not have wg et by default
+echo installing maven on box1 - redhat does not have wget by default
 scp ~/soft/$MAVEN $BOX1:
 ssh $BOX1 "tar xvf ~/$MAVEN"
 ssh $BOX1 "mv ~/$MAVENS /opt/apache-maven"
 
 echo "Now  doing the global setup"
 
-echo "export JAVA_HOME=/opt/jdk1.6"           > /tmp/env
-echo "export MAVEN_HOME=/opt/apache-maven"    >> /tmp/env
-echo "PATH=$JAVA_HOME/bin:$MAVEN_HOME/bin:\$PATH"    >> /tmp/env
-echo "export HBASE_IT_WILLDIE_BOX=$2"         >> /tmp/env
-echo "export HBASE_IT_WILLSURVIVE_BOX=$3"    >> /tmp/env
-echo "export HBASE_IT_LATE_BOX=$4"            >> /tmp/env
+echo "export JAVA_HOME=/opt/jdk1.6"          > /tmp/env.tosource
+echo "export MAVEN_HOME=/opt/apache-maven"   >> /tmp/env.tosource
+echo "PATH=$JAVA_HOME/bin:$MAVEN_HOME/bin:$PATH"    >> /tmp/env.tosource
+echo "export HBASE_IT_MAIN_BOX=$1"           >> /tmp/env.tosource
+echo "export HBASE_IT_WILLDIE_BOX=$2"        >> /tmp/env.tosource
+echo "export HBASE_IT_WILLSURVIVE_BOX=$3"    >> /tmp/env.tosource
+echo "export HBASE_IT_LATE_BOX=$4"           >> /tmp/env.tosource
 
-scp /tmp/env $BOX1:
+for CBOX in $*; do
+  scp /tmp/env $CBOX:
+done
 
 echo "We don't need to set the sticky bits on dev-support firewall config here: we're root on aws"
 

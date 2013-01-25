@@ -54,4 +54,11 @@ for CBOX in $*; do
   rsync -az ~/.m2/* $CBOX:.m2
 done
 
+// echo "export HBASE_IT_MAIN_BOX=$1"            > /tmp/local.env.tosource
+echo "export HBASE_IT_WILLDIE_BOX=$1"        > /tmp/local.env.tosource
+echo "export HBASE_IT_WILLSURVIVE_BOX=$2"    >> /tmp/local.env.tosource
+echo "export HBASE_IT_LATE_BOX=$3"           >> /tmp/local.env.tosource
+
+source /tmp/local.env.tosource
+
 echo "done"

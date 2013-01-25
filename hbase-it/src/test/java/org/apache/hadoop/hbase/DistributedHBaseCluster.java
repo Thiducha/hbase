@@ -79,6 +79,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
 
   /**
    * Returns a ClusterStatus for this HBase cluster
+   *
    * @throws IOException
    */
   @Override
@@ -92,14 +93,14 @@ public class DistributedHBaseCluster extends HBaseCluster {
   }
 
   @Override
-  public synchronized  void close() throws IOException {
+  public synchronized void close() throws IOException {
     if (this.admin != null) {
       admin.close();
     }
   }
 
   public synchronized HBaseAdmin getAdmin() throws IOException {
-    if (admin ==null){
+    if (admin == null) {
       admin = new HBaseAdmin(conf);
     }
     return admin;
@@ -139,7 +140,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
   }
 
   private void waitForServiceToStop(ServiceType service, ServerName serverName, long timeout)
-    throws IOException {
+      throws IOException {
     LOG.info("Waiting service:" + service + " to stop: " + serverName.getServerName());
     long start = System.currentTimeMillis();
 
@@ -218,9 +219,9 @@ public class DistributedHBaseCluster extends HBaseCluster {
   }
 
   public void waitForDatanodesRegistered(int minDatanodes) throws Exception {
-    DistributedFileSystem fs = (DistributedFileSystem)FileSystem.get(conf) ;
-    while (fs.getDataNodeStats().length <  minDatanodes){
-       Thread.sleep(1000);
+    DistributedFileSystem fs = (DistributedFileSystem) FileSystem.get(conf);
+    while (fs.getDataNodeStats().length < minDatanodes) {
+      Thread.sleep(1000);
     }
   }
 
@@ -229,12 +230,12 @@ public class DistributedHBaseCluster extends HBaseCluster {
     do {
       try {
         DistributedFileSystem fs = (DistributedFileSystem) FileSystem.get(conf);
-        ok = (fs.getContentSummary(new Path( "/")) != null);
+        ok = (fs.getContentSummary(new Path("/")) != null);
       } catch (IOException ignored) {
         Thread.sleep(1000);
       }
 
-    }while (!ok);
+    } while (!ok);
   }
 
   @Override

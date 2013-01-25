@@ -10,7 +10,7 @@
 
   <property>
     <name>hbase.zookeeper.quorum</name>
-    <value>192.168.1.14</value>
+    <value>HBASE_IT_MAIN_BOX</value>
   </property>
 
   <property>
@@ -25,7 +25,7 @@
 
   <property>
     <name>hbase.rootdir</name>
-    <value>hdfs://192.168.1.14:9000/hbase</value>
+    <value>hdfs://HBASE_IT_MAIN_BOX:9000/hbase</value>
   </property>
 
   <property>
