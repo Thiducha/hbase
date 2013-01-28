@@ -17,10 +17,10 @@ for CBOX in $*; do
   echo "Doing a first ssh to the box to get it registered - $CBOX"
   echo "Now doing ssh to ensure the boxes are recognized between themselves"
   for CBOX2 in $*; do
-    ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $CBOX2 'echo ssh ok from $CBOX to $CBOX2'"
+    ssh -A -o StrictHostKeyChecking=no $CBOX "ssh -o StrictHostKeyChecking=no $CBOX2 'echo ssh ok from $CBOX to $CBOX2'"
   done
   ssh -A -o StrictHostKeyChecking=no 127.0.0.1 'echo 127.0.0.1 ssh ok'
-  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $HBASE_IT_MAIN_BOX 'echo ssh ok from $CBOX to $HBASE_IT_MAIN_BOX'"
+  ssh -A -o StrictHostKeyChecking=no $CBOX "ssh -o StrictHostKeyChecking=no $HBASE_IT_MAIN_BOX 'echo ssh ok from $CBOX to $HBASE_IT_MAIN_BOX'"
 done
 
 echo "preparing working data dir. If the tmp-recotest exists, we keep it, but we delete the data dir"
