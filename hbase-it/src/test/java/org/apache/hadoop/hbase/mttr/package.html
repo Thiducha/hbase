@@ -65,6 +65,7 @@ source the env: source ~/.env
 install HBase (mvn install -DskipTests -Phadoop.profile=2.0 -Dhadoop.version=2.0.3-SNAPSHOT)
 
 run setup.sh from hbase-it/src/test/script/src to initiate all the cluster
+initiale the env in the shell used for maven:    source ~/tmp-recotest/local.env.tosource
 execute the integration tests  (mvn verify -pl hbase-it -Dit.test=IntegrationTestRecoveryEmptyTableKill15 -Dhadoop.profile=2.0 -Dhadoop.version=2.0.3-SNAPSHOT)
 
 

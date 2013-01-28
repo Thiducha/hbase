@@ -95,6 +95,9 @@ public abstract class AbstractIntegrationTestRecovery {
     File case2 = new File("hbase-it" + File.separator + "src" + File.separator +
         "test" + File.separator + "resources" + File.separator + file);
 
+   case1 = new File(System.getenv("HOME") + File.separator + "tmp-recotest" + File.separator + "hbase" +
+        File.separator + "conf"  + File.separator + file);
+
     if (case1.exists() && case1.canRead()) {
       return case1.toURI().toURL();
     }
@@ -113,9 +116,8 @@ public abstract class AbstractIntegrationTestRecovery {
     Configuration c = new Configuration();
     c.clear();
 
-    c.addResource(getConfFile("it-core-site.xml"));
-    c.addResource(getConfFile("it-hdfs-site.xml"));
-    c.addResource(getConfFile("it-hbase-site.xml"));
+    c.addResource(getConfFile("core-site.xml"));
+    c.addResource(getConfFile("hbase-site.xml"));
 
     Assert.assertTrue(c.getBoolean("hbase.cluster.distributed", false));
 
@@ -186,12 +188,15 @@ public abstract class AbstractIntegrationTestRecovery {
 
     hcm.start(ClusterManager.ServiceType.HADOOP_NAMENODE, mainBox);
 
+    Thread.sleep(30000);
+    //dhc.waitForNamenodeAvailable();
+
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willDieBox);
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willSurviveBox);
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, mainBox);
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, lateBox);
 
-    dhc.waitForNamenodeAvailable();
+
     dhc.waitForDatanodesRegistered(4);
 
 

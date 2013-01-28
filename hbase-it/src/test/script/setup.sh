@@ -23,11 +23,15 @@ rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest --exclude '.git' --exclude 'sr
 
 echo "preparing conf dirs"
 mkdir -p $CONF_DIR/conf-hadoop
-cp $ORIG_CONF/it-core-site.xml $CONF_DIR/conf-hadoop/core-site.xml
-cp $ORIG_CONF/it-hdfs-site.xml $CONF_DIR/conf-hadoop/core-hdfs.xml
 
-cp $ORIG_CONF/it-core-site.xml $HBASE_REP/conf/core-site.xml
-cp $ORIG_CONF/it-hbase-site.xml $HBASE_REP/conf/hbase-site.xml
+export HBASE_IT_MAIN_BOX=`hostname`
+echo The main box will be $HBASE_IT_MAIN_BOX - this named must be resolvable from all other boxes
+
+sed 's/HBASE_IT_MAIN_BOX/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/it-core-site.xml >  $CONF_DIR/conf-hadoop/core-site.xml
+sed 's/HBASE_IT_MAIN_BOX/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/it-core-site.xml $ORIG_CONF/it-hdfs-site.xml > $CONF_DIR/conf-hadoop/core-hdfs.xml
+
+sed 's/HBASE_IT_MAIN_BOX/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/it-core-site.xml  >  $HBASE_REP/conf/core-site.xml
+sed 's/HBASE_IT_MAIN_BOX/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/it-hbase-site.xml > $HBASE_REP/conf/hbase-site.xml
 
 
 echo ready - now copying temp-recotest to the first box
@@ -42,7 +46,8 @@ for CBOX in $*; do
   for CBOX2 in $*; do
     ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $CBOX2 'echo ssh ok from $CBOX to $CBOX2'"
   done
-  ssh -A -o StrictHostKeyChecking=no 127.0.0.1
+  ssh -A -o StrictHostKeyChecking=no 127.0.0.1 'echo 127.0.0.1 ssh ok'
+  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $HBASE_IT_MAIN_BOX 'echo ssh ok from $CBOX to $HBASE_IT_MAIN_BOX'"
 done
 
 echo now copying the hbase and hdfs directories
@@ -54,11 +59,14 @@ for CBOX in $*; do
   rsync -az ~/.m2/* $CBOX:.m2
 done
 
-// echo "export HBASE_IT_MAIN_BOX=$1"            > /tmp/local.env.tosource
-echo "export HBASE_IT_WILLDIE_BOX=$1"        > /tmp/local.env.tosource
-echo "export HBASE_IT_WILLSURVIVE_BOX=$2"    >> /tmp/local.env.tosource
-echo "export HBASE_IT_LATE_BOX=$3"           >> /tmp/local.env.tosource
+echo "export HBASE_IT_MAIN_BOX=$HBASE_IT_MAIN_BOX" > ~/tmp-recotest/local.env.tosource
+echo "export HBASE_IT_WILLDIE_BOX=$1"        >> ~/tmp-recotest/local.env.tosource
+echo "export HBASE_IT_WILLSURVIVE_BOX=$2"    >> ~/tmp-recotest/local.env.tosource
+echo "export HBASE_IT_LATE_BOX=$3"           >> ~/tmp-recotest/local.env.tosource
 
-source /tmp/local.env.tosource
+export HBASE_IT_MAIN_BOX=$HBASE_IT_MAIN_BOX
+export HBASE_IT_WILLDIE_BOX=$1
+export HBASE_IT_WILLSURVIVE_BOX=$2
+export HBASE_IT_LATE_BOX=$3
 
 echo "done"
