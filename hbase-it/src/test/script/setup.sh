@@ -12,6 +12,17 @@ HBASE_REP=~/tmp-recotest/hbase
 HDFS_REP=~/tmp-recotest/hadoop-common
 CONF_DIR=~/tmp-recotest/conf
 
+
+for CBOX in $*; do
+  echo "Doing a first ssh to the box to get it registered - $CBOX"
+  echo "Now doing ssh to ensure the boxes are recognized between themselves"
+  for CBOX2 in $*; do
+    ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $CBOX2 'echo ssh ok from $CBOX to $CBOX2'"
+  done
+  ssh -A -o StrictHostKeyChecking=no 127.0.0.1 'echo 127.0.0.1 ssh ok'
+  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $HBASE_IT_MAIN_BOX 'echo ssh ok from $CBOX to $HBASE_IT_MAIN_BOX'"
+done
+
 echo "preparing working data dir. If the tmp-recotest exists, we keep it, but we delete the data dir"
 mkdir -p ~/tmp-recotest
 rm -rf ~/tmp-recotest/data
@@ -40,21 +51,13 @@ ssh $1 "mkdir -p tmp-recotest"
 rsync -az --delete ~/tmp-recotest/* $1:tmp-recotest
 
 
-for CBOX in $*; do
-  echo "Doing a first ssh to the box to get it registered - $CBOX"
-  echo "Now doing ssh to ensure the boxes are recognized between themselves"
-  for CBOX2 in $*; do
-    ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $CBOX2 'echo ssh ok from $CBOX to $CBOX2'"
-  done
-  ssh -A -o StrictHostKeyChecking=no 127.0.0.1 'echo 127.0.0.1 ssh ok'
-  ssh -A $CBOX "ssh -o StrictHostKeyChecking=no $HBASE_IT_MAIN_BOX 'echo ssh ok from $CBOX to $HBASE_IT_MAIN_BOX'"
-done
+
 
 echo now copying the hbase and hdfs directories
 for CBOX in $*; do
   echo "copying from $1 to $CBOX"
-  ssh $CBOX "mkdir -p tmp-recotest"
-  ssh $CBOX "rm -rf tmp-recotest/data"
+  ssh -o StrictHostKeyChecking=no $CBOX "mkdir -p tmp-recotest"
+  ssh -o StrictHostKeyChecking=no $CBOX "rm -rf tmp-recotest/data"
   ssh -A $1 "rsync -az --delete tmp-recotest/* $CBOX:tmp-recotest/"
   rsync -az ~/.m2/* $CBOX:.m2
 done
