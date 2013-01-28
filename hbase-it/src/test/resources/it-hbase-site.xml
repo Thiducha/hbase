@@ -15,7 +15,7 @@
 
   <property>
     <name>hbase.zookeeper.property.dataDir</name>
-    <value>/tmp/zookeeper</value>
+    <value>${user.home}/tmp-recotest/data/zookeeper</value>
   </property>
 
   <property>

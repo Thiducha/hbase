@@ -54,6 +54,7 @@ echo "export HBASE_IT_MAIN_BOX=$1"           >> /tmp/env.tosource
 echo "export HBASE_IT_WILLDIE_BOX=$2"        >> /tmp/env.tosource
 echo "export HBASE_IT_WILLSURVIVE_BOX=$3"    >> /tmp/env.tosource
 echo "export HBASE_IT_LATE_BOX=$4"           >> /tmp/env.tosource
+echo "export HBASE_SSH_OPTS='-A'"             >> /tmp/env.tosource
 
 for CBOX in $*; do
   ssh root@$CBOX "rm -rf tmp-recotest; mkdir tmp-recotest"
