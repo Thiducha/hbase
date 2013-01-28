@@ -59,7 +59,7 @@ echo "export HBASE_SSH_OPTS='-A'"             >> /tmp/env.tosource
 for CBOX in $*; do
   ssh root@$CBOX "rm -rf tmp-recotest; mkdir tmp-recotest"
   scp /tmp/env.tosource root@$CBOX:tmp-recotest/env.tosource
-  ssh root@$CBOX "cat tmp-recotest/env.tosource >> .basrc"
+  ssh root@$CBOX "cat tmp-recotest/env.tosource >> .bashrc"
 done
 
 echo "We don't need to set the sticky bits on dev-support firewall config here: we're root on aws"
