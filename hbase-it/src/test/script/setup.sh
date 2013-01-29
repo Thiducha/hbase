@@ -12,12 +12,17 @@ HBASE_REP=~/tmp-recotest/hbase
 HDFS_REP=~/tmp-recotest/hadoop-common
 CONF_DIR=~/tmp-recotest/conf
 
+HOST_NAME=`hostname`
+export HBASE_IT_MAIN_BOX=$HOST_NAME
+
+ssh -o StrictHostKeyChecking=no 127.0.0.1 'echo ssh 127.0.0.1 ok'
+ssh -o StrictHostKeyChecking=no $HOST_NAME 'echo ssh $HOST_NAME ok'
 
 
 for CBOX in $*; do
   echo "Doing a first ssh to the box to get it registered - $CBOX"
   echo "Now doing ssh to ensure the boxes are recognized between themselves"
-  HOST_NAME=`hostname`
+
   for CBOX2 in $*; do
     ssh -A -o StrictHostKeyChecking=no $CBOX "ssh -o StrictHostKeyChecking=no $CBOX2 'echo ssh ok from $CBOX to $CBOX2'"
     ssh -A -o StrictHostKeyChecking=no $CBOX "ssh -o StrictHostKeyChecking=no $HOST_NAME 'echo ssh ok from $CBOX to $HOST_NAME'"
@@ -38,7 +43,7 @@ rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest --exclude '.git' --exclude 'sr
 echo "preparing conf dirs"
 mkdir -p $CONF_DIR/conf-hadoop
 
-export HBASE_IT_MAIN_BOX=`hostname`
+
 echo The main box will be $HBASE_IT_MAIN_BOX - this named must be resolvable from all other boxes
 
 sed 's/HBASE_IT_MAIN_BOX/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/it-core-site.xml >  $CONF_DIR/conf-hadoop/core-site.xml

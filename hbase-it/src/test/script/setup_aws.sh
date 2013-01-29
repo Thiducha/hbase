@@ -65,4 +65,3 @@ done
 echo "We don't need to set the sticky bits on dev-support firewall config here: we're root on aws"
 
 echo "we're done. You must now run the setup locally on $BOX1 - command: ssh -A $BOX1"
-echo "After the ssh, don't forget to source the env: source ~/tmp-recotest/env.tosource"
