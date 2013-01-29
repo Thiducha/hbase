@@ -95,8 +95,8 @@ public abstract class AbstractIntegrationTestRecovery {
     File case2 = new File("hbase-it" + File.separator + "src" + File.separator +
         "test" + File.separator + "resources" + File.separator + file);
 
-   case1 = new File(System.getenv("HOME") + File.separator + "tmp-recotest" + File.separator + "hbase" +
-        File.separator + "conf"  + File.separator + file);
+    case1 = new File(System.getenv("HOME") + File.separator + "tmp-recotest" + File.separator + "hbase" +
+        File.separator + "conf" + File.separator + file);
 
     if (case1.exists() && case1.canRead()) {
       return case1.toURI().toURL();
@@ -297,6 +297,8 @@ public abstract class AbstractIntegrationTestRecovery {
     System.out.println("toMove=" + toMove + ", moved=" + moved);
     // todo: it differs sometimes, it should not!
 
+    writeDataToWal();
+
     // Now killing
     final long startTime = System.currentTimeMillis();
     final long failureDetectedTime;
@@ -321,12 +323,12 @@ public abstract class AbstractIntegrationTestRecovery {
             if (!dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
               ok = false;
             }
-          }catch (IOException e){
+          } catch (IOException e) {
             // It seems we can receive exceptions if the regionserver is dead...
             ok = false;
           }
         }
-      }while (!ok);
+      } while (!ok);
 
       failureFixedTime = System.currentTimeMillis();
 
@@ -336,6 +338,10 @@ public abstract class AbstractIntegrationTestRecovery {
     }
     System.out.println("Detection took: " + (failureDetectedTime - startTime));
     System.out.println("Failure fix took: " + (failureFixedTime - failureDetectedTime));
+  }
+
+  protected void writeDataToWal() throws IOException {
+    // do Nothing by default
   }
 
   protected abstract void kill(String willDieBox) throws Exception;

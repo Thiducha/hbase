@@ -25,25 +25,33 @@ for CBOX in $*; do
   fi
 
   echo creating maven repo and tmp-recotest dir
-  ssh $RCBOX "mkdir -p ~/.m2"
-  ssh $RCBOX "mkdir -p ~/tmp-recotest"
+  ssh $RCBOX "mkdir -p /grid/0/.m2"
+  ssh $RCBOX "mkdir -p /grid/0/tmp-recotest"
+  ssh $RCBOX "ln -s /grid/0/.m2 .m2"
+  ssh $RCBOX "ln -s /grid/0/tmp-recotest tmp-recotest"
 done
 
 echo copying hbase src on $BOX1 - you will need to recompile to start the tests and get the maven repo clean
+EXCLUDE="--exclude '.idea' --exclude generated-sources --exclude '.git' --exclude '*-sources.jar' --exclude '*-javadoc.jar' --exclude '*.html'"
 ssh $BOX1 "mkdir -p dev"
-rsync -az --delete ~/dev/hbase $BOX1:dev --exclude '.git' --exclude target
+rm -rf ~/dev/hbase/logs/*
+rsync -az --delete ~/dev/hbase $BOX1:dev --exclude target $EXCLUDE
 
-echo copying hadoop src on $BOX1
-rsync -az --delete ~/dev/hadoop-common $BOX1:dev --exclude '.git' --exclude classes --exclude src
+echo copying hadoop src on $BOX1 - we want
+rsync -az --delete ~/dev/hadoop-common $BOX1:dev --exclude classes --exclude src  $EXCLUDE --exclude "*.java"
 
 echo "We need the maven repo for hadoop as well if we built hadoop"
 ssh $BOX1 "mkdir -p .m2; mkdir -p .m2/repository; mkdir -p .m2/repository/org; mkdir -p .m2/repository/org/apache;"
 rsync -az ~/.m2/repository/org/apache/hadoop $BOX1:.m2/repository/org/apache
 
 echo installing maven on box1 - redhat does not have wget by default
-scp ~/soft/$MAVEN $BOX1:
-ssh $BOX1 "tar xvf ~/$MAVEN"
-ssh $BOX1 "mv ~/$MAVENS /opt/apache-maven"
+if ssh -o StrictHostKeyChecking=no $BOX1 "ls $MAVEN" >/dev/null 2>/dev/null; then
+  echo "it seems $MAVEN is already installed"
+else
+  scp ~/soft/$MAVEN $BOX1:
+  ssh $BOX1 "tar xvf ~/$MAVEN"
+  ssh $BOX1 "mv ~/$MAVENS /opt/apache-maven"
+fi
 
 echo "Now  doing the global setup"
 
@@ -57,7 +65,6 @@ echo "export HBASE_IT_LATE_BOX=$4"           >> /tmp/env.tosource
 echo "export HBASE_SSH_OPTS='-A'"             >> /tmp/env.tosource
 
 for CBOX in $*; do
-  ssh root@$CBOX "rm -rf tmp-recotest; mkdir tmp-recotest"
   scp /tmp/env.tosource root@$CBOX:tmp-recotest/env.tosource
   ssh root@$CBOX "cat tmp-recotest/env.tosource >> .bashrc"
 done

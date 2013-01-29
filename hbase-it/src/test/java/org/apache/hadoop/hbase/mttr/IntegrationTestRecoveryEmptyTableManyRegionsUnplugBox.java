@@ -6,7 +6,7 @@ import org.junit.experimental.categories.Category;
 /**
  * This test is not useful as it is: we don't have much effect compared to a simple stop.
  */
-/*@Category(IntegrationTests.class)
+@Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableManyRegionsUnplugBox
     extends AbstractIntegrationTestRecovery {
 
@@ -19,4 +19,3 @@ public class IntegrationTestRecoveryEmptyTableManyRegionsUnplugBox
     hcm.unplug(willDieBox);
   }
 }
-    */

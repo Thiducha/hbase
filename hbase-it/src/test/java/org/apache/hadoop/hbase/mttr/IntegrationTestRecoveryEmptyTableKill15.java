@@ -12,6 +12,7 @@ import org.junit.experimental.categories.Category;
 @Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableKill15 extends AbstractIntegrationTestRecovery {
 
+
   @Override
   protected void kill(String willDieBox) throws Exception {
     hcm.signal(ClusterManager.ServiceType.HBASE_REGIONSERVER, "TERM", willDieBox);

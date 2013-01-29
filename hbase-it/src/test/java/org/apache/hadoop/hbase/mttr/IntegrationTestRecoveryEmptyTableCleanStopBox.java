@@ -8,7 +8,7 @@ import org.junit.experimental.categories.Category;
 /**
  * Clean stop: MTTR should be minimal, as a clean stop includes closing properly the regions.
  */
-/*@Category(IntegrationTests.class)
+@Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableCleanStopBox
     extends AbstractIntegrationTestRecovery {
 
@@ -17,4 +17,3 @@ public class IntegrationTestRecoveryEmptyTableCleanStopBox
     hcm.stop(ClusterManager.ServiceType.HBASE_REGIONSERVER, willDieBox);
   }
 }
-  */

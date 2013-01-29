@@ -10,7 +10,7 @@ import org.junit.experimental.categories.Category;
  *  the scripts include a mechanism to cleanup the ZK status when the regionserver or the master
  *  dies. This allows an immediate recovery.
  */
-/*@Category(IntegrationTests.class)
+@Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableKill9
     extends AbstractIntegrationTestRecovery {
 
@@ -19,4 +19,3 @@ public class IntegrationTestRecoveryEmptyTableKill9
     hcm.signal(ClusterManager.ServiceType.HBASE_REGIONSERVER, "KILL", willDieBox);
   }
 }
-     */

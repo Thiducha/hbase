@@ -37,8 +37,8 @@ rm -rf ~/tmp-recotest/data
 rm -rf ~/tmp-recotest/hbase/logs/*
 
 echo "updating the local tmp-recotest with hdfs & hbase dirs content"
-rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude classes --exclude test-classes
-rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude classes --exclude test-classes
+rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude classes --exclude test-classes --exclude 'hbase/hbase-*' --exclude '*.jar' --exclude '.idea'
+rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude classes --exclude test-classes  --exclude '*.html' --exclude '*-sources.jar'  --exclude '.idea'
 
 echo "preparing conf dirs"
 mkdir -p $CONF_DIR/conf-hadoop
@@ -53,21 +53,28 @@ sed 's/HBASE_IT_MAIN_BOX/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/it-core-site.xml  > 
 sed 's/HBASE_IT_MAIN_BOX/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/it-hbase-site.xml > $HBASE_REP/conf/hbase-site.xml
 
 
-echo ready - now copying temp-recotest to the first box
-#We copy to the fist box then from this one to the others for AWS like stuff, when we're going to a remote cluster
-ssh $1 "mkdir -p tmp-recotest"
-rsync -az --delete ~/tmp-recotest/* $1:tmp-recotest
+echo "Copying the libs we need locally"
+mkdir -p ~/tmp-recotest/hbase
+mkdir -p ~/tmp-recotest/hbase/lib
+
+for LIB in `cat ~/dev/hbase/target/cached_classpath.txt | tr ':' '\n' `
+ do
+ cp $LIB ~/tmp-recotest/hbase/lib
+done
 
 
+echo "$HOME/tmp-recotest/hbase/lib/*.jar" >  ~/tmp-recotest/hbase/target/cached_classpath.txt
+
+find . -name "*.jar" | xargs -n 1 -i  mv {}   ~/tmp-recotest/hadoop-common/lib/
 
 
-echo now copying the hbase and hdfs directories
+echo now copying tmp dirs to all boxes
 for CBOX in $*; do
   echo "copying from $1 to $CBOX"
   ssh -o StrictHostKeyChecking=no $CBOX "mkdir -p tmp-recotest"
   ssh -o StrictHostKeyChecking=no $CBOX "rm -rf tmp-recotest/data"
-  ssh -A $1 "rsync -az --delete tmp-recotest/* $CBOX:tmp-recotest/"
-  rsync -az ~/.m2/* $CBOX:.m2
+  rsync -az --delete ~/tmp-recotest/* $CBOX:tmp-recotest/
+  #rsync -az ~/.m2/* $CBOX:.m2
 done
 
 echo "export HBASE_IT_MAIN_BOX=$HBASE_IT_MAIN_BOX" > ~/tmp-recotest/local.env.tosource
