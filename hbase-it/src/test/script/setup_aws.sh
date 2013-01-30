@@ -37,7 +37,7 @@ ssh $BOX1 "mkdir -p dev"
 rm -rf ~/dev/hbase/logs/*
 rsync -az --delete ~/dev/hbase $BOX1:dev --exclude target $EXCLUDE
 
-echo copying hadoop src on $BOX1 - we want
+echo copying hadoop src on $BOX1 - we want only the files needed to start it, we won't rebuild it.
 rsync -az --delete ~/dev/hadoop-common $BOX1:dev --exclude classes --exclude src  $EXCLUDE --exclude "*.java"
 
 echo "We need the maven repo for hadoop as well if we built hadoop"
