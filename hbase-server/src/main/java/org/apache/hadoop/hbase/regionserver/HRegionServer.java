@@ -150,6 +150,8 @@ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServic
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.GetRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.GetResponse;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiGetRequest;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiGetResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate;
@@ -221,7 +223,7 @@ import com.google.protobuf.ServiceException;
  */
 @InterfaceAudience.Private
 @SuppressWarnings("deprecation")
-public class  HRegionServer implements ClientProtocol,
+public class HRegionServer implements ClientProtocol,
     AdminProtocol, Runnable, RegionServerServices, HBaseRPCErrorHandler, LastSequenceId {
 
   public static final Log LOG = LogFactory.getLog(HRegionServer.class);
@@ -342,13 +344,6 @@ public class  HRegionServer implements ClientProtocol,
   /** region server configuration name */
   public static final String REGIONSERVER_CONF = "regionserver_conf";
 
-  /*
-   * Space is reserved in HRS constructor and then released when aborting to
-   * recover from an OOME. See HBASE-706. TODO: Make this percentage of the heap
-   * or a minimum.
-   */
-  private final LinkedList<byte[]> reservedSpace = new LinkedList<byte[]>();
-
   private MetricsRegionServer metricsRegionServer;
 
   /*
@@ -421,11 +416,6 @@ public class  HRegionServer implements ClientProtocol,
   private MovedRegionsCleaner movedRegionsCleaner;
 
   /**
-   * The lease timeout period for row locks (milliseconds).
-   */
-  private final int rowLockLeaseTimeoutPeriod;
-
-  /**
    * The lease timeout period for client scanners (milliseconds).
    */
   private final int scannerLeaseTimeoutPeriod;
@@ -479,10 +469,6 @@ public class  HRegionServer implements ClientProtocol,
 
     this.abortRequested = false;
     this.stopped = false;
-
-    this.rowLockLeaseTimeoutPeriod = conf.getInt(
-      HConstants.HBASE_REGIONSERVER_ROWLOCK_TIMEOUT_PERIOD,
-      HConstants.DEFAULT_HBASE_REGIONSERVER_ROWLOCK_TIMEOUT_PERIOD);
 
     this.scannerLeaseTimeoutPeriod = conf.getInt(HConstants.HBASE_CLIENT_SCANNER_TIMEOUT_PERIOD,
       HConstants.DEFAULT_HBASE_CLIENT_SCANNER_TIMEOUT_PERIOD);
@@ -688,7 +674,7 @@ public class  HRegionServer implements ClientProtocol,
             (RegionSpecifier)getRegion.invoke(deserializedRequestObj,
                 (Object[])null);
         HRegion region = hRegionServer.getRegion(regionSpecifier);
-        if (region.getRegionInfo().isMetaRegion()) {
+        if (region.getRegionInfo().isMetaTable()) {
           if (LOG.isDebugEnabled()) {
             LOG.debug("High priority: " + from.toString());
           }
@@ -704,7 +690,7 @@ public class  HRegionServer implements ClientProtocol,
           return HConstants.NORMAL_QOS;
         }
         RegionScanner scanner = hRegionServer.getScanner(request.getScannerId());
-        if (scanner != null && scanner.getRegionInfo().isMetaRegion()) {
+        if (scanner != null && scanner.getRegionInfo().isMetaTable()) {
           if (LOG.isDebugEnabled()) {
             LOG.debug("High priority scanner request: " + request.getScannerId());
           }
@@ -728,10 +714,6 @@ public class  HRegionServer implements ClientProtocol,
     try {
       initializeZooKeeper();
       initializeThreads();
-      int nbBlocks = conf.getInt("hbase.regionserver.nbreservationblocks", 4);
-      for (int i = 0; i < nbBlocks; i++) {
-        reservedSpace.add(new byte[HConstants.DEFAULT_SIZE_RESERVATION_BLOCK]);
-      }
     } catch (Throwable t) {
       // Call stop if error or process will stick around for ever since server
       // puts up non-daemon threads.
@@ -1531,8 +1513,7 @@ public class  HRegionServer implements ClientProtocol,
 
     Threads.setDaemonThreadRunning(this.hlogRoller.getThread(), n + ".logRoller",
         uncaughtExceptionHandler);
-    Threads.setDaemonThreadRunning(this.cacheFlusher.getThread(), n + ".cacheFlusher",
-      uncaughtExceptionHandler);
+    this.cacheFlusher.start(uncaughtExceptionHandler);
     Threads.setDaemonThreadRunning(this.compactionChecker.getThread(), n +
       ".compactionChecker", uncaughtExceptionHandler);
     if (this.healthCheckChore != null) {
@@ -1736,7 +1717,6 @@ public class  HRegionServer implements ClientProtocol,
       LOG.fatal(msg);
     }
     this.abortRequested = true;
-    this.reservedSpace.clear();
     // HBASE-4014: show list of coprocessors that were loaded to help debug
     // regionserver crashes.Note that we're implicitly using
     // java.util.HashSet's toString() method to print the coprocessor names.
@@ -1790,7 +1770,7 @@ public class  HRegionServer implements ClientProtocol,
    */
   protected void join() {
     Threads.shutdown(this.compactionChecker.getThread());
-    Threads.shutdown(this.cacheFlusher.getThread());
+    this.cacheFlusher.join();
     if (this.healthCheckChore != null) {
       Threads.shutdown(this.healthCheckChore.getThread());
     }
@@ -2751,6 +2731,64 @@ public class  HRegionServer implements ClientProtocol,
   }
 
   /**
+   * Get multi data from a table.
+   *
+   * @param controller the RPC controller
+   * @param request multi-the get request
+   * @throws ServiceException
+   */
+  @Override
+  public MultiGetResponse multiGet(final RpcController controller, final MultiGetRequest request)
+      throws ServiceException {
+    long before = EnvironmentEdgeManager.currentTimeMillis();
+    try {
+      requestCount.add(request.getGetCount());
+      HRegion region = getRegion(request.getRegion());
+      MultiGetResponse.Builder builder = MultiGetResponse.newBuilder();
+      for (ClientProtos.Get get: request.getGetList())
+      {
+        Boolean existence = null;
+        Result r = null;
+        if (request.getClosestRowBefore()) {
+          if (get.getColumnCount() != 1) {
+            throw new DoNotRetryIOException(
+              "get ClosestRowBefore supports one and only one family now, not "
+                + get.getColumnCount() + " families");
+          }
+          byte[] row = get.getRow().toByteArray();
+          byte[] family = get.getColumn(0).getFamily().toByteArray();
+          r = region.getClosestRowBefore(row, family);
+        } else {
+          Get clientGet = ProtobufUtil.toGet(get);
+          if (request.getExistenceOnly() && region.getCoprocessorHost() != null) {
+            existence = region.getCoprocessorHost().preExists(clientGet);
+          }
+          if (existence == null) {
+            r = region.get(clientGet);
+            if (request.getExistenceOnly()) {
+              boolean exists = r != null && !r.isEmpty();
+              if (region.getCoprocessorHost() != null) {
+                exists = region.getCoprocessorHost().postExists(clientGet, exists);
+              }
+              existence = exists;
+            }
+          }
+        }
+        if (existence != null) {
+          builder.addExists(existence.booleanValue());
+        } else if (r != null) {
+          builder.addResult(ProtobufUtil.toResult(r));
+        }
+      }
+      return builder.build();
+    } catch (IOException ie) {
+      throw new ServiceException(ie);
+    } finally {
+      metricsRegionServer.updateGet(EnvironmentEdgeManager.currentTimeMillis() - before);
+    }
+  }
+
+  /**
    * Mutate data in a table.
    *
    * @param controller the RPC controller
@@ -2768,7 +2806,6 @@ public class  HRegionServer implements ClientProtocol,
       if (!region.getRegionInfo().isMetaTable()) {
         cacheFlusher.reclaimMemStoreMemory();
       }
-      Integer lock;
       Result r = null;
       Boolean processed = null;
       MutateType type = mutate.getMutateType();

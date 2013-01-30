@@ -313,7 +313,7 @@ public class HTablePool implements Closeable {
     this.tables.clear();
   }
 
-  int getCurrentPoolSize(String tableName) {
+  public int getCurrentPoolSize(String tableName) {
     return tables.size(tableName);
   }
 
@@ -348,6 +348,11 @@ public class HTablePool implements Closeable {
     @Override
     public boolean exists(Get get) throws IOException {
       return table.exists(get);
+    }
+
+    @Override
+    public Boolean[] exists(List<Get> gets) throws IOException {
+      return table.exists(gets);
     }
 
     @Override

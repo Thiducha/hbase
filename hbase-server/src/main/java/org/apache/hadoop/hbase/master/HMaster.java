@@ -1772,9 +1772,8 @@ Server {
     if (cpHost != null) {
       cpHost.preModifyTable(tableName, descriptor);
     }
-    TableEventHandler tblHandle = new ModifyTableHandler(tableName, descriptor, this, this);
-    this.executorService.submit(tblHandle);
-    tblHandle.waitForPersist();
+    new ModifyTableHandler(tableName, descriptor, this, this).process();
+
     if (cpHost != null) {
       cpHost.postModifyTable(tableName, descriptor);
     }
@@ -2358,7 +2357,7 @@ Server {
           .mergeFrom(call.getRequest()).build();
       final Message.Builder responseBuilder =
           service.getResponsePrototype(methodDesc).newBuilderForType();
-      service.callMethod(methodDesc, controller, execRequest, new RpcCallback<Message>() {
+      service.callMethod(methodDesc, execController, execRequest, new RpcCallback<Message>() {
         @Override
         public void run(Message message) {
           if (message != null) {
