@@ -762,7 +762,8 @@ public class HConnectionManager {
           if (exceptionCaught != null)
             // It failed. If it's not the last try, we're going to wait a little
           if (tries < numRetries) {
-            long pauseTime = ConnectionUtils.getPauseTime(this.pause, tries);
+            // tries at this point is 1 or more; decrement to start from 0.
+            long pauseTime = ConnectionUtils.getPauseTime(this.pause, tries - 1);
             LOG.info("getMaster attempt " + tries + " of " + numRetries +
               " failed; retrying after sleep of " +pauseTime, exceptionCaught);
 
@@ -1085,7 +1086,7 @@ public class HConnectionManager {
                 return location;
               }
             } else {
-              deleteCachedLocation(tableName, row);
+              forceDeleteCachedLocation(tableName, row);
             }
 
             // Query the root or meta region for the location of the meta region
@@ -1221,11 +1222,11 @@ public class HConnectionManager {
     }
 
     /**
-     * Delete a cached location
+     * Delete a cached location, no matter what it is. Called when we were told to not use cache.
      * @param tableName tableName
      * @param row
      */
-    void deleteCachedLocation(final byte [] tableName, final byte [] row) {
+    void forceDeleteCachedLocation(final byte [] tableName, final byte [] row) {
       HRegionLocation rl = null;
       synchronized (this.cachedRegionLocations) {
         Map<byte[], HRegionLocation> tableLocations =
@@ -1243,7 +1244,7 @@ public class HConnectionManager {
         LOG.debug("Removed " + rl.getHostname() + ":" + rl.getPort()
           + " as a location of " + rl.getRegionInfo().getRegionNameAsString() +
           " for tableName=" + Bytes.toString(tableName) +
-          " from cache because of " + Bytes.toStringBinary(row));
+          " from cache to make sure we don't use cache for " + Bytes.toStringBinary(row));
       }
     }
 
@@ -1772,6 +1773,11 @@ public class HConnectionManager {
       }
     }
 
+   /**
+    * Deletes the cached location of the region if necessary, based on some error from source.
+    * @param hri The region in question.
+    * @param source The source of the error that prompts us to invalidate cache.
+    */
     void deleteCachedLocation(HRegionInfo hri, HRegionLocation source) {
       boolean isStaleDelete = false;
       HRegionLocation oldLocation = null;
@@ -1779,10 +1785,12 @@ public class HConnectionManager {
         Map<byte[], HRegionLocation> tableLocations =
           getTableLocations(hri.getTableName());
         oldLocation = tableLocations.get(hri.getStartKey());
-         // Do not delete the cache entry if it's not for the same server that gave us the error.
-        isStaleDelete = (source != null) && !oldLocation.equals(source);
-        if (!isStaleDelete) {
-          tableLocations.remove(hri.getStartKey());
+        if (oldLocation != null) {
+           // Do not delete the cache entry if it's not for the same server that gave us the error.
+          isStaleDelete = (source != null) && !oldLocation.equals(source);
+          if (!isStaleDelete) {
+            tableLocations.remove(hri.getStartKey());
+          }
         }
       }
       if (isStaleDelete) {
@@ -1959,9 +1967,10 @@ public class HConnectionManager {
       * @throws IOException
       */
       private void doRetry() throws IOException{
-          final long sleepTime = ConnectionUtils.getPauseTime(hci.pause, this.curNumRetries);
-          submit(this.toReplay, sleepTime);
-          this.toReplay.clear();
+        // curNumRetries at this point is 1 or more; decrement to start from 0.
+        final long sleepTime = ConnectionUtils.getPauseTime(hci.pause, this.curNumRetries - 1);
+        submit(this.toReplay, sleepTime);
+        this.toReplay.clear();
       }
 
       /**

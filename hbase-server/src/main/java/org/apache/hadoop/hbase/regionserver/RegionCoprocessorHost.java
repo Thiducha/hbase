@@ -425,9 +425,11 @@ public class RegionCoprocessorHost
    * Called prior to rewriting the store files selected for compaction
    * @param store the store being compacted
    * @param scanner the scanner used to read store data during compaction
+   * @param scanType type of Scan
    * @throws IOException
    */
-  public InternalScanner preCompact(HStore store, InternalScanner scanner) throws IOException {
+  public InternalScanner preCompact(HStore store, InternalScanner scanner,
+      ScanType scanType) throws IOException {
     ObserverContext<RegionCoprocessorEnvironment> ctx = null;
     boolean bypass = false;
     for (RegionEnvironment env: coprocessors) {
@@ -435,7 +437,7 @@ public class RegionCoprocessorHost
         ctx = ObserverContext.createAndPrepare(env, ctx);
         try {
           scanner = ((RegionObserver)env.getInstance()).preCompact(
-              ctx, store, scanner);
+              ctx, store, scanner, scanType);
         } catch (Throwable e) {
           handleCoprocessorThrowable(env,e);
         }
@@ -1349,6 +1351,35 @@ public class RegionCoprocessorHost
     return hasMore;
   }
 
+  /**
+   * This will be called by the scan flow when the current scanned row is being filtered out by the
+   * filter.
+   * @param s the scanner
+   * @param currentRow The current rowkey which got filtered out
+   * @return whether more rows are available for the scanner or not
+   * @throws IOException
+   */
+  public boolean postScannerFilterRow(final InternalScanner s, final byte[] currentRow)
+      throws IOException {
+    boolean hasMore = true; // By default assume more rows there.
+    ObserverContext<RegionCoprocessorEnvironment> ctx = null;
+    for (RegionEnvironment env : coprocessors) {
+      if (env.getInstance() instanceof RegionObserver) {
+        ctx = ObserverContext.createAndPrepare(env, ctx);
+        try {
+          hasMore = ((RegionObserver) env.getInstance()).postScannerFilterRow(ctx, s, currentRow,
+              hasMore);
+        } catch (Throwable e) {
+          handleCoprocessorThrowable(env, e);
+        }
+        if (ctx.shouldComplete()) {
+          break;
+        }
+      }
+    }
+    return hasMore;
+  }
+  
   /**
    * @param s the scanner
    * @return true if default behavior should be bypassed, false otherwise
