@@ -86,6 +86,8 @@ public class TestNettyMC {
   }
 
 
+
+
   static class ClusterStatusHandler extends SimpleChannelUpstreamHandler {
     int i = 0;
 
