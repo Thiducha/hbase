@@ -61,6 +61,10 @@ public class RegionMovedException extends NotServingRegionException {
     return locationSeqNum;
   }
 
+  public ServerName getServerName(){
+    return new ServerName(hostname, port, locationSeqNum);
+  }
+
   /**
    * For hadoop.ipc internal call. Do NOT use.
    * We have to parse the hostname to recreate the exception.

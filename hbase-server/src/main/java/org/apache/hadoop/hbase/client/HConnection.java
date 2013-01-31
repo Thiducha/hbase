@@ -32,6 +32,7 @@ import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.MasterAdminProtocol;
 import org.apache.hadoop.hbase.MasterMonitorProtocol;
 import org.apache.hadoop.hbase.MasterNotRunningException;
+import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.catalog.CatalogTracker;
 import org.apache.hadoop.hbase.client.coprocessor.Batch;
@@ -372,5 +373,8 @@ public interface HConnection extends Abortable, Closeable {
    * @throws MasterNotRunningException
    */
   public MasterAdminKeepAliveConnection getKeepAliveMasterAdmin() throws MasterNotRunningException;
+
+  ClientProtocol getClient(ServerName serverName)
+      throws IOException;
 }
 

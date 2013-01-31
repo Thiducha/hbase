@@ -2,6 +2,7 @@ package org.apache.hadoop.hbase.master;
 
 
 import org.apache.hadoop.hbase.SmallTests;
+import org.apache.hadoop.hbase.protobuf.generated.ClusterStatusProtos;
 import org.jboss.netty.bootstrap.ConnectionlessBootstrap;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.ChannelPipeline;
@@ -15,6 +16,8 @@ import org.jboss.netty.channel.socket.DatagramChannel;
 import org.jboss.netty.channel.socket.DatagramChannelFactory;
 import org.jboss.netty.channel.socket.nio.NioDatagramChannelFactory;
 import org.jboss.netty.channel.socket.oio.OioDatagramChannelFactory;
+import org.jboss.netty.handler.codec.protobuf.ProtobufDecoder;
+import org.jboss.netty.handler.codec.protobuf.ProtobufEncoder;
 import org.jboss.netty.handler.codec.string.StringDecoder;
 import org.jboss.netty.handler.codec.string.StringEncoder;
 import org.jboss.netty.util.CharsetUtil;
@@ -41,7 +44,9 @@ public class TestNettyMC {
     b.setPipelineFactory(new ChannelPipelineFactory() {
       @Override
       public ChannelPipeline getPipeline() throws Exception {
-        return Channels.pipeline(new StringEncoder(CharsetUtil.ISO_8859_1), new StringDecoder(CharsetUtil.ISO_8859_1), new ClusterStatusHandler());
+        return Channels.pipeline(
+            new ProtobufEncoder(),
+            new ProtobufDecoder(ClusterStatusProtos.ClusterStatus.getDefaultInstance()), new ClusterStatusHandler());
       }
     });
 
@@ -71,7 +76,9 @@ public class TestNettyMC {
     b.setPipelineFactory(new ChannelPipelineFactory() {
       @Override
       public ChannelPipeline getPipeline() throws Exception {
-        return Channels.pipeline(new StringEncoder(CharsetUtil.UTF_8), new StringDecoder(CharsetUtil.UTF_8), new ClusterStatusHandler());
+        return Channels.pipeline(
+            new ProtobufEncoder(),
+            new ProtobufDecoder(ClusterStatusProtos.ClusterStatus.getDefaultInstance()), new ClusterStatusHandler());
       }
     });
 

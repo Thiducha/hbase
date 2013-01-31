@@ -489,8 +489,7 @@ public class TestCatalogTracker {
     Mockito.doNothing().when(connection).close();
     // Make it so we return any old location when asked.
     final HRegionLocation anyLocation =
-      new HRegionLocation(HRegionInfo.FIRST_META_REGIONINFO, SN.getHostname(),
-        SN.getPort());
+      new HRegionLocation(HRegionInfo.FIRST_META_REGIONINFO, SN);
     Mockito.when(connection.getRegionLocation((byte[]) Mockito.any(),
         (byte[]) Mockito.any(), Mockito.anyBoolean())).
       thenReturn(anyLocation);

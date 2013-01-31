@@ -22,6 +22,8 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.hbase.util.Addressing;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 /**
  * Data structure to hold HRegionInfo and the address for the hosting
  * HRegionServer.  Immutable.  Comparable, but we compare the 'location' only:
@@ -33,31 +35,34 @@ import org.apache.hadoop.hbase.util.Addressing;
 @InterfaceStability.Evolving
 public class HRegionLocation implements Comparable<HRegionLocation> {
   private final HRegionInfo regionInfo;
-  private final String hostname;
-  private final int port;
+  private final ServerName servername;
   private final long seqNum;
   // Cache of the 'toString' result.
   private String cachedString = null;
   // Cache of the hostname + port
   private String cachedHostnamePort;
 
-  /**
-   * Constructor
-   * @param regionInfo the HRegionInfo for the region
-   */
-  public HRegionLocation(HRegionInfo regionInfo, final String hostname,
-      final int port, final long seqNum) {
-    this.regionInfo = regionInfo;
-    this.hostname = hostname;
-    this.port = port;
-    this.seqNum = seqNum;
-  }
 
   /**
    * Test constructor w/o seqNum.
    */
-  public HRegionLocation(HRegionInfo regionInfo, final String hostname, final int port) {
-    this(regionInfo, hostname, port, 0);
+  public HRegionLocation(HRegionInfo regionInfo, ServerName servername) {
+    this(regionInfo, servername, 0);
+  }
+
+  public HRegionLocation(HRegionInfo regionInfo, ServerName servername, long seqNum) {
+    this.regionInfo = regionInfo;
+    this.servername = servername;
+    this.seqNum = seqNum;
+  }
+
+  @Deprecated // for tests
+  public HRegionLocation(HRegionInfo regionInfo, String hostname, int port) {
+    this (regionInfo, new ServerName(hostname, port, 0),0 );
+  }
+
+  public HRegionLocation(HRegionInfo regionInfo, String hostname, int port, long seq) {
+    this (regionInfo, new ServerName(hostname, port, 0),seq );
   }
 
   /**
@@ -67,7 +72,7 @@ public class HRegionLocation implements Comparable<HRegionLocation> {
   public synchronized String toString() {
     if (this.cachedString == null) {
       this.cachedString = "region=" + this.regionInfo.getRegionNameAsString() +
-      ", hostname=" + this.hostname + ", port=" + this.port
+      ", hostname=" + this.getHostname() + ", port=" + this.getPort()
       + ", seqNum=" + seqNum;
     }
     return this.cachedString;
@@ -95,8 +100,8 @@ public class HRegionLocation implements Comparable<HRegionLocation> {
    */
   @Override
   public int hashCode() {
-    int result = this.hostname.hashCode();
-    result ^= this.port;
+    int result = this.servername.getHostname().hashCode();
+    result ^= this.getPort();
     return result;
   }
 
@@ -106,11 +111,11 @@ public class HRegionLocation implements Comparable<HRegionLocation> {
   }
 
   public String getHostname() {
-    return this.hostname;
+    return this.servername.getHostname();
   }
 
   public int getPort() {
-    return this.port;
+    return this.servername.getPort();
   }
 
   public long getSeqNum() {
@@ -123,7 +128,7 @@ public class HRegionLocation implements Comparable<HRegionLocation> {
   public synchronized String getHostnamePort() {
     if (this.cachedHostnamePort == null) {
       this.cachedHostnamePort =
-        Addressing.createHostAndPortStr(this.hostname, this.port);
+        Addressing.createHostAndPortStr(this.getHostname(), this.getPort());
     }
     return this.cachedHostnamePort;
   }
@@ -133,8 +138,12 @@ public class HRegionLocation implements Comparable<HRegionLocation> {
   //
 
   public int compareTo(HRegionLocation o) {
-    int result = this.hostname.compareTo(o.getHostname());
+    int result = this.getHostname().compareTo(o.getHostname());
     if (result != 0) return result;
-    return this.port - o.getPort();
+    return this.getPort() - o.getPort();
+  }
+
+  public ServerName getServerName() {
+    return servername;
   }
 }

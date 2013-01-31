@@ -23,6 +23,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertFalse;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -44,7 +45,9 @@ import org.apache.hadoop.hbase.client.HConnectionManager.HConnectionImplementati
 import org.apache.hadoop.hbase.client.HConnectionManager.HConnectionKey;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
+import org.apache.hadoop.hbase.regionserver.RegionServerStoppedException;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.JVMClusterUtil;
 import org.apache.hadoop.hbase.util.Threads;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -106,6 +109,48 @@ public class TestHCM {
   private static int getHConnectionManagerCacheSize(){
     return HConnectionTestingUtility.getConnectionCount();
   }
+
+  @Test(expected = RegionServerStoppedException.class)
+  public void testClusterStatus() throws IOException, InterruptedException {
+    byte[] tn = "testClusterStatus".getBytes();
+    byte[] cf = "cf".getBytes();
+    byte[] rk = "rk1".getBytes();
+
+    JVMClusterUtil.RegionServerThread rs = TEST_UTIL.getHBaseCluster().startRegionServer();
+    rs.waitForServerOnline();
+    ServerName sn = rs.getRegionServer().getServerName();
+
+
+    HTable t = TEST_UTIL.createTable(tn, cf);
+    TEST_UTIL.waitTableAvailable(tn, 20000);
+
+    while(TEST_UTIL.getHBaseCluster().getMaster().getAssignmentManager().getRegionStates().isRegionsInTransition()){
+      Thread.sleep(1);
+    }
+    HConnectionImplementation hci =  (HConnectionImplementation)t.getConnection();
+    while (t.getRegionLocation(rk).getPort() != sn.getPort()){
+      TEST_UTIL.getHBaseAdmin().move(t.getRegionLocation(rk).getRegionInfo().getEncodedNameAsBytes(), sn.getVersionedBytes());
+      while(TEST_UTIL.getHBaseCluster().getMaster().getAssignmentManager().getRegionStates().isRegionsInTransition()){
+        Thread.sleep(1);
+      }
+      hci.clearRegionCache(tn);
+    }
+    TEST_UTIL.assertRegionOnServer(t.getRegionLocation(rk).getRegionInfo(), sn, 20000);
+
+    Put p1 = new Put(rk);
+    p1.add(cf, "qual".getBytes(), "val".getBytes());
+    t.put(p1);
+
+    rs.getRegionServer().abort("I'm dead");
+
+    Thread.sleep(40000); // We want the status to be updated. That's a least 10 second
+    Assert.assertTrue(
+        TEST_UTIL.getHBaseCluster().getMaster().getServerManager().getDeadServers().contains(sn));
+
+    Assert.assertTrue(hci.clusterStatusListener.isDead(sn));
+
+    hci.getClient(sn);
+  }
   
   @Test
   public void abortingHConnectionRemovesItselfFromHCM() throws Exception {
@@ -151,8 +196,8 @@ public class TestHCM {
 
     final int nextPort = conn.getCachedLocation(TABLE_NAME, ROW).getPort() + 1;
     HRegionLocation loc = conn.getCachedLocation(TABLE_NAME, ROW);
-    conn.updateCachedLocation(loc.getRegionInfo(), loc, "127.0.0.1", nextPort,
-      HConstants.LATEST_TIMESTAMP);
+    conn.updateCachedLocation(loc.getRegionInfo(), loc,  new ServerName("127.0.0.1", nextPort,
+      HConstants.LATEST_TIMESTAMP));
     Assert.assertEquals(conn.getCachedLocation(TABLE_NAME, ROW).getPort(), nextPort);
 
     conn.forceDeleteCachedLocation(TABLE_NAME.clone(), ROW.clone());
@@ -355,28 +400,28 @@ public class TestHCM {
     // Same server as already in cache reporting - overwrites any value despite seqNum.
     int nextPort = location.getPort() + 1;
     conn.updateCachedLocation(location.getRegionInfo(), location,
-        "127.0.0.1", nextPort, location.getSeqNum() - 1);
+        new ServerName("127.0.0.1", nextPort, location.getSeqNum() - 1));
     location = conn.getCachedLocation(TABLE_NAME2, ROW);
     Assert.assertEquals(nextPort, location.getPort());
 
     // No source specified - same.
     nextPort = location.getPort() + 1;
     conn.updateCachedLocation(location.getRegionInfo(), location,
-        "127.0.0.1", nextPort, location.getSeqNum() - 1);
+        new ServerName( "127.0.0.1", nextPort, location.getSeqNum() - 1));
     location = conn.getCachedLocation(TABLE_NAME2, ROW);
     Assert.assertEquals(nextPort, location.getPort());
 
     // Higher seqNum - overwrites lower seqNum.
     nextPort = location.getPort() + 1;
     conn.updateCachedLocation(location.getRegionInfo(), anySource,
-        "127.0.0.1", nextPort, location.getSeqNum() + 1);
+        new ServerName("127.0.0.1", nextPort, location.getSeqNum() + 1));
     location = conn.getCachedLocation(TABLE_NAME2, ROW);
     Assert.assertEquals(nextPort, location.getPort());
 
     // Lower seqNum - does not overwrite higher seqNum.
     nextPort = location.getPort() + 1;
     conn.updateCachedLocation(location.getRegionInfo(), anySource,
-        "127.0.0.1", nextPort, location.getSeqNum() - 1);
+        new ServerName("127.0.0.1", nextPort, location.getSeqNum() - 1));
     location = conn.getCachedLocation(TABLE_NAME2, ROW);
     Assert.assertEquals(nextPort - 1, location.getPort());
   }
