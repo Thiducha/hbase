@@ -24,6 +24,8 @@ import java.io.Closeable;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -33,21 +35,30 @@ public class ClusterStatusListener implements Closeable {
   private String mcAddress;
   private int port;
   DatagramChannel channel;
-  private final AtomicReference<ClusterStatus> cs = new AtomicReference<ClusterStatus>() ;
+  private final AtomicReference<ClusterStatus> cs = new AtomicReference<ClusterStatus>();
+  private DeadServerHandler deadServerHandler = null;
 
-  public boolean isDead(ServerName sn){
-    if (sn.getStartcode() <= 0 || cs.get() == null || cs.get().getDeadServerNames() == null){
-      return false ;
+  public boolean isDead(ServerName sn) {
+    if (sn.getStartcode() <= 0 || cs.get() == null || cs.get().getDeadServerNames() == null) {
+      return false;
     }
 
-    for (ServerName dead: cs.get().getDeadServerNames()){
+    for (ServerName dead : cs.get().getDeadServerNames()) {
       if (dead.getStartcode() >= sn.getStartcode() &&
-          dead.getHostAndPort().equals(sn.getHostAndPort())){
+          dead.getHostAndPort().equals(sn.getHostAndPort())) {
         return true;
       }
     }
 
     return false;
+  }
+
+  public abstract static class DeadServerHandler {
+    abstract public void newDead(ServerName sn);
+  }
+
+  public ClusterStatusListener(DeadServerHandler deadServerHandler) {
+    this.deadServerHandler = deadServerHandler;
   }
 
 
@@ -71,7 +82,7 @@ public class ClusterStatusListener implements Closeable {
     b.setOption("reuseAddress", true);
     b.setOption("receivedBufferSizePredictorFactory", new FixedReceiveBufferSizePredictorFactory(10024));
 
-    DatagramChannel channel = (DatagramChannel) b.bind(new InetSocketAddress(mcAddress , port));
+    DatagramChannel channel = (DatagramChannel) b.bind(new InetSocketAddress(mcAddress, port));
 
     InetAddress ina = InetAddress.getByName(mcAddress);
     channel.joinGroup(ina);
@@ -85,19 +96,31 @@ public class ClusterStatusListener implements Closeable {
   }
 
 
-  static class ClusterStatusHandler extends SimpleChannelUpstreamHandler {
+  class ClusterStatusHandler extends SimpleChannelUpstreamHandler {
     int i = 0;
     AtomicReference<ClusterStatus> cs;
 
-    ClusterStatusHandler(AtomicReference<ClusterStatus> cs){
+    ClusterStatusHandler(AtomicReference<ClusterStatus> cs) {
       this.cs = cs;
     }
 
     public void messageReceived(
         ChannelHandlerContext ctx, MessageEvent e) throws Exception {
-      ClusterStatusProtos.ClusterStatus csp = (ClusterStatusProtos.ClusterStatus)e.getMessage();
-      cs.set(ClusterStatus.convert(csp));
+      ClusterStatusProtos.ClusterStatus csp = (ClusterStatusProtos.ClusterStatus) e.getMessage();
+      ClusterStatus ncs = ClusterStatus.convert(csp);
+      notifyNewDead(ncs);
+      cs.set(ncs);
       System.out.println("message received:" + cs.get().getClusterId() + " " + i++);
+    }
+
+    private void notifyNewDead(ClusterStatus ncs) {
+      if (deadServerHandler != null) {
+        for (ServerName sn : ncs.getDeadServerNames()) {
+          if (isDead(sn)) {
+            deadServerHandler.newDead(sn);
+          }
+        }
+      }
     }
 
     /**

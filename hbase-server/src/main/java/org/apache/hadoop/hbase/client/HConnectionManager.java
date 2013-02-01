@@ -627,7 +627,18 @@ public class HConnectionManager {
 
       retrieveClusterId();
 
-      clusterStatusListener = new ClusterStatusListener();
+      clusterStatusListener = new ClusterStatusListener(new ClusterStatusListener.DeadServerHandler(){
+
+        @Override
+        public void newDead(ServerName sn) {
+          String rsName = Addressing.createHostAndPortStr(sn.getHostname(), sn.getPort());
+          rpcEngine.getClient().
+          Map<String, IpcProtocol> protocols = servers.get(rsName);
+          for (IpcProtocol ipc:proto cols.values()){
+
+          }
+        }
+      });
       try {
         clusterStatusListener.connect(conf);
       } catch (InterruptedException e) {
@@ -1088,9 +1099,8 @@ public class HConnectionManager {
           metaLocation = locateRegion(parentTable, metaKey, true, false);
           // If null still, go around again.
           if (metaLocation == null) continue;
-          ClientProtocol server = getClient(metaLocation.getServerName());
 
-          Result regionInfoRow = null;
+          Result regionInfoRow;
           // This block guards against two threads trying to load the meta
           // region at the same time. The first will load the meta region and
           // the second will use the value that the first one found.
@@ -1116,7 +1126,7 @@ public class HConnectionManager {
             }
 
             // Query the root or meta region for the location of the meta region
-            regionInfoRow = ProtobufUtil.getRowOrBefore(server,
+            regionInfoRow = ProtobufUtil.getRowOrBefore(getClient(metaLocation.getServerName()),
               metaLocation.getRegionInfo().getRegionName(), metaKey,
               HConstants.CATALOG_FAMILY);
           }
@@ -1983,7 +1993,7 @@ public class HConnectionManager {
           if (LOG.isTraceEnabled() && (sleepTime > 0)) {
             StringBuilder sb = new StringBuilder();
             for (Action<R> action : e.getValue().allActions()) {
-              sb.append(Bytes.toStringBinary(action.getAction().getRow()) + ";");
+              sb.append(Bytes.toStringBinary(action.getAction().getRow())).append(';');
             }
             LOG.trace("Sending requests to [" + e.getKey().getHostnamePort()
               + "] with delay of [" + sleepTime + "] for rows [" + sb.toString() + "]");

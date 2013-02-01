@@ -538,8 +538,6 @@ public class HBaseAdmin implements Abortable, Closeable {
     });
 
     // Wait until all regions deleted
-    ClientProtocol server =
-      connection.getClient(firstMetaServer.getServerName());
     for (int tries = 0; tries < (this.numRetries * this.retryLongerMultiplier); tries++) {
       try {
 
@@ -549,6 +547,7 @@ public class HBaseAdmin implements Abortable, Closeable {
           firstMetaServer.getRegionInfo().getRegionName(), scan, 1, true);
         Result[] values = null;
         // Get a batch at a time.
+        ClientProtocol server = connection.getClient(firstMetaServer.getServerName());
         try {
           ScanResponse response = server.scan(null, request);
           values = ResponseConverter.getResults(response);

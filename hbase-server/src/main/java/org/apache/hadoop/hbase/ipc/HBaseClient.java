@@ -1342,6 +1342,23 @@ public class HBaseClient {
     }
   }
 
+  /**
+   * Close all connections on the same host & port. This allows to terminate operations that
+   *  are actually waiting on a dead machine.
+   */
+  private void cancelConnections(String hostname, int port, IOException ioe) {
+    synchronized (connections) {
+      for (Connection connection : connections.values()) {
+        if (connection.isAlive() &&
+            connection.getRemoteAddress().getPort() == port &&
+            connection.getRemoteAddress().getHostName().equals(hostname)) {
+
+          connection.closeConnection();
+        }
+      }
+    }
+  }
+
   /** Makes a set of calls in parallel.  Each parameter is sent to the
    * corresponding address.  When all values are available, or have timed out
    * or errored, the collected results are returned in an array.  The array
