@@ -19,14 +19,7 @@
 
 package org.apache.hadoop.hbase.client;
 
-import java.io.IOException;
-import java.lang.reflect.UndeclaredThrowableException;
-import java.net.ConnectException;
-import java.net.SocketTimeoutException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.Callable;
-
+import com.google.protobuf.ServiceException;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
@@ -37,7 +30,13 @@ import org.apache.hadoop.hbase.ipc.HBaseClientRPC;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.ipc.RemoteException;
 
-import com.google.protobuf.ServiceException;
+import java.io.IOException;
+import java.lang.reflect.UndeclaredThrowableException;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Callable;
 
 /**
  * Abstract class that implements {@link Callable}.  Implementation stipulates
@@ -121,17 +120,15 @@ public abstract class ServerCallable<T> implements Callable<T> {
   }
 
   public void shouldRetry(Throwable throwable) throws IOException {
-    if (this.callTimeout != HConstants.DEFAULT_HBASE_CLIENT_OPERATION_TIMEOUT)
-      if (throwable instanceof SocketTimeoutException
-          || (this.endTime - this.startTime > this.callTimeout)) {
-        throw (SocketTimeoutException) (SocketTimeoutException) new SocketTimeoutException(
-            "Call to access row '" + Bytes.toString(row) + "' on table '"
-                + Bytes.toString(tableName)
-                + "' failed on socket timeout exception: " + throwable)
-            .initCause(throwable);
-      } else {
-        this.callTimeout = ((int) (this.endTime - this.startTime));
-      }
+    if (this.endTime - this.startTime > this.callTimeout) {
+      throw (SocketTimeoutException) new SocketTimeoutException(
+          "Call to access row '" + Bytes.toString(row) + "' on table '"
+              + Bytes.toString(tableName)
+              + "' failed on socket timeout exception: " + throwable +
+              " callTimeout=" + (this.callTimeout == Integer.MAX_VALUE ? "inf" : this.callTimeout)
+              + " time= " + (this.endTime - this.startTime))
+          .initCause(throwable);
+    }
   }
 
   /**
@@ -164,7 +161,6 @@ public abstract class ServerCallable<T> implements Callable<T> {
         connect(tries != 0);
         return call();
       } catch (Throwable t) {
-        shouldRetry(t);
         t = translateException(t);
         if (t instanceof SocketTimeoutException ||
             t instanceof ConnectException ||
@@ -183,6 +179,13 @@ public abstract class ServerCallable<T> implements Callable<T> {
         exceptions.add(qt);
         if (tries == numRetries - 1) {
           throw new RetriesExhaustedException(tries, exceptions);
+        }
+        if ((this.endTime - this.startTime) > this.callTimeout) {
+          throw (SocketTimeoutException) new SocketTimeoutException(
+              "Call to access row '" + Bytes.toString(row) + "' on table '"
+                  + Bytes.toString(tableName)
+                  + " timeouted; " + " callTimeout=" + this.callTimeout +
+                  ", time= " + (this.endTime - this.startTime)).initCause(t);
         }
       } finally {
         afterCall();

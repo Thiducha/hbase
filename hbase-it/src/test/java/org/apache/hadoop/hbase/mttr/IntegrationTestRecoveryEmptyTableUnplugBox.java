@@ -12,6 +12,7 @@ import org.junit.experimental.categories.Category;
 public class IntegrationTestRecoveryEmptyTableUnplugBox
     extends AbstractIntegrationTestRecovery {
 
+
   @Override
   protected void kill(String willDieBox) throws Exception {
     hcm.unplug(willDieBox);

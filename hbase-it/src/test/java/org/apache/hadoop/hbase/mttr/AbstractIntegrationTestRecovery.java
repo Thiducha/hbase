@@ -30,6 +30,7 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.IntegrationTestingUtility;
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.util.RegionSplitter;
 import org.junit.Assert;
@@ -38,7 +39,10 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
+import java.net.Socket;
 import java.net.URL;
 import java.util.List;
 
@@ -155,7 +159,7 @@ public abstract class AbstractIntegrationTestRecovery {
     }
   }
 
-  private void genericStart() throws Exception {
+  protected void genericStart() throws Exception {
     // Initialize an empty cluster. We will start all services where we want to start them.
     util.initializeCluster(0);
     dhc = (DistributedHBaseCluster) util.getHBaseClusterInterface();
@@ -251,9 +255,40 @@ public abstract class AbstractIntegrationTestRecovery {
     hcm.rmDataDir(lateBox);
   }
 
+
+  protected void moveToRS(String tableName, ServerName destSN) throws Exception {
+    HBaseAdmin admin = util.getHBaseAdmin();
+    List<HRegionInfo> regs = admin.getTableRegions(tableName.getBytes());
+
+    int toMove = 0;
+    for (HRegionInfo hri : regs) {
+      if (!dhc.getServerHoldingRegion(hri.getRegionName()).equals(destSN)) {
+        admin.move(hri.getEncodedNameAsBytes(), destSN.getVersionedBytes());
+        toMove++;
+      }
+    }
+
+    // wait for the moves to be done
+    waitForNoTransition();
+
+    // Check that they have been moved
+    int moved = 0;
+    for (HRegionInfo hri : regs) {
+      if (!dhc.getServerHoldingRegion(hri.getRegionName()).equals(destSN)) {
+        moved++;
+      }
+    }
+
+    System.out.println("toMove=" + toMove + ", moved=" + moved);
+    // todo: it differs sometimes, it should not!
+
+
+    admin.close();
+  }
+
   @Test
   public void testKillRS() throws Exception {
-
+    beforeStart();
     genericStart();
 
     HBaseAdmin admin = util.getHBaseAdmin();
@@ -275,28 +310,9 @@ public abstract class AbstractIntegrationTestRecovery {
     Assert.assertNotNull(otherSN);
     Assert.assertNotEquals(mainSN, otherSN);
 
-    int toMove = 0;
-    for (HRegionInfo hri : regs) {
-      if (dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
-        admin.move(hri.getEncodedNameAsBytes(), otherSN.getVersionedBytes());
-        toMove++;
-      }
-    }
+    moveToRS(TABLE_NAME, otherSN);
 
-    // wait for the moves to be done
-    waitForNoTransition();
-
-    // Check that they have been moved
-    int moved = 0;
-    for (HRegionInfo hri : regs) {
-      if (dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
-        moved++;
-      }
-    }
-
-    System.out.println("toMove=" + toMove + ", moved=" + moved);
-    // todo: it differs sometimes, it should not!
-
+    beforeKill();
     writeDataToWal();
 
     // Now killing
@@ -306,12 +322,27 @@ public abstract class AbstractIntegrationTestRecovery {
 
     kill(willDieBox);
 
+    Socket socket = new Socket();
+    InetSocketAddress dest = new InetSocketAddress(willDieBox, util.getConfiguration().getInt("hbase.regionserver.port", 60020)) ;
+    boolean stillThere = true;
+    while (stillThere){
+      try {
+        socket.connect(dest, 200);
+        Thread.sleep(200);
+      }catch (IOException ignored){
+        stillThere = false;
+      }
+    }
+
+    afterKill();
+
     try {
       // How long does it take to discover that we need to do something?
       while (admin.getClusterStatus().getDeadServers() == 0) {
         Thread.sleep(1000);
       }
       failureDetectedTime = System.currentTimeMillis();
+      afterDetection();
 
       // Now, how long does it take to recover?
       boolean ok;
@@ -332,6 +363,8 @@ public abstract class AbstractIntegrationTestRecovery {
 
       failureFixedTime = System.currentTimeMillis();
 
+      afterRecovery();
+
     } finally {
       // If it was an unplug, we replug it now
       hcm.replug(willDieBox);
@@ -340,9 +373,15 @@ public abstract class AbstractIntegrationTestRecovery {
     System.out.println("Failure fix took: " + (failureFixedTime - failureDetectedTime));
   }
 
-  protected void writeDataToWal() throws IOException {
-    // do Nothing by default
-  }
+  protected void beforeStart()  throws Exception{}
+  protected void beforeKill()  throws Exception {}
+  protected void afterKill()  throws Exception {}
+
+
+  protected void writeDataToWal() throws Exception {}
 
   protected abstract void kill(String willDieBox) throws Exception;
+
+  protected void afterDetection()  throws Exception{}
+  protected void afterRecovery()  throws Exception{}
 }

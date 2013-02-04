@@ -63,9 +63,19 @@ ssh -A to the first aws node. ex: ssh -A ec2-50-16-6-93.compute-1.amazonaws.com
 install HBase (mvn install -DskipTests -Dhadoop.profile=2.0 -Dhadoop-two.version=2.0.3-SNAPSHOT)
 
 run setup.sh from hbase-it/src/test/script/src to initiate all the cluster. Ex: ~/dev/hbase/hbase-it/src/test/script$ ./setup_aws.sh ec2-23-20-24-189.compute-1.amazonaws.com ec2-50-17-98-49.compute-1.amazonaws.com ec2-184-72-153-152.compute-1.amazonaws.com
-execute the integration tests  (mvn verify -pl hbase-it -Dit.test=IntegrationTestRecoveryEmptyTableKill15 -Dhadoop.profile=2.0 -Dhadoop-two.version=2.0.3-SNAPSHOT -Dtest.output.tofile=false)
+execute the integration tests  (
+ mvn verify -pl hbase-it -Dit.test=IntegrationTestRecoveryEmptyTableKill15 -Dhadoop.profile=2.0 -Dhadoop-two.version=2.0.3-SNAPSHOT -Dtest.output.tofile=false
+ mvn verify -pl hbase-it -Dit.test=IntegrationTestRecoveryEmptyTableKill15 -Dhadoop-two.version=1.1.1-SNAPSHOT -Dtest.output.tofile=false
+ )
 
 **************** What can go wrong
 Everything.
 
 WARN  namenode.NameNodeResourceChecker (NameNodeResourceChecker.java:isResourceAvailable(89)) - Space available on volume '/dev/sda1' is 14225408, which is below the configured reserved amount 104857600
+=> You don't have enough place available on the node, so the namenode don't really start, and the master will wait.
+
+
+testKillRS(org.apache.hadoop.hbase.mttr.IntegrationTestRecoveryEmptyTableKill15): Error executing ping -c 1 null result is 2
+=> The env variable are not defined, source ~/tmp-recotest/
+
+

@@ -632,7 +632,7 @@ public class HConnectionManager {
       clusterStatusListener = new ClusterStatusListener(new ClusterStatusListener.DeadServerHandler(){
         @Override
         public void newDead(ServerName sn) {
-          rpcEngine.getClient().cancelConnections(sn.getHostname(), sn.getPort(), null);
+          //rpcEngine.getClient().cancelConnections(sn.getHostname(), sn.getPort(), null);
         }
       });
       try {
