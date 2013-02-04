@@ -20,6 +20,7 @@
 package org.apache.hadoop.hbase.ipc;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.lang.reflect.Proxy;
 import java.net.ConnectException;
 import java.net.InetSocketAddress;
@@ -116,7 +117,8 @@ public class HBaseClientRPC {
       try {
         Thread.sleep(1000);
       } catch (InterruptedException ie) {
-        // IGNORE
+        Thread.interrupted();
+        throw new InterruptedIOException();
       }
     }
   }

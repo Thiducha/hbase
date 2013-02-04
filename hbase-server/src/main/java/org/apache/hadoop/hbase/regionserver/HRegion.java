@@ -440,6 +440,7 @@ public class HRegion implements HeapSize { // , Writable{
     this.baseConf = confParam;
     this.conf = new CompoundConfiguration()
       .add(confParam)
+      .addStringMap(htd.getConfiguration())
       .addWritableMap(htd.getValues());
     this.rowLockWaitDuration = conf.getInt("hbase.rowlock.wait.duration",
                     DEFAULT_ROWLOCK_WAIT_DURATION);
@@ -914,7 +915,7 @@ public class HRegion implements HeapSize { // , Writable{
     return isAvailable() && !hasReferences();
   }
 
-  boolean areWritesEnabled() {
+  public boolean areWritesEnabled() {
     synchronized(this.writestate) {
       return this.writestate.writesEnabled;
     }
@@ -1774,7 +1775,7 @@ public class HRegion implements HeapSize { // , Writable{
 
   protected RegionScanner instantiateRegionScanner(Scan scan,
       List<KeyValueScanner> additionalScanners) throws IOException {
-    return new RegionScannerImpl(scan, additionalScanners);
+    return new RegionScannerImpl(scan, additionalScanners, this);
   }
 
   /*
@@ -3130,7 +3131,10 @@ public class HRegion implements HeapSize { // , Writable{
                   + Bytes.toStringBinary(row));
             }
           } catch (InterruptedException ie) {
-            // Empty
+            LOG.warn("internalObtainRowLock interrupted for row=" + Bytes.toStringBinary(row));
+            InterruptedIOException iie = new InterruptedIOException();
+            iie.initCause(ie);
+            throw iie;
           }
         }
       }
@@ -3380,13 +3384,16 @@ public class HRegion implements HeapSize { // , Writable{
     private boolean filterClosed = false;
     private long readPt;
     private long maxResultSize;
+    private HRegion region;
 
     public HRegionInfo getRegionInfo() {
       return regionInfo;
     }
-    RegionScannerImpl(Scan scan, List<KeyValueScanner> additionalScanners) throws IOException {
-      //DebugPrint.println("HRegionScanner.<init>");
-
+    
+    RegionScannerImpl(Scan scan, List<KeyValueScanner> additionalScanners, HRegion region)
+        throws IOException {
+      // DebugPrint.println("HRegionScanner.<init>");
+      this.region = region;
       this.maxResultSize = scan.getMaxResultSize();
       if (scan.hasFilter()) {
         this.filter = new FilterWrapper(scan.getFilter());
@@ -3443,8 +3450,8 @@ public class HRegion implements HeapSize { // , Writable{
       }
     }
 
-    RegionScannerImpl(Scan scan) throws IOException {
-      this(scan, null);
+    RegionScannerImpl(Scan scan, HRegion region) throws IOException {
+      this(scan, null, region);
     }
 
     @Override
@@ -3625,7 +3632,8 @@ public class HRegion implements HeapSize { // , Writable{
           // Check if rowkey filter wants to exclude this row. If so, loop to next.
           // Technically, if we hit limits before on this row, we don't need this call.
           if (filterRowKey(currentRow, offset, length)) {
-            nextRow(currentRow, offset, length);
+            boolean moreRows = nextRow(currentRow, offset, length);
+            if (!moreRows) return false;
             results.clear();
             continue;
           }
@@ -3652,7 +3660,8 @@ public class HRegion implements HeapSize { // , Writable{
             filter.filterRow(results);
           }
           if (isEmptyRow) {
-            nextRow(currentRow, offset, length);
+            boolean moreRows = nextRow(currentRow, offset, length);
+            if (!moreRows) return false;
             results.clear();
             // This row was totally filtered out, if this is NOT the last row,
             // we should continue on. Otherwise, nothing else to do.
@@ -3667,10 +3676,11 @@ public class HRegion implements HeapSize { // , Writable{
           if (this.joinedHeap != null) {
             KeyValue nextJoinedKv = joinedHeap.peek();
             // If joinedHeap is pointing to some other row, try to seek to a correct one.
-            // We don't need to recheck that row here - populateResult will take care of that.
             boolean mayHaveData =
               (nextJoinedKv != null && nextJoinedKv.matchingRow(currentRow, offset, length))
-              || this.joinedHeap.seek(KeyValue.createFirstOnRow(currentRow, offset, length));
+              || (this.joinedHeap.seek(KeyValue.createFirstOnRow(currentRow, offset, length))
+                  && joinedHeap.peek() != null
+                  && joinedHeap.peek().matchingRow(currentRow, offset, length));
             if (mayHaveData) {
               joinedContinuationRow = current;
               populateFromJoinedHeap(results, limit, metric);
@@ -3691,7 +3701,8 @@ public class HRegion implements HeapSize { // , Writable{
         // Double check to prevent empty rows from appearing in result. It could be
         // the case when SingleColumnValueExcludeFilter is used.
         if (results.isEmpty()) {
-          nextRow(currentRow, offset, length);
+          boolean moreRows = nextRow(currentRow, offset, length);
+          if (!moreRows) return false;
           if (!stopRow) continue;
         }
 
@@ -3705,13 +3716,18 @@ public class HRegion implements HeapSize { // , Writable{
           && filter.filterRowKey(row, offset, length);
     }
 
-    protected void nextRow(byte [] currentRow, int offset, short length) throws IOException {
+    protected boolean nextRow(byte [] currentRow, int offset, short length) throws IOException {
       assert this.joinedContinuationRow == null : "Trying to go to next row during joinedHeap read.";
       KeyValue next;
       while ((next = this.storeHeap.peek()) != null && next.matchingRow(currentRow, offset, length)) {
         this.storeHeap.next(MOCKED_LIST);
       }
       resetFilters();
+      // Calling the hook in CP which allows it to do a fast forward
+      if (this.region.getCoprocessorHost() != null) {
+        return this.region.getCoprocessorHost().postScannerFilterRow(this, currentRow);
+      }
+      return true;
     }
 
     private boolean isStopRow(byte [] currentRow, int offset, short length) {
@@ -4200,12 +4216,12 @@ public class HRegion implements HeapSize { // , Writable{
     a.compactStores(true);
     if (LOG.isDebugEnabled()) {
       LOG.debug("Files for region: " + a);
-      listPaths(fs, a.getRegionDir());
+      FSUtils.logFileSystemState(fs, a.getRegionDir(), LOG);
     }
     b.compactStores(true);
     if (LOG.isDebugEnabled()) {
       LOG.debug("Files for region: " + b);
-      listPaths(fs, b.getRegionDir());
+      FSUtils.logFileSystemState(fs, b.getRegionDir(), LOG);
     }
 
     Configuration conf = a.baseConf;
@@ -4264,16 +4280,6 @@ public class HRegion implements HeapSize { // , Writable{
       // Because we compacted the source regions we should have no more than two
       // HStoreFiles per family and there will be no reference store
       List<StoreFile> srcFiles = es.getValue();
-      if (srcFiles.size() == 2) {
-        long seqA = srcFiles.get(0).getMaxSequenceId();
-        long seqB = srcFiles.get(1).getMaxSequenceId();
-        if (seqA == seqB) {
-          // Can't have same sequenceid since on open of a store, this is what
-          // distingushes the files (see the map of stores how its keyed by
-          // sequenceid).
-          throw new IOException("Files have same sequenceid: " + seqA);
-        }
-      }
       for (StoreFile hsf: srcFiles) {
         StoreFile.rename(fs, hsf.getPath(),
           StoreFile.getUniqueFile(fs, HStore.getStoreHomedir(tableDir,
@@ -4282,7 +4288,7 @@ public class HRegion implements HeapSize { // , Writable{
     }
     if (LOG.isDebugEnabled()) {
       LOG.debug("Files for new region");
-      listPaths(fs, newRegionDir);
+      FSUtils.logFileSystemState(fs, newRegionDir, LOG);
     }
     HRegion dstRegion = HRegion.newHRegion(tableDir, log, fs, conf,
         newRegionInfo, a.getTableDesc(), null);
@@ -4296,7 +4302,7 @@ public class HRegion implements HeapSize { // , Writable{
     dstRegion.compactStores();
     if (LOG.isDebugEnabled()) {
       LOG.debug("Files for new region");
-      listPaths(fs, dstRegion.getRegionDir());
+      FSUtils.logFileSystemState(fs, dstRegion.getRegionDir(), LOG);
     }
 
     // delete out the 'A' region
@@ -4344,32 +4350,6 @@ public class HRegion implements HeapSize { // , Writable{
     }
     return false;
   }
-
-  /*
-   * List the files under the specified directory
-   *
-   * @param fs
-   * @param dir
-   * @throws IOException
-   */
-  private static void listPaths(FileSystem fs, Path dir) throws IOException {
-    if (LOG.isDebugEnabled()) {
-      FileStatus[] stats = FSUtils.listStatus(fs, dir, null);
-      if (stats == null || stats.length == 0) {
-        return;
-      }
-      for (int i = 0; i < stats.length; i++) {
-        String path = stats[i].getPath().toString();
-        if (stats[i].isDir()) {
-          LOG.debug("d " + path);
-          listPaths(fs, stats[i].getPath());
-        } else {
-          LOG.debug("f " + path + " size=" + stats[i].getLen());
-        }
-      }
-    }
-  }
-
 
   //
   // HBASE-880
@@ -4686,6 +4666,7 @@ public class HRegion implements HeapSize { // , Writable{
     long size = 0;
     long txid = 0;
 
+    checkReadOnly();
     // Lock row
     startRegionOperation();
     this.writeRequestsCount.increment();
@@ -4850,6 +4831,7 @@ public class HRegion implements HeapSize { // , Writable{
     long size = 0;
     long txid = 0;
 
+    checkReadOnly();
     // Lock row
     startRegionOperation();
     this.writeRequestsCount.increment();

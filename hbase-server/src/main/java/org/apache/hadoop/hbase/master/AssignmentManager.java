@@ -1819,7 +1819,8 @@ public class AssignmentManager extends ZooKeeperListener {
 
       if (existingPlan != null && existingPlan.getDestination() != null) {
         LOG.debug("Found an existing plan for " + region.getRegionNameAsString()
-          + " destination server is " + existingPlan.getDestination());
+          + " destination server is " + existingPlan.getDestination() +
+            " accepted as a dest server = " + destServers.contains(existingPlan.getDestination()));
       }
 
       if (forceNewPlan
@@ -1839,7 +1840,8 @@ public class AssignmentManager extends ZooKeeperListener {
         " so generated a random one; " + randomPlan + "; " +
         serverManager.countOfRegionServers() +
                " (online=" + serverManager.getOnlineServers().size() +
-               ", available=" + destServers.size() + ") available servers");
+               ", available=" + destServers.size() + ") available servers, " +
+          "forceNewPlan="+forceNewPlan);
         return randomPlan;
       }
     LOG.debug("Using pre-existing plan for region " +
@@ -2705,7 +2707,7 @@ public class AssignmentManager extends ZooKeeperListener {
    * @param sn Server that went down.
    * @return list of regions in transition on this server
    */
-  public List<RegionState> processServerShutdown(final ServerName sn) {
+  public List<HRegionInfo> processServerShutdown(final ServerName sn) {
     // Clean out any existing assignment plans for this server
     synchronized (this.regionPlans) {
       for (Iterator <Map.Entry<String, RegionPlan>> i =
@@ -2719,7 +2721,30 @@ public class AssignmentManager extends ZooKeeperListener {
         }
       }
     }
-    return regionStates.serverOffline(sn);
+    List<HRegionInfo> regions = regionStates.serverOffline(sn);
+    for (Iterator<HRegionInfo> it = regions.iterator(); it.hasNext(); ) {
+      HRegionInfo hri = it.next();
+      String encodedName = hri.getEncodedName();
+
+      // We need a lock on the region as we could update it
+      Lock lock = locker.acquireLock(encodedName);
+      try {
+        RegionState regionState =
+          regionStates.getRegionTransitionState(encodedName);
+        if (regionState == null
+            || !regionState.isPendingOpenOrOpeningOnServer(sn)) {
+          LOG.info("Skip region " + hri
+            + " since it is not opening on the dead server any more: " + sn);
+          it.remove();
+        } else {
+          // Mark the region closed and assign it again by SSH
+          regionStates.updateRegionState(hri, RegionState.State.CLOSED);
+        }
+      } finally {
+        lock.unlock();
+      }
+    }
+    return regions;
   }
 
   /**

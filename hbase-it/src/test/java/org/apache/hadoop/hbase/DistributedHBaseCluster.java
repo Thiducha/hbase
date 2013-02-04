@@ -113,7 +113,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
 
   @Override
   public ClientProtocol getClientProtocol(ServerName serverName) throws IOException {
-    return getAdmin().getConnection().getClient(serverName.getHostname(), serverName.getPort());
+    return admin.getConnection().getClient(serverName);
   }
 
   @Override

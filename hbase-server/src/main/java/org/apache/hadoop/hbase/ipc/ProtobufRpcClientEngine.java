@@ -45,11 +45,16 @@ public class ProtobufRpcClientEngine implements RpcClientEngine {
   private static final Log LOG =
       LogFactory.getLog("org.apache.hadoop.hbase.ipc.ProtobufRpcClientEngine");
 
+  public HBaseClient getClient() {
+    return client;
+  }
+
   protected HBaseClient client;
 
   public ProtobufRpcClientEngine(Configuration conf) {
     this.client = new HBaseClient(conf);
   }
+
 
   @Override
   public <T extends IpcProtocol> T getProxy(

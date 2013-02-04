@@ -22,6 +22,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.net.ConnectException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -230,18 +231,20 @@ public class TestCatalogTracker {
         // So, do this in a thread and then reset meta location to break it out
         // of its wait after a bit of time.
         final AtomicBoolean metaSet = new AtomicBoolean(false);
+        final CountDownLatch latch = new CountDownLatch(1);
         Thread t = new Thread() {
           @Override
           public void run() {
             try {
-              metaSet.set(ct.waitForMetaServerConnection(100000) !=  null);
+              latch.countDown();
+              metaSet.set(ct.waitForMeta(100000) !=  null);
             } catch (Exception e) {
               throw new RuntimeException(e);
             }
           }
         };
         t.start();
-        while(!t.isAlive()) Threads.sleep(1);
+        latch.await();
         Threads.sleep(1);
         // Now reset the meta as though it were redeployed.
         ct.setMetaLocation(SN);
@@ -486,8 +489,7 @@ public class TestCatalogTracker {
     Mockito.doNothing().when(connection).close();
     // Make it so we return any old location when asked.
     final HRegionLocation anyLocation =
-      new HRegionLocation(HRegionInfo.FIRST_META_REGIONINFO, SN.getHostname(),
-        SN.getPort());
+      new HRegionLocation(HRegionInfo.FIRST_META_REGIONINFO, SN);
     Mockito.when(connection.getRegionLocation((byte[]) Mockito.any(),
         (byte[]) Mockito.any(), Mockito.anyBoolean())).
       thenReturn(anyLocation);

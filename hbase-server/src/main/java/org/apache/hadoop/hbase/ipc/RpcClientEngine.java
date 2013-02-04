@@ -36,4 +36,6 @@ public interface RpcClientEngine {
 
   /** Shutdown this instance */
   void close();
+
+  public HBaseClient getClient();
 }

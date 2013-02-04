@@ -292,6 +292,7 @@ Server {
   private LoadBalancer balancer;
   private Thread balancerChore;
   private Thread clusterStatusChore;
+  private ClusterStatusPublisher clusterStatusPublisherChore;
 
   private CatalogJanitor catalogJanitorChore;
   private LogCleaner logCleaner;
@@ -409,6 +410,9 @@ Server {
     if (isHealthCheckerConfigured()) {
       healthCheckChore = new HealthCheckChore(sleepTime, this, getConfiguration());
     }
+
+    clusterStatusPublisherChore = new ClusterStatusPublisher(this, 10000, conf);
+    Threads.setDaemonThreadRunning(clusterStatusPublisherChore.getThread());
   }
 
   /**
@@ -579,7 +583,6 @@ Server {
    * @param abortable If fatal exception we'll call abort on this.  May be null.
    * If it is we'll use the Connection associated with the passed
    * {@link Configuration} as our {@link Abortable}.
-   * @param defaultTimeout Timeout to use.  Pass zero for no timeout
    * ({@link Object#wait(long)} when passed a <code>0</code> waits for ever).
    * @throws IOException
    */
@@ -1772,9 +1775,8 @@ Server {
     if (cpHost != null) {
       cpHost.preModifyTable(tableName, descriptor);
     }
-    TableEventHandler tblHandle = new ModifyTableHandler(tableName, descriptor, this, this);
-    this.executorService.submit(tblHandle);
-    tblHandle.waitForPersist();
+    new ModifyTableHandler(tableName, descriptor, this, this).process();
+
     if (cpHost != null) {
       cpHost.postModifyTable(tableName, descriptor);
     }
@@ -2358,7 +2360,7 @@ Server {
           .mergeFrom(call.getRequest()).build();
       final Message.Builder responseBuilder =
           service.getResponsePrototype(methodDesc).newBuilderForType();
-      service.callMethod(methodDesc, controller, execRequest, new RpcCallback<Message>() {
+      service.callMethod(methodDesc, execController, execRequest, new RpcCallback<Message>() {
         @Override
         public void run(Message message) {
           if (message != null) {
