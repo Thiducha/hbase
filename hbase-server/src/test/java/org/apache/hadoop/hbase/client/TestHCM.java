@@ -149,7 +149,28 @@ public class TestHCM {
 
     Assert.assertTrue(hci.clusterStatusListener.isDead(sn));
 
-    hci.getClient(sn);
+    hci.getClient(sn);  // will throw an exception: RegionServerStoppedException
+  }
+
+  /**
+   * Test that if a server is marked as dead, connections to it will be stopped immediately.
+   * @throws IOException
+   * @throws InterruptedException
+   */
+  public void testDeadsExitEarlier() throws IOException, InterruptedException {
+    /*
+    Seems impossible to test without simulating a computer unplug.
+
+    start 3 RS.
+    Put a table on RS3.
+    Do a put on RS3.
+    Unplug it.
+    Do a put on it, with a huge timeout.
+    Should exit after ZK
+
+
+
+     */
   }
   
   @Test

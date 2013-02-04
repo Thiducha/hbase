@@ -49,6 +49,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.google.protobuf.BlockingRpcChannel;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -81,6 +82,7 @@ import org.apache.hadoop.hbase.ipc.ProtobufRpcClientEngine;
 import org.apache.hadoop.hbase.ipc.RpcClientEngine;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.RequestConverter;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.TableSchema;
 import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDescriptorsRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDescriptorsResponse;
@@ -628,15 +630,9 @@ public class HConnectionManager {
       retrieveClusterId();
 
       clusterStatusListener = new ClusterStatusListener(new ClusterStatusListener.DeadServerHandler(){
-
         @Override
         public void newDead(ServerName sn) {
-          String rsName = Addressing.createHostAndPortStr(sn.getHostname(), sn.getPort());
-          rpcEngine.getClient().
-          Map<String, IpcProtocol> protocols = servers.get(rsName);
-          for (IpcProtocol ipc:proto cols.values()){
-
-          }
+          rpcEngine.getClient().cancelConnections(sn.getHostname(), sn.getPort(), null);
         }
       });
       try {
