@@ -117,7 +117,7 @@ public abstract class ServerCallable<T> implements Callable<T> {
   public void beforeCall() {
     this.startTime = EnvironmentEdgeManager.currentTimeMillis();
     int remaining = (int)(callTimeout - (this.startTime - this.globalStartTime));
-    if (remaining <= MIN_RPC_TIMEOUT) {
+    if (remaining < MIN_RPC_TIMEOUT) {
       // If there is no time left, we're trying anyway. It's too late.
       // 0 means no timeout, and it's not the intent here. So we secure both cases by
       // resetting to the minimum.
