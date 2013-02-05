@@ -176,6 +176,9 @@ public final class HConstants {
   /** Default value for ZooKeeper session timeout */
   public static final int DEFAULT_ZK_SESSION_TIMEOUT = 180 * 1000;
 
+  /** Configuration key for whether to use ZK.multi */
+  public static final String ZOOKEEPER_USEMULTI = "hbase.zookeeper.useMulti";
+
   /** Parameter name for port region server listens on. */
   public static final String REGIONSERVER_PORT = "hbase.regionserver.port";
 
@@ -284,9 +287,6 @@ public final class HConstants {
   public static final boolean DEFAULT_HREGION_EDITS_REPLAY_SKIP_ERRORS =
       false;
 
-  /** Default size of a reservation block   */
-  public static final int DEFAULT_SIZE_RESERVATION_BLOCK = 1024 * 1024 * 5;
-
   /** Maximum value length, enforced on KeyValue construction */
   public static final int MAXIMUM_VALUE_LENGTH = Integer.MAX_VALUE - 1;
 
@@ -343,6 +343,9 @@ public final class HConstants {
 
   /** The startcode column qualifier */
   public static final byte [] STARTCODE_QUALIFIER = toBytes("serverstartcode");
+
+  /** The open seqnum column qualifier */
+  public static final byte [] SEQNUM_QUALIFIER = toBytes("seqnumDuringOpen");
 
   /** The lower-half split region column qualifier */
   public static final byte [] SPLITA_QUALIFIER = toBytes("splitA");
@@ -448,6 +451,7 @@ public final class HConstants {
   public static final String VERSIONS = "VERSIONS";
   public static final String IN_MEMORY = "IN_MEMORY";
   public static final String METADATA = "METADATA";
+  public static final String CONFIGURATION = "CONFIGURATION";
 
   /**
    * This is a retry backoff multiplier table similar to the BSD TCP syn
@@ -591,17 +595,6 @@ public final class HConstants {
   public static String HBASE_CLIENT_INSTANCE_ID = "hbase.client.instance.id";
 
   /**
-   * The row lock timeout period in milliseconds.
-   */
-  public static String HBASE_REGIONSERVER_ROWLOCK_TIMEOUT_PERIOD =
-	  "hbase.regionserver.rowlock.timeout.period";
-
-  /**
-   * Default value of {@link #HBASE_REGIONSERVER_ROWLOCK_TIMEOUT_PERIOD}.
-   */
-  public static int DEFAULT_HBASE_REGIONSERVER_ROWLOCK_TIMEOUT_PERIOD = 60000;
-
-  /**
    * The client scanner timeout period in milliseconds.
    */
   public static String HBASE_CLIENT_SCANNER_TIMEOUT_PERIOD = "hbase.client.scanner.timeout.period";
@@ -620,6 +613,12 @@ public final class HConstants {
    * Default value of {@link #HBASE_RPC_TIMEOUT_KEY}
    */
   public static int DEFAULT_HBASE_RPC_TIMEOUT = 60000;
+
+  /**
+   * Value indicating the server name was saved with no sequence number.
+   */
+  public static final long NO_SEQNUM = -1;
+
 
   /*
    * cluster replication constants.

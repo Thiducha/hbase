@@ -92,14 +92,18 @@ public class Scan extends OperationWithAttributes {
 
   private int storeLimit = -1;
   private int storeOffset = 0;
+  private boolean getScan;
 
   // If application wants to collect scan metrics, it needs to
   // call scan.setAttribute(SCAN_ATTRIBUTES_ENABLE, Bytes.toBytes(Boolean.TRUE))
-  static public final String SCAN_ATTRIBUTES_METRICS_ENABLE =
-    "scan.attributes.metrics.enable";
-  static public final String SCAN_ATTRIBUTES_METRICS_DATA =
-    "scan.attributes.metrics.data";
-
+  static public final String SCAN_ATTRIBUTES_METRICS_ENABLE = "scan.attributes.metrics.enable";
+  static public final String SCAN_ATTRIBUTES_METRICS_DATA = "scan.attributes.metrics.data";
+  
+  // If an application wants to use multiple scans over different tables each scan must
+  // define this attribute with the appropriate table name by calling
+  // scan.setAttribute(Scan.SCAN_ATTRIBUTES_TABLE_NAME, Bytes.toBytes(tableName))
+  static public final String SCAN_ATTRIBUTES_TABLE_NAME = "scan.attributes.table.name";
+  
   /*
    * -1 means no caching
    */
@@ -141,6 +145,8 @@ public class Scan extends OperationWithAttributes {
   public Scan(byte [] startRow, byte [] stopRow) {
     this.startRow = startRow;
     this.stopRow = stopRow;
+    //if the startRow and stopRow both are empty, it is not a Get
+    this.getScan = isStartRowAndEqualsStopRow();
   }
 
   /**
@@ -159,6 +165,7 @@ public class Scan extends OperationWithAttributes {
     caching = scan.getCaching();
     maxResultSize = scan.getMaxResultSize();
     cacheBlocks = scan.getCacheBlocks();
+    getScan = scan.isGetScan();
     filter = scan.getFilter(); // clone?
     loadColumnFamiliesOnDemand = scan.getLoadColumnFamiliesOnDemandValue();
     TimeRange ctr = scan.getTimeRange();
@@ -194,13 +201,17 @@ public class Scan extends OperationWithAttributes {
     this.storeOffset = get.getRowOffsetPerColumnFamily();
     this.tr = get.getTimeRange();
     this.familyMap = get.getFamilyMap();
+    this.getScan = true;
   }
 
   public boolean isGetScan() {
-    return this.startRow != null && this.startRow.length > 0 &&
-      Bytes.equals(this.startRow, this.stopRow);
+    return this.getScan || isStartRowAndEqualsStopRow();
   }
 
+  private boolean isStartRowAndEqualsStopRow() {
+    return this.startRow != null && this.startRow.length > 0 &&
+        Bytes.equals(this.startRow, this.stopRow);
+  }
   /**
    * Get all columns from the specified family.
    * <p>
