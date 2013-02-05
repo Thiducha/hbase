@@ -915,7 +915,7 @@ public class HRegion implements HeapSize { // , Writable{
     return isAvailable() && !hasReferences();
   }
 
-  boolean areWritesEnabled() {
+  public boolean areWritesEnabled() {
     synchronized(this.writestate) {
       return this.writestate.writesEnabled;
     }
@@ -3131,7 +3131,10 @@ public class HRegion implements HeapSize { // , Writable{
                   + Bytes.toStringBinary(row));
             }
           } catch (InterruptedException ie) {
-            // Empty
+            LOG.warn("internalObtainRowLock interrupted for row=" + Bytes.toStringBinary(row));
+            InterruptedIOException iie = new InterruptedIOException();
+            iie.initCause(ie);
+            throw iie;
           }
         }
       }
@@ -3673,10 +3676,11 @@ public class HRegion implements HeapSize { // , Writable{
           if (this.joinedHeap != null) {
             KeyValue nextJoinedKv = joinedHeap.peek();
             // If joinedHeap is pointing to some other row, try to seek to a correct one.
-            // We don't need to recheck that row here - populateResult will take care of that.
             boolean mayHaveData =
               (nextJoinedKv != null && nextJoinedKv.matchingRow(currentRow, offset, length))
-              || this.joinedHeap.seek(KeyValue.createFirstOnRow(currentRow, offset, length));
+              || (this.joinedHeap.seek(KeyValue.createFirstOnRow(currentRow, offset, length))
+                  && joinedHeap.peek() != null
+                  && joinedHeap.peek().matchingRow(currentRow, offset, length));
             if (mayHaveData) {
               joinedContinuationRow = current;
               populateFromJoinedHeap(results, limit, metric);
@@ -4662,6 +4666,7 @@ public class HRegion implements HeapSize { // , Writable{
     long size = 0;
     long txid = 0;
 
+    checkReadOnly();
     // Lock row
     startRegionOperation();
     this.writeRequestsCount.increment();
@@ -4826,6 +4831,7 @@ public class HRegion implements HeapSize { // , Writable{
     long size = 0;
     long txid = 0;
 
+    checkReadOnly();
     // Lock row
     startRegionOperation();
     this.writeRequestsCount.increment();
