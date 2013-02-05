@@ -16,32 +16,32 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.hadoop.hbase;
 
-import java.io.IOException;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 
+import java.io.IOException;
+
 /**
- * This exception is thrown by the master when a region server was shut down and
- * restarted so fast that the master still hasn't processed the server shutdown
- * of the first instance, or when master is initializing and client call admin
- * operations, or when an operation is performed on a region server that is still starting.
+ * This exception is used to signify to the caller that the operation can / should be safely
+ * retried.
  */
 @SuppressWarnings("serial")
 @InterfaceAudience.Public
 @InterfaceStability.Stable
-public class PleaseHoldException extends  PleaseRetryException {
-  public PleaseHoldException(String message) {
+public class PleaseRetryException extends HBaseIOException {
+
+  public PleaseRetryException(String message) {
     super(message);
   }
 
-
-  public PleaseHoldException(String message, Throwable cause) {
+  public PleaseRetryException(String message, Throwable cause) {
     super(message, cause);
   }
 
-  public PleaseHoldException(Throwable cause) {
+  public PleaseRetryException(Throwable cause) {
     super(cause);
   }
 }
