@@ -62,7 +62,7 @@ public abstract class ServerCallable<T> implements Callable<T> {
   protected int callTimeout;
   protected long globalStartTime;
   protected long startTime, endTime;
-  private final static int MIN_RPC_TIMEOUT = 2000;
+  protected final static int MIN_RPC_TIMEOUT = 2000;
 
   /**
    * @param connection Connection to use.
