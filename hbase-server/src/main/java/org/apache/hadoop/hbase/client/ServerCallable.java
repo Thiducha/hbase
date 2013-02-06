@@ -28,6 +28,7 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionLocation;
 import org.apache.hadoop.hbase.ipc.HBaseClientRPC;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.ipc.RemoteException;
 
 import java.io.IOException;
@@ -58,7 +59,9 @@ public abstract class ServerCallable<T> implements Callable<T> {
   protected HRegionLocation location;
   protected ClientProtocol server;
   protected int callTimeout;
+  protected long globalStartTime;
   protected long startTime, endTime;
+  protected final static int MIN_RPC_TIMEOUT = 2000;
 
   /**
    * @param connection Connection to use.
@@ -110,25 +113,20 @@ public abstract class ServerCallable<T> implements Callable<T> {
   }
 
   public void beforeCall() {
-    HBaseClientRPC.setRpcTimeout(this.callTimeout);
-    this.startTime = System.currentTimeMillis();
+    this.startTime = EnvironmentEdgeManager.currentTimeMillis();
+    int remaining = (int)(callTimeout - (this.startTime - this.globalStartTime));
+    if (remaining < MIN_RPC_TIMEOUT) {
+      // If there is no time left, we're trying anyway. It's too late.
+      // 0 means no timeout, and it's not the intent here. So we secure both cases by
+      // resetting to the minimum.
+      remaining = MIN_RPC_TIMEOUT;
+    }
+    HBaseClientRPC.setRpcTimeout(remaining);
   }
 
   public void afterCall() {
     HBaseClientRPC.resetRpcTimeout();
-    this.endTime = System.currentTimeMillis();
-  }
-
-  public void shouldRetry(Throwable throwable) throws IOException {
-    if (this.endTime - this.startTime > this.callTimeout) {
-      throw (SocketTimeoutException) new SocketTimeoutException(
-          "Call to access row '" + Bytes.toString(row) + "' on table '"
-              + Bytes.toString(tableName)
-              + "' failed on socket timeout exception: " + throwable +
-              " callTimeout=" + (this.callTimeout == Integer.MAX_VALUE ? "inf" : this.callTimeout)
-              + " time= " + (this.endTime - this.startTime))
-          .initCause(throwable);
-    }
+    this.endTime = EnvironmentEdgeManager.currentTimeMillis();
   }
 
   /**
@@ -155,6 +153,7 @@ public abstract class ServerCallable<T> implements Callable<T> {
       HConstants.DEFAULT_HBASE_CLIENT_RETRIES_NUMBER);
     List<RetriesExhaustedException.ThrowableWithExtraContext> exceptions =
       new ArrayList<RetriesExhaustedException.ThrowableWithExtraContext>();
+    this.globalStartTime = EnvironmentEdgeManager.currentTimeMillis();
     for (int tries = 0; tries < numRetries; tries++) {
       try {
         beforeCall();
@@ -175,17 +174,20 @@ public abstract class ServerCallable<T> implements Callable<T> {
         }
         RetriesExhaustedException.ThrowableWithExtraContext qt =
           new RetriesExhaustedException.ThrowableWithExtraContext(t,
-            System.currentTimeMillis(), toString());
+              EnvironmentEdgeManager.currentTimeMillis(), toString());
         exceptions.add(qt);
         if (tries == numRetries - 1) {
           throw new RetriesExhaustedException(tries, exceptions);
         }
-        if ((this.endTime - this.startTime) > this.callTimeout) {
+        long expectedSleep = ConnectionUtils.getPauseTime(pause, tries);
+        // If, after the planned sleep, there won't be enough time left, we stop now.
+        if (((this.endTime - this.globalStartTime) + MIN_RPC_TIMEOUT + expectedSleep) >
+            this.callTimeout) {
           throw (SocketTimeoutException) new SocketTimeoutException(
               "Call to access row '" + Bytes.toString(row) + "' on table '"
                   + Bytes.toString(tableName)
-                  + " timeouted; " + " callTimeout=" + this.callTimeout +
-                  ", time= " + (this.endTime - this.startTime)).initCause(t);
+                  + "' failed on timeout. " + " callTimeout=" + this.callTimeout +
+                  ", time=" + (this.endTime - this.startTime)).initCause(t);
         }
       } finally {
         afterCall();
@@ -194,7 +196,7 @@ public abstract class ServerCallable<T> implements Callable<T> {
         Thread.sleep(ConnectionUtils.getPauseTime(pause, tries));
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
-        throw new IOException("Giving up after tries=" + tries, e);
+        throw new IOException("Interrupted after tries=" + tries, e);
       }
     }
     return null;
@@ -208,6 +210,7 @@ public abstract class ServerCallable<T> implements Callable<T> {
    */
   public T withoutRetries()
   throws IOException, RuntimeException {
+    this.globalStartTime = EnvironmentEdgeManager.currentTimeMillis();
     try {
       beforeCall();
       connect(false);
