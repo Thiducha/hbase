@@ -374,7 +374,16 @@ public interface HConnection extends Abortable, Closeable {
    */
   public MasterAdminKeepAliveConnection getKeepAliveMasterAdmin() throws MasterNotRunningException;
 
-  ClientProtocol getClient(ServerName serverName)
-      throws IOException;
+
+
+
+  public  ClientProtocol getClient(ServerName serverName) throws IOException;
+
+
+  /**
+   * @param serverName
+   * @return true if the server is known as dead, false otherwise.
+   */
+  public boolean isDead(ServerName serverName);
 }
 

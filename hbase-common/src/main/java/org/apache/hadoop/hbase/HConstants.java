@@ -40,6 +40,17 @@ public final class HConstants {
   /** When we encode strings, we always specify UTF8 encoding */
   public static final Charset UTF8_CHARSET = Charset.forName(UTF8_ENCODING);
 
+
+  public static final String STATUS_MULTICAST_ADDRESS = "hbase.status.multicast.address.ip";
+  public static final String DEFAULT_STATUS_MULTICAST_ADDRESS = null;// "226.1.1.3";
+
+
+  public static final String STATUS_MULTICAST_PORT = "hbase.status.multicast.port";
+  public static final int DEFAULT_STATUS_MULTICAST_PORT = 60100;
+
+  public static final String STATUS_MULTICAST_PERIOD = "hbase.status.period";
+  public static final int DEFAULT_STATUS_MULTICAST_PERIOD = 10000;
+
   private static byte[] toBytes(String target) {
     return target.getBytes(UTF8_CHARSET);
   }

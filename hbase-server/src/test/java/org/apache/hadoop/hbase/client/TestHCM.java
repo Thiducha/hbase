@@ -145,7 +145,7 @@ public class TestHCM {
 
     Thread.sleep(40000); // We want the status to be updated. That's a least 10 second
     Assert.assertTrue(
-        TEST_UTIL.getHBaseCluster().getMaster().getServerManager().getDeadServers().contains(sn));
+        TEST_UTIL.getHBaseCluster().getMaster().getServerManager().getDeadServers().isDeadServer(sn));
 
     Assert.assertTrue(hci.clusterStatusListener.isDead(sn));
 

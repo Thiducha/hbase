@@ -629,19 +629,22 @@ public class HConnectionManager {
 
       retrieveClusterId();
 
-      clusterStatusListener = new ClusterStatusListener(new ClusterStatusListener.DeadServerHandler(){
-        @Override
-        public void newDead(ServerName sn) {
-          //rpcEngine.getClient().cancelConnections(sn.getHostname(), sn.getPort(), null);
+      if (conf.get(HConstants.STATUS_MULTICAST_ADDRESS,
+          HConstants.DEFAULT_STATUS_MULTICAST_ADDRESS) != null) {
+        try {
+          clusterStatusListener = new ClusterStatusListener.ClusterStatusMultiCastListener(
+              new ClusterStatusListener.DeadServerHandler() {
+                @Override
+                public void newDead(ServerName sn) {
+                  rpcEngine.getClient().cancelConnections(sn.getHostname(), sn.getPort(), null);
+                }
+              }, conf);
+        } catch (InterruptedException e) {
+          Thread.interrupted();
+          throw new RuntimeException(e); // todo
+        } catch (UnknownHostException e) {
+          throw new RuntimeException(e); // todo
         }
-      });
-      try {
-        clusterStatusListener.connect(conf);
-      } catch (InterruptedException e) {
-        Thread.interrupted();
-        throw new RuntimeException(e);
-      } catch (UnknownHostException e) {
-        throw new RuntimeException(e);
       }
     }
 
@@ -1411,6 +1414,12 @@ public class HConnectionManager {
       } else {
         throw new RegionServerStoppedException("The server " + serverName + " is dead.");
       }
+    }
+
+    @Override
+    public boolean isDead(ServerName serverName) {
+      if (clusterStatusListener == null) return false;
+      return clusterStatusListener.isDead(serverName);
     }
 
     @Override

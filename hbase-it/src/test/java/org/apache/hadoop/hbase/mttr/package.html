@@ -65,7 +65,7 @@ install HBase (mvn install -DskipTests -Dhadoop.profile=2.0 -Dhadoop-two.version
 run setup.sh from hbase-it/src/test/script/src to initiate all the cluster. Ex: ~/dev/hbase/hbase-it/src/test/script$ ./setup_aws.sh ec2-23-20-24-189.compute-1.amazonaws.com ec2-50-17-98-49.compute-1.amazonaws.com ec2-184-72-153-152.compute-1.amazonaws.com
 execute the integration tests  (
  mvn verify -pl hbase-it -Dit.test=IntegrationTestRecoveryEmptyTableKill15 -Dhadoop.profile=2.0 -Dhadoop-two.version=2.0.3-SNAPSHOT -Dtest.output.tofile=false
- mvn verify -pl hbase-it -Dit.test=IntegrationTestRecoveryEmptyTableKill15 -Dhadoop-two.version=1.1.1-SNAPSHOT -Dtest.output.tofile=false
+ mvn verify -pl hbase-it -Dit.test=IntegrationTestRecoveryEmptyTableKill15 -Dhadoop-one.version=1.1.1-SNAPSHOT -Dtest.output.tofile=false
  )
 
 **************** What can go wrong

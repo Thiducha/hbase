@@ -321,22 +321,22 @@ public abstract class AbstractIntegrationTestRecovery {
     final long failureFixedTime;
 
     kill(willDieBox);
-
-    Socket socket = new Socket();
-    InetSocketAddress dest = new InetSocketAddress(willDieBox, util.getConfiguration().getInt("hbase.regionserver.port", 60020)) ;
-    boolean stillThere = true;
-    while (stillThere){
-      try {
-        socket.connect(dest, 200);
-        Thread.sleep(200);
-      }catch (IOException ignored){
-        stillThere = false;
-      }
-    }
-
-    afterKill();
-
     try {
+      Socket socket = new Socket();
+      InetSocketAddress dest = new InetSocketAddress(willDieBox, util.getConfiguration().getInt("hbase.regionserver.port", 60020));
+      boolean stillThere = true;
+      while (stillThere) {
+        try {
+          socket.connect(dest, 200);
+          Thread.sleep(200);
+        } catch (IOException ignored) {
+          stillThere = false;
+        }
+      }
+
+      afterKill();
+
+
       // How long does it take to discover that we need to do something?
       while (admin.getClusterStatus().getDeadServers() == 0) {
         Thread.sleep(1000);

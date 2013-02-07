@@ -35,7 +35,7 @@ import java.util.concurrent.Executors;
 @Category(SmallTests.class)
 public class TestNettyMC {
 
-  @Test
+
   public void testServer() throws InterruptedException, UnknownHostException, SocketException {
     // We can't use Netty NIO here: Not implemented exception
     DatagramChannelFactory f = new OioDatagramChannelFactory(Executors.newSingleThreadExecutor());
@@ -68,7 +68,6 @@ public class TestNettyMC {
     }
   }
 
-  @Test
   public void testClient() throws InterruptedException, UnknownHostException {
     DatagramChannelFactory f = new OioDatagramChannelFactory(Executors.newSingleThreadExecutor());
 

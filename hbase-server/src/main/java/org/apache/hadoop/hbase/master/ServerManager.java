@@ -405,8 +405,9 @@ public class ServerManager {
     }
   }
 
-  public Set<ServerName> getDeadServers() {
-    return this.deadservers.clone();
+
+  public DeadServer getDeadServers() {
+    return this.deadservers;
   }
 
   /**
@@ -458,7 +459,7 @@ public class ServerManager {
       LOG.warn("Received expiration of " + serverName +
         " but server is not currently online");
     }
-    if (this.deadservers.contains(serverName)) {
+    if (this.deadservers.isDeadServer(serverName)) {
       // TODO: Can this happen?  It shouldn't be online in this case?
       LOG.warn("Received expiration of " + serverName +
           " but server shutdown is already in progress");
@@ -886,13 +887,8 @@ public class ServerManager {
    * To clear any dead server with same host name and port of any online server
    */
   void clearDeadServersWithSameHostNameAndPortOfOnlineServer() {
-    ServerName sn;
     for (ServerName serverName : getOnlineServersList()) {
-      while ((sn = ServerName.
-          findServerWithSameHostnamePort(this.deadservers, serverName)) != null) {
-        this.deadservers.remove(sn);
-      }
+      deadservers.cleanAllPreviousInstances(serverName);
     }
   }
-
 }

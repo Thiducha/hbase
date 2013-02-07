@@ -411,8 +411,12 @@ Server {
       healthCheckChore = new HealthCheckChore(sleepTime, this, getConfiguration());
     }
 
-    clusterStatusPublisherChore = new ClusterStatusPublisher(this, 10000, conf);
-    Threads.setDaemonThreadRunning(clusterStatusPublisherChore.getThread());
+    // Do we multicast the status?
+    if (conf.get(HConstants.STATUS_MULTICAST_ADDRESS,
+        HConstants.DEFAULT_STATUS_MULTICAST_ADDRESS) != null){
+      clusterStatusPublisherChore = new ClusterStatusPublisher(this, conf);
+      Threads.setDaemonThreadRunning(clusterStatusPublisherChore.getThread());
+    }
   }
 
   /**
@@ -1123,6 +1127,9 @@ Server {
     }
     if (this.catalogJanitorChore != null) {
       this.catalogJanitorChore.interrupt();
+    }
+    if (this.clusterStatusPublisherChore != null){
+      clusterStatusPublisherChore.interrupt();
     }
   }
 
@@ -1862,7 +1869,7 @@ Server {
     return new ClusterStatus(VersionInfo.getVersion(),
       this.fileSystemManager.getClusterId().toString(),
       this.serverManager.getOnlineServers(),
-      this.serverManager.getDeadServers(),
+      this.serverManager.getDeadServers().copyServerNames(),
       this.serverName,
       backupMasters,
       this.assignmentManager.getRegionStates().getRegionsInTransition(),

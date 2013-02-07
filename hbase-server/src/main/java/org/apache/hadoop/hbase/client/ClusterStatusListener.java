@@ -1,8 +1,32 @@
+/**
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.hadoop.hbase.client;
 
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.classification.InterfaceAudience;
+import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.ClusterStatus;
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.protobuf.generated.ClusterStatusProtos;
 import org.jboss.netty.bootstrap.ConnectionlessBootstrap;
@@ -24,113 +48,141 @@ import java.io.Closeable;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
-import java.util.Collection;
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicReference;
 
-public class ClusterStatusListener implements Closeable {
-  public static final String HBASE_STATUS_MULTICAST_ADDRESS = "hbase.status.multicast.address.ip";
-  public static final String HBASE_STATUS_MULTICAST_PORT = "hbase.status.multicast.port";
-  private String mcAddress;
-  private int port;
-  DatagramChannel channel;
-  private final AtomicReference<ClusterStatus> cs = new AtomicReference<ClusterStatus>();
-  private DeadServerHandler deadServerHandler = null;
 
-  public boolean isDead(ServerName sn) {
-    if (sn.getStartcode() <= 0 || cs.get() == null || cs.get().getDeadServerNames() == null) {
-      return false;
-    }
+/**
+ * A class that receives the cluster status, and provide it as a set of service to the client.
+ * Today, manages only the dead server list.
+ * The class is abstract to allow multiple implementation, from ZooKeeper to multicast based.
+ */
+@InterfaceAudience.Private
+@InterfaceStability.Evolving
+abstract public class ClusterStatusListener implements Closeable {
 
-    for (ServerName dead : cs.get().getDeadServerNames()) {
-      if (dead.getStartcode() >= sn.getStartcode() &&
-          dead.getHostAndPort().equals(sn.getHostAndPort())) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
+  /**
+   * Class to be extended to manage a new dead server.
+   */
   public abstract static class DeadServerHandler {
+
+    /**
+     * Called when a server is identified as dead.
+     *
+     * @param sn
+     */
     abstract public void newDead(ServerName sn);
   }
 
-  public ClusterStatusListener(DeadServerHandler deadServerHandler) {
-    this.deadServerHandler = deadServerHandler;
-  }
-
-
-  public void connect(Configuration conf) throws InterruptedException, UnknownHostException {
-    DatagramChannelFactory f = new OioDatagramChannelFactory(Executors.newSingleThreadExecutor());
-
-    ConnectionlessBootstrap b = new ConnectionlessBootstrap(f);
-    b.setPipelineFactory(new ChannelPipelineFactory() {
-      @Override
-      public ChannelPipeline getPipeline() throws Exception {
-        return Channels.pipeline(
-            new ProtobufEncoder(),
-            new ProtobufDecoder(ClusterStatusProtos.ClusterStatus.getDefaultInstance()), new ClusterStatusHandler(cs));
-      }
-    });
-
-    mcAddress = conf.get(ClusterStatusListener.HBASE_STATUS_MULTICAST_ADDRESS, "226.1.1.3");
-    port = conf.getInt(ClusterStatusListener.HBASE_STATUS_MULTICAST_PORT, 60045);
-
-
-    b.setOption("reuseAddress", true);
-    b.setOption("receivedBufferSizePredictorFactory", new FixedReceiveBufferSizePredictorFactory(10024));
-
-    DatagramChannel channel = (DatagramChannel) b.bind(new InetSocketAddress(mcAddress, port));
-
-    InetAddress ina = InetAddress.getByName(mcAddress);
-    channel.joinGroup(ina);
-  }
+  public abstract boolean isDead(ServerName sn);
 
   @Override
-  public void close() {
-    if (channel != null) {
-      channel.close();
+  public void close(){} // No exception
+
+
+  /**
+   * An implementation using a multicast message between the master & the client.
+   */
+  public static class ClusterStatusMultiCastListener extends ClusterStatusListener {
+    private static final Log LOG = LogFactory.getLog(ClusterStatusMultiCastListener.class);
+    private DatagramChannel channel;
+    private final List<ServerName> deadServers = new ArrayList<ServerName>();
+    private DeadServerHandler deadServerHandler = null;
+
+    /**
+     * Check if we know a server is dead.
+     *
+     * @param sn the server name to check.
+     * @return true if we know for sure that the server is dead, false otherwise.
+     */
+    public boolean isDead(ServerName sn) {
+      if (sn.getStartcode() <= 0) {
+        return false;
+      }
+
+      for (ServerName dead : deadServers) {
+        if (dead.getStartcode() >= sn.getStartcode() &&
+            dead.getPort() == sn.getPort() &&
+            dead.getHostname().equals(sn.getHostname())) {
+          return true;
+        }
+      }
+
+      return false;
     }
-  }
 
 
-  class ClusterStatusHandler extends SimpleChannelUpstreamHandler {
-    int i = 0;
-    AtomicReference<ClusterStatus> cs;
-
-    ClusterStatusHandler(AtomicReference<ClusterStatus> cs) {
-      this.cs = cs;
+    public ClusterStatusMultiCastListener(DeadServerHandler deadServerHandler, Configuration conf)
+        throws UnknownHostException, InterruptedException {
+      this.deadServerHandler = deadServerHandler;
+      connect(conf);
     }
 
-    public void messageReceived(
-        ChannelHandlerContext ctx, MessageEvent e) throws Exception {
-      ClusterStatusProtos.ClusterStatus csp = (ClusterStatusProtos.ClusterStatus) e.getMessage();
-      ClusterStatus ncs = ClusterStatus.convert(csp);
-      notifyNewDead(ncs);
-      cs.set(ncs);
-      System.out.println("message received:" + cs.get().getClusterId() + " " + i++);
+
+    public void connect(Configuration conf) throws InterruptedException, UnknownHostException {
+      DatagramChannelFactory f = new OioDatagramChannelFactory(Executors.newSingleThreadExecutor());
+
+      ConnectionlessBootstrap b = new ConnectionlessBootstrap(f);
+      b.setPipelineFactory(new ChannelPipelineFactory() {
+        @Override
+        public ChannelPipeline getPipeline() throws Exception {
+          return Channels.pipeline(
+              new ProtobufEncoder(),
+              new ProtobufDecoder(ClusterStatusProtos.ClusterStatus.getDefaultInstance()),
+              new ClusterStatusHandler());
+        }
+      });
+
+      b.setOption("reuseAddress", true);
+      b.setOption("receivedBufferSizePredictorFactory",
+          new FixedReceiveBufferSizePredictorFactory(1024));      //todo
+
+
+      String mcAddress = conf.get(HConstants.STATUS_MULTICAST_ADDRESS,
+          HConstants.DEFAULT_STATUS_MULTICAST_ADDRESS);
+      int port = conf.getInt(HConstants.STATUS_MULTICAST_PORT,
+          HConstants.DEFAULT_STATUS_MULTICAST_PORT);
+      channel = (DatagramChannel) b.bind(new InetSocketAddress(mcAddress, port));
+
+      InetAddress ina = InetAddress.getByName(mcAddress);
+      channel.joinGroup(ina);
     }
 
-    private void notifyNewDead(ClusterStatus ncs) {
-      if (deadServerHandler != null) {
-        for (ServerName sn : ncs.getDeadServerNames()) {
-          if (isDead(sn)) {
-            deadServerHandler.newDead(sn);
+    @Override
+    public void close() {
+      if (channel != null) {
+        channel.close();
+      }
+    }
+
+
+    private class ClusterStatusHandler extends SimpleChannelUpstreamHandler {
+
+      public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
+        ClusterStatusProtos.ClusterStatus csp = (ClusterStatusProtos.ClusterStatus) e.getMessage();
+        ClusterStatus ncs = ClusterStatus.convert(csp);
+
+        if (ncs.getDeadServerNames() != null) {
+          for (ServerName sn : ncs.getDeadServerNames()) {
+            if (!isDead(sn)) {
+              deadServers.add(sn);
+              if (deadServerHandler != null) {
+                deadServerHandler.newDead(sn);
+              }
+            }
           }
         }
       }
-    }
 
-    /**
-     * Invoked when an exception was raised by an I/O thread or a
-     * {@link org.jboss.netty.channel.ChannelHandler}.
-     */
-    public void exceptionCaught(
-        ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
-      e.getCause().printStackTrace();
+      /**
+       * Invoked when an exception was raised by an I/O thread or a
+       * {@link org.jboss.netty.channel.ChannelHandler}.
+       */
+      public void exceptionCaught(
+          ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
+        LOG.error("Unexpected exception", e.getCause());
+      }
     }
   }
-
 }
