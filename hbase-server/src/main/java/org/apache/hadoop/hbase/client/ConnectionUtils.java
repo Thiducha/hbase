@@ -49,4 +49,18 @@ public class ConnectionUtils {
     long jitter =  (long)(normalPause * RANDOM.nextFloat() * 0.01f); // 1% possible jitter
     return normalPause + jitter;
   }
+
+
+  /**
+   * Adds / subs a 10% jitter. Minimum is 1.
+   */
+  public static long addJitter(final long pause, final float jitter) {
+    float lag = pause * (RANDOM.nextFloat() - 0.5f) * jitter;
+    long newPause = pause + (long) lag;
+    if (newPause <= 0) {
+      return 1;
+    } else {
+      return newPause;
+    }
+  }
 }

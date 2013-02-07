@@ -52,7 +52,7 @@ public class TestDeadServer {
     ds.add(deadServer);
     assertTrue(ds.isDeadServer(deadServer));
     final ServerName deadServerHostComingAlive =
-      new ServerName("127.0.0.1", 9090, 112321L);
+      new ServerName("127.0.0.1", 9090, 223341L);
     assertTrue(ds.cleanPreviousInstance(deadServerHostComingAlive));
     assertFalse(ds.isDeadServer(deadServer));
     assertFalse(ds.cleanPreviousInstance(deadServerHostComingAlive));
