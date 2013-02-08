@@ -192,7 +192,9 @@ public class TestMetaReaderEditorNoCluster {
 
       // Now shove our HRI implementation into the spied-upon connection.
       Mockito.doReturn(implementation).
-        when(connection).getClient(Mockito.anyString(), Mockito.anyInt());
+          when(connection).getClient(Mockito.anyString(), Mockito.anyInt());
+      Mockito.doReturn(implementation).
+          when(connection).getClient(Mockito.any(ServerName.class));
 
       // Now start up the catalogtracker with our doctored Connection.
       ct = new CatalogTracker(zkw, null, connection, ABORTABLE);

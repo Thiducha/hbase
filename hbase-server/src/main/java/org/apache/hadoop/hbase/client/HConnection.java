@@ -228,6 +228,17 @@ public interface HConnection extends Abortable, Closeable {
   throws IOException;
 
   /**
+   * Establishes a connection to the region server at the specified address, and return
+   * a region client protocol.
+   *
+   * @param ServerName the server name (hostname / port / start code)
+   * @return ClientProtocol proxy for RegionServer
+   * @throws IOException if a remote or network exception occurs
+   *
+   */
+  public ClientProtocol getClient(final ServerName ServerName) throws IOException;
+
+  /**
    * Establishes a connection to the region server at the specified address.
    * @param hostname RegionServer hostname
    * @param port RegionServer port
@@ -373,12 +384,6 @@ public interface HConnection extends Abortable, Closeable {
    * @throws MasterNotRunningException
    */
   public MasterAdminKeepAliveConnection getKeepAliveMasterAdmin() throws MasterNotRunningException;
-
-
-
-
-  public  ClientProtocol getClient(ServerName serverName) throws IOException;
-
 
   /**
    * @param serverName

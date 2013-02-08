@@ -503,8 +503,8 @@ public class TestCatalogTracker {
     }
     if (client != null) {
       // If a call to getClient, return this implementation.
-      Mockito.when(connection.getClient(Mockito.anyString(), Mockito.anyInt())).
-        thenReturn(client);
+      Mockito.when(connection.getClient(Mockito.anyString(), Mockito.anyInt())).thenReturn(client);
+      Mockito.when(connection.getClient(Mockito.any(ServerName.class))).thenReturn(client);
     }
     return connection;
   }

@@ -279,8 +279,8 @@ public class TestLoadIncrementalHFilesSplitRecovery {
     ClientProtocol hri = Mockito.mock(ClientProtocol.class);
     Mockito.when(hri.bulkLoadHFile((RpcController)Mockito.any(), (BulkLoadHFileRequest)Mockito.any())).
       thenThrow(new ServiceException(new IOException("injecting bulk load error")));
-    Mockito.when(c.getClient(Mockito.anyString(), Mockito.anyInt())).
-      thenReturn(hri);
+    Mockito.when(c.getClient(Mockito.anyString(), Mockito.anyInt())).thenReturn(hri);
+    Mockito.when(c.getClient(Mockito.any(ServerName.class))).thenReturn(hri);
     return c;
   }
 

@@ -113,8 +113,8 @@ public class HConnectionTestingUtility {
     }
     if (client != null) {
       // If a call to getClient, return this client.
-      Mockito.when(c.getClient(Mockito.anyString(), Mockito.anyInt())).
-        thenReturn(client);
+      Mockito.when(c.getClient(Mockito.anyString(), Mockito.anyInt())).thenReturn(client);
+      Mockito.when(c.getClient(Mockito.any(ServerName.class))).thenReturn(client);
     }
     return c;
   }

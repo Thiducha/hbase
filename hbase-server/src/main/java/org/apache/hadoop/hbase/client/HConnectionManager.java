@@ -2393,7 +2393,9 @@ public class HConnectionManager {
       closeZooKeeperWatcher();
       this.servers.clear();
       this.rpcEngine.close();
-      clusterStatusListener.close();
+      if (clusterStatusListener != null) {
+        clusterStatusListener.close();
+      }
       this.closed = true;
     }
 
