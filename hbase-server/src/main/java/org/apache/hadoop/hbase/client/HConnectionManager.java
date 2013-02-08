@@ -925,7 +925,7 @@ public class HConnectionManager {
       for (; ; ) {
         res = locateRegion(HRegionInfo.getTableName(regionName),
             HRegionInfo.getStartKey(regionName), false, true);
-        if (clusterStatusListener.isDead(res.getServerName())) {
+        if (clusterStatusListener != null && clusterStatusListener.isDead(res.getServerName())) {
           try {
             Thread.sleep(1000);
           } catch (InterruptedException e) {
@@ -1411,7 +1411,7 @@ public class HConnectionManager {
     @Override
     public ClientProtocol getClient(final ServerName serverName)
         throws IOException {
-      if (!clusterStatusListener.isDead(serverName)) {
+      if (clusterStatusListener == null || !clusterStatusListener.isDead(serverName)) {
         return (ClientProtocol) getProtocol(serverName.getHostname(), serverName.getPort(), clientClass);
       } else {
         throw new RegionServerStoppedException("The server " + serverName + " is dead.");
@@ -1420,8 +1420,7 @@ public class HConnectionManager {
 
     @Override
     public boolean isDead(ServerName serverName) {
-      if (clusterStatusListener == null) return false;
-      return clusterStatusListener.isDead(serverName);
+      return clusterStatusListener != null && clusterStatusListener.isDead(serverName);
     }
 
     @Override

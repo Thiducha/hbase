@@ -292,7 +292,7 @@ Server {
   private LoadBalancer balancer;
   private Thread balancerChore;
   private Thread clusterStatusChore;
-  private ClusterStatusPublisher clusterStatusPublisherChore;
+  private ClusterStatusPublisher clusterStatusPublisherChore = null;
 
   private CatalogJanitor catalogJanitorChore;
   private LogCleaner logCleaner;
