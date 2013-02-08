@@ -130,7 +130,7 @@ public class ServerManager {
   private final MasterServices services;
   private final HConnection connection;
 
-  private final DeadServer deadservers;
+  private final DeadServer deadservers = new DeadServer();
 
   private final long maxSkew;
   private final long warningSkew;
@@ -188,7 +188,6 @@ public class ServerManager {
     Configuration c = master.getConfiguration();
     maxSkew = c.getLong("hbase.master.maxclockskew", 30000);
     warningSkew = c.getLong("hbase.master.warningclockskew", 10000);
-    this.deadservers = new DeadServer();
     this.connection = connect ? HConnectionManager.getConnection(c) : null;
   }
 

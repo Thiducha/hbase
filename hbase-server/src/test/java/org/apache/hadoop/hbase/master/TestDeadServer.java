@@ -34,6 +34,7 @@ import static org.junit.Assert.assertTrue;
 @Category(MediumTests.class)
 public class TestDeadServer {
   final ServerName hostname123 = new ServerName("127.0.0.1", 123, 3L);
+  final ServerName hostname123_2 = new ServerName("127.0.0.1", 123, 4L);
   final ServerName hostname1234 = new ServerName("127.0.0.2", 1234, 4L);
   final ServerName hostname12345 = new ServerName("127.0.0.2", 12345, 4L);
 
@@ -94,6 +95,21 @@ public class TestDeadServer {
     Assert.assertEquals(new Long(3L), copy.get(1).getSecond());
 
     EnvironmentEdgeManager.reset();
+  }
+
+  @Test
+  public void testClean(){
+    DeadServer d = new DeadServer();
+    d.add(hostname123);
+
+    d.cleanPreviousInstance(hostname12345);
+    Assert.assertFalse(d.isEmpty());
+
+    d.cleanPreviousInstance(hostname1234);
+    Assert.assertFalse(d.isEmpty());
+
+    d.cleanPreviousInstance(hostname123_2);
+    Assert.assertTrue(d.isEmpty());
   }
 
 }
