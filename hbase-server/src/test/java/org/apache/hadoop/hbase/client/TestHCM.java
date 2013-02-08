@@ -68,8 +68,16 @@ public class TestHCM {
   private static final byte[] FAM_NAM = Bytes.toBytes("f");
   private static final byte[] ROW = Bytes.toBytes("bbb");
 
+  private static final int MC_PERIOD = 1000;
+
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
+    TEST_UTIL.getConfiguration().set(HConstants.STATUS_MULTICAST_ADDRESS ,
+        HBaseTestingUtility.randomMultiCastAddress());
+    TEST_UTIL.getConfiguration().setInt(HConstants.STATUS_MULTICAST_PORT,
+        HBaseTestingUtility.randomFreePort());
+    TEST_UTIL.getConfiguration().setInt(HConstants.STATUS_MULTICAST_PERIOD, MC_PERIOD);
+
     TEST_UTIL.startMiniCluster(2);
   }
 
@@ -110,6 +118,11 @@ public class TestHCM {
     return HConnectionTestingUtility.getConnectionCount();
   }
 
+  /**
+   * Initiate a connection, then kill the server. We expect the connection to get the message
+   *  from the master that the server is dead. So when we will want to use it, we will get an
+   *  exception.
+   */
   @Test(expected = RegionServerStoppedException.class)
   public void testClusterStatus() throws IOException, InterruptedException {
     byte[] tn = "testClusterStatus".getBytes();
@@ -124,13 +137,16 @@ public class TestHCM {
     HTable t = TEST_UTIL.createTable(tn, cf);
     TEST_UTIL.waitTableAvailable(tn, 20000);
 
-    while(TEST_UTIL.getHBaseCluster().getMaster().getAssignmentManager().getRegionStates().isRegionsInTransition()){
+    while(TEST_UTIL.getHBaseCluster().getMaster().getAssignmentManager().getRegionStates().
+        isRegionsInTransition()){
       Thread.sleep(1);
     }
     HConnectionImplementation hci =  (HConnectionImplementation)t.getConnection();
     while (t.getRegionLocation(rk).getPort() != sn.getPort()){
-      TEST_UTIL.getHBaseAdmin().move(t.getRegionLocation(rk).getRegionInfo().getEncodedNameAsBytes(), sn.getVersionedBytes());
-      while(TEST_UTIL.getHBaseCluster().getMaster().getAssignmentManager().getRegionStates().isRegionsInTransition()){
+      TEST_UTIL.getHBaseAdmin().move(t.getRegionLocation(rk).getRegionInfo().
+          getEncodedNameAsBytes(), sn.getVersionedBytes());
+      while(TEST_UTIL.getHBaseCluster().getMaster().getAssignmentManager().
+          getRegionStates().isRegionsInTransition()){
         Thread.sleep(1);
       }
       hci.clearRegionCache(tn);
@@ -143,10 +159,11 @@ public class TestHCM {
 
     rs.getRegionServer().abort("I'm dead");
 
-    Thread.sleep(40000); // We want the status to be updated. That's a least 10 second
-    Assert.assertTrue(
-        TEST_UTIL.getHBaseCluster().getMaster().getServerManager().getDeadServers().isDeadServer(sn));
+    Thread.sleep(MC_PERIOD * 3); // Give some time for the status to be updated.
+    Assert.assertTrue(TEST_UTIL.getHBaseCluster().getMaster().
+        getServerManager().getDeadServers().isDeadServer(sn));
 
+    // The client knows that the server is dead
     Assert.assertTrue(hci.clusterStatusListener.isDead(sn));
 
     hci.getClient(sn);  // will throw an exception: RegionServerStoppedException

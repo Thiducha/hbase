@@ -163,33 +163,29 @@ public abstract class ServerCallable<T> implements Callable<T> {
       long expectedSleep = 0;
       try {
         beforeCall();
-        connect(tries != 0);
+        connect(false);
         return call();
       } catch (Throwable t) {
         LOG.warn("Received exception, tries=" + tries + ", numRetries=" + numRetries +
             " message=" + t.getMessage());
 
         t = translateException(t);
+        // translateException throws an exception when we should not retry, i.e. when it's the
+        //  request that is bad.
+        getConnection().clearCaches(location.getHostnamePort());
 
-        expectedSleep = ConnectionUtils.getPauseTime(pause, tries);
-        if (expectedSleep < MIN_WAIT_DEAD_SERVER &&
-            getConnection().isDead(location.getServerName())){
-          expectedSleep = ConnectionUtils.addJitter(MIN_WAIT_DEAD_SERVER, 0.10f);
-        }
-
-        // translateException throws DoNotRetryIOException exception; so except if we're
-        // ask to wait we clear all the cache entries that
-        // map to that slow/dead server; otherwise, let cache miss and ask
-        // .META. again to find the new location
-        if (!(t instanceof PleaseHoldException)) {
-          //getConnection().clearCaches(location.getHostnamePort());
-        }
         RetriesExhaustedException.ThrowableWithExtraContext qt =
           new RetriesExhaustedException.ThrowableWithExtraContext(t,
               EnvironmentEdgeManager.currentTimeMillis(), toString());
         exceptions.add(qt);
         if (tries == numRetries - 1) {
           throw new RetriesExhaustedException(tries, exceptions);
+        }
+
+        expectedSleep = ConnectionUtils.getPauseTime(pause, tries);
+        if (expectedSleep < MIN_WAIT_DEAD_SERVER &&
+            getConnection().isDead(location.getServerName())){
+          expectedSleep = ConnectionUtils.addJitter(MIN_WAIT_DEAD_SERVER, 0.10f);
         }
 
         // If, after the planned sleep, there won't be enough time left, we stop now.

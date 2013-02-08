@@ -20,6 +20,7 @@ package org.apache.hadoop.hbase;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.util.UUID;
 
 import org.apache.commons.io.FileUtils;
@@ -142,7 +143,7 @@ public class HBaseCommonTestingUtility {
    * @throws IOException
    */
   boolean deleteDir(final File dir) throws IOException {
-    if (dir != null && !dir.exists()) {
+    if (dir == null || !dir.exists()) {
       return true;
     }
     try {
@@ -153,4 +154,4 @@ public class HBaseCommonTestingUtility {
       return false;
     }
   }
-};
+}
