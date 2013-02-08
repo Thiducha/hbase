@@ -53,7 +53,7 @@ public class DeadServer {
   private int numProcessing = 0;
 
   /**
-   * A dead server that comes back alive has a different start code. Th new start code should be
+   * A dead server that comes back alive has a different start code. The new start code should be
    *  greater than the old one, but we don't take this into account in this method.
    *
    * @param newServerName Servername as either <code>host:port</code> or
