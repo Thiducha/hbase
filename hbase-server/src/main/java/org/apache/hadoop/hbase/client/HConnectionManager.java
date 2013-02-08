@@ -1816,7 +1816,7 @@ public class HConnectionManager {
    }
 
    void updateCachedLocation(HRegionInfo hri, HRegionLocation source, ServerName sn) {
-      HRegionLocation newHrl = new HRegionLocation(hri, sn);
+      HRegionLocation newHrl = new HRegionLocation(hri, sn.getHostname(), sn.getPort(), sn.getPort());
       synchronized (this.cachedRegionLocations) {
         cacheLocation(hri.getTableName(), source, newHrl);
       }

@@ -46,8 +46,9 @@ public class HRegionLocation implements Comparable<HRegionLocation> {
   /**
    * Test constructor w/o seqNum.
    */
+  @Deprecated // for tests
   public HRegionLocation(HRegionInfo regionInfo, ServerName servername) {
-    this(regionInfo, servername, servername.getStartcode());
+    this(regionInfo, servername, 0);
   }
 
   public HRegionLocation(HRegionInfo regionInfo, ServerName servername, long seqNum) {
