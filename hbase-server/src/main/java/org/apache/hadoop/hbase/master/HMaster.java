@@ -1862,7 +1862,7 @@ Server {
     return new ClusterStatus(VersionInfo.getVersion(),
       this.fileSystemManager.getClusterId().toString(),
       this.serverManager.getOnlineServers(),
-      this.serverManager.getDeadServers(),
+      this.serverManager.getDeadServers().copyServerNames(),
       this.serverName,
       backupMasters,
       this.assignmentManager.getRegionStates().getRegionsInTransition(),
