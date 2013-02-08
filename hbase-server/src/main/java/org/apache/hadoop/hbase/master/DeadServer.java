@@ -53,7 +53,8 @@ public class DeadServer {
   private int numProcessing = 0;
 
   /**
-   * A dead server that comes back alive has a different start code.
+   * A dead server that comes back alive has a different start code. Th new start code should be
+   *  greater than the old one, but we don't take this into account in this method.
    *
    * @param newServerName Servername as either <code>host:port</code> or
    *                      <code>host,port,startcode</code>.
@@ -63,8 +64,7 @@ public class DeadServer {
     Iterator<ServerName> it = deadServers.keySet().iterator();
     while (it.hasNext()) {
       ServerName sn = it.next();
-      if (newServerName.getStartcode() > sn.getStartcode() &&
-          ServerName.isSameHostnameAndPort(sn, newServerName)) {
+      if (ServerName.isSameHostnameAndPort(sn, newServerName)) {
         it.remove();
         return true;
       }
@@ -120,8 +120,7 @@ public class DeadServer {
     Iterator<ServerName> it = deadServers.keySet().iterator();
     while (it.hasNext()) {
       ServerName sn = it.next();
-      if (newServerName.getStartcode() > sn.getStartcode() &&
-          ServerName.isSameHostnameAndPort(sn, newServerName)) {
+      if (ServerName.isSameHostnameAndPort(sn, newServerName)) {
         it.remove();
       }
     }
@@ -138,7 +137,12 @@ public class DeadServer {
     return sb.toString();
   }
 
-  public List<Pair<ServerName, Long>> copyDeadServersSince(long ts){
+  /**
+   * Extract all the servers dead since a given time, and sort them.
+   * @param ts the time, 0 for all
+   * @return a sorted array list, by death time.
+   */
+  public synchronized List<Pair<ServerName, Long>> copyDeadServersSince(long ts){
     List<Pair<ServerName, Long>> res =  new ArrayList<Pair<ServerName, Long>>(size());
 
     for (Map.Entry<ServerName, Long> entry:deadServers.entrySet()){
