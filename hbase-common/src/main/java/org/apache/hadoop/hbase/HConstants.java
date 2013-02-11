@@ -42,7 +42,7 @@ public final class HConstants {
 
 
   public static final String STATUS_MULTICAST_ADDRESS = "hbase.status.multicast.address.ip";
-  public static final String DEFAULT_STATUS_MULTICAST_ADDRESS = null;// "226.1.1.3";
+  public static final String DEFAULT_STATUS_MULTICAST_ADDRESS = "226.1.1.3";
 
 
   public static final String STATUS_MULTICAST_PORT = "hbase.status.multicast.port";
