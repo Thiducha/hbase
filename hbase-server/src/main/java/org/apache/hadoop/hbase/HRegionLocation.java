@@ -51,8 +51,7 @@ public class HRegionLocation implements Comparable<HRegionLocation> {
   }
 
   public HRegionLocation(HRegionInfo regionInfo, ServerName servername, long seqNum) {
-    this.regionInfo = regionInfo;
-    this.servername = new ServerName(servername.getHostname(), servername.getPort(), seqNum);
+    this(regionInfo, servername.getHostname(), servername.getPort(), seqNum);
   }
 
   @Deprecated // for tests
@@ -61,7 +60,8 @@ public class HRegionLocation implements Comparable<HRegionLocation> {
   }
 
   public HRegionLocation(HRegionInfo regionInfo, String hostname, int port, long seq) {
-    this (regionInfo, new ServerName(hostname, port, 0),seq );
+    this.regionInfo = regionInfo;
+    this.servername =  new ServerName(hostname, port, seq);
   }
 
   /**
