@@ -140,7 +140,7 @@ public class DeadServer {
   /**
    * Extract all the servers dead since a given time, and sort them.
    * @param ts the time, 0 for all
-   * @return a sorted array list, by death time.
+   * @return a sorted array list, by death time, lowest values first.
    */
   public synchronized List<Pair<ServerName, Long>> copyDeadServersSince(long ts){
     List<Pair<ServerName, Long>> res =  new ArrayList<Pair<ServerName, Long>>(size());
@@ -151,11 +151,11 @@ public class DeadServer {
       }
     }
 
-    Collections.sort(res, ServerNameDateComparator);
+    Collections.sort(res, ServerNameDeathDateComparator);
     return res;
   }
 
-  private static Comparator<Pair<ServerName, Long>> ServerNameDateComparator =
+  private static Comparator<Pair<ServerName, Long>> ServerNameDeathDateComparator =
       new Comparator<Pair<ServerName, Long>>(){
 
     @Override
