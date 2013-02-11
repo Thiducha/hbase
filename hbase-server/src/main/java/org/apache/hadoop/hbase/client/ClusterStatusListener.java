@@ -31,8 +31,6 @@ import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.protobuf.generated.ClusterStatusProtos;
 import org.jboss.netty.bootstrap.ConnectionlessBootstrap;
 import org.jboss.netty.channel.ChannelHandlerContext;
-import org.jboss.netty.channel.ChannelPipeline;
-import org.jboss.netty.channel.ChannelPipelineFactory;
 import org.jboss.netty.channel.Channels;
 import org.jboss.netty.channel.ExceptionEvent;
 import org.jboss.netty.channel.FixedReceiveBufferSizePredictorFactory;
@@ -42,7 +40,6 @@ import org.jboss.netty.channel.socket.DatagramChannel;
 import org.jboss.netty.channel.socket.DatagramChannelFactory;
 import org.jboss.netty.channel.socket.oio.OioDatagramChannelFactory;
 import org.jboss.netty.handler.codec.protobuf.ProtobufDecoder;
-import org.jboss.netty.handler.codec.protobuf.ProtobufEncoder;
 
 import java.io.Closeable;
 import java.net.InetAddress;
@@ -124,15 +121,9 @@ abstract public class ClusterStatusListener implements Closeable {
       DatagramChannelFactory f = new OioDatagramChannelFactory(Executors.newSingleThreadExecutor());
 
       ConnectionlessBootstrap b = new ConnectionlessBootstrap(f);
-      b.setPipelineFactory(new ChannelPipelineFactory() {
-        @Override
-        public ChannelPipeline getPipeline() throws Exception {
-          return Channels.pipeline(
-              new ProtobufEncoder(),
-              new ProtobufDecoder(ClusterStatusProtos.ClusterStatus.getDefaultInstance()),
-              new ClusterStatusHandler());
-        }
-      });
+      b.setPipeline(Channels.pipeline(
+          new ProtobufDecoder(ClusterStatusProtos.ClusterStatus.getDefaultInstance()),
+          new ClusterStatusHandler()));
 
       b.setOption("reuseAddress", true);
       b.setOption("receivedBufferSizePredictorFactory",
@@ -157,8 +148,12 @@ abstract public class ClusterStatusListener implements Closeable {
     }
 
 
+    /**
+     * Class, conforming to the Netty framework, that manages the message received.s
+     */
     private class ClusterStatusHandler extends SimpleChannelUpstreamHandler {
 
+      @Override
       public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
         ClusterStatusProtos.ClusterStatus csp = (ClusterStatusProtos.ClusterStatus) e.getMessage();
         ClusterStatus ncs = ClusterStatus.convert(csp);
@@ -179,9 +174,10 @@ abstract public class ClusterStatusListener implements Closeable {
        * Invoked when an exception was raised by an I/O thread or a
        * {@link org.jboss.netty.channel.ChannelHandler}.
        */
+      @Override
       public void exceptionCaught(
           ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
-        LOG.error("Unexpected exception", e.getCause());
+        LOG.error("Unexpected exception, continuing.", e.getCause());
       }
     }
   }

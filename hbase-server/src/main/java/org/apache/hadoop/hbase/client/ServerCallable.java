@@ -163,7 +163,7 @@ public abstract class ServerCallable<T> implements Callable<T> {
       long expectedSleep = 0;
       try {
         beforeCall();
-        connect(false);
+        connect(tries != 0);
         return call();
       } catch (Throwable t) {
         LOG.warn("Received exception, tries=" + tries + ", numRetries=" + numRetries +

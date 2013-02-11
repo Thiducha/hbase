@@ -80,13 +80,7 @@ public class ClusterStatusPublisher extends Chore {
     DatagramChannelFactory f = new OioDatagramChannelFactory(Executors.newSingleThreadExecutor());
 
     ConnectionlessBootstrap b = new ConnectionlessBootstrap(f);
-    b.setPipelineFactory(new ChannelPipelineFactory() {
-      @Override
-      public ChannelPipeline getPipeline() throws Exception {
-        return Channels.pipeline(new ProtobufEncoder(),
-            new ProtobufDecoder(ClusterStatusProtos.ClusterStatus.getDefaultInstance()), null);
-      }
-    });
+    b.setPipeline(Channels.pipeline(new ProtobufEncoder()));
 
     b.setOption("reuseAddress", true);
     b.setOption("receivedBufferSizePredictorFactory",
