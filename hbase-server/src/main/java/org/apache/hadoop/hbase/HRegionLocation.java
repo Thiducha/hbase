@@ -36,7 +36,6 @@ import java.util.concurrent.atomic.AtomicReference;
 public class HRegionLocation implements Comparable<HRegionLocation> {
   private final HRegionInfo regionInfo;
   private final ServerName servername;
-  private final long seqNum;
   // Cache of the 'toString' result.
   private String cachedString = null;
   // Cache of the hostname + port
@@ -53,8 +52,7 @@ public class HRegionLocation implements Comparable<HRegionLocation> {
 
   public HRegionLocation(HRegionInfo regionInfo, ServerName servername, long seqNum) {
     this.regionInfo = regionInfo;
-    this.servername = servername;
-    this.seqNum = seqNum;
+    this.servername = new ServerName(servername.getHostname(), servername.getPort(), seqNum);
   }
 
   @Deprecated // for tests
@@ -74,7 +72,7 @@ public class HRegionLocation implements Comparable<HRegionLocation> {
     if (this.cachedString == null) {
       this.cachedString = "region=" + this.regionInfo.getRegionNameAsString() +
       ", hostname=" + this.getHostname() + ", port=" + this.getPort()
-      + ", seqNum=" + seqNum;
+      + ", seqNum=" + this.getSeqNum();
     }
     return this.cachedString;
   }
@@ -120,7 +118,7 @@ public class HRegionLocation implements Comparable<HRegionLocation> {
   }
 
   public long getSeqNum() {
-    return seqNum;
+    return this.servername.getStartcode();
   }
 
   /**
