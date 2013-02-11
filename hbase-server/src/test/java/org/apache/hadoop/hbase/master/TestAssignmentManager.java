@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import junit.framework.Assert;
 import org.apache.hadoop.hbase.DeserializationException;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
@@ -966,11 +965,11 @@ public class TestAssignmentManager {
     ZKAssign.createNodeClosing(this.watcher, REGIONINFO, SERVERNAME_A);
     am.getRegionStates().createRegionState(REGIONINFO);
 
-    Assert.assertFalse( am.getRegionStates().isRegionsInTransition() );
+    assertFalse( am.getRegionStates().isRegionsInTransition() );
 
     am.processRegionInTransition(REGIONINFO.getEncodedName(), REGIONINFO);
 
-    Assert.assertTrue( am.getRegionStates().isRegionsInTransition() );
+    assertTrue( am.getRegionStates().isRegionsInTransition() );
   }
 
   /**

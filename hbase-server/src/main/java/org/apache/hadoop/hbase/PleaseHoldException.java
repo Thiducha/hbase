@@ -18,7 +18,6 @@
  */
 package org.apache.hadoop.hbase;
 
-import java.io.IOException;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 
@@ -31,11 +30,10 @@ import org.apache.hadoop.classification.InterfaceStability;
 @SuppressWarnings("serial")
 @InterfaceAudience.Public
 @InterfaceStability.Stable
-public class PleaseHoldException extends  PleaseRetryException {
+public class PleaseHoldException extends HBaseIOException {
   public PleaseHoldException(String message) {
     super(message);
   }
-
 
   public PleaseHoldException(String message, Throwable cause) {
     super(message, cause);

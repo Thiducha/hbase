@@ -45,12 +45,9 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Chore;
 import org.apache.hadoop.hbase.DeserializationException;
-import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.NotServingRegionException;
-import org.apache.hadoop.hbase.PleaseHoldException;
-import org.apache.hadoop.hbase.PleaseRetryException;
 import org.apache.hadoop.hbase.RegionTransition;
 import org.apache.hadoop.hbase.Server;
 import org.apache.hadoop.hbase.ServerName;
@@ -890,7 +887,7 @@ public class AssignmentManager extends ZooKeeperListener {
    */
   private boolean convertPendingCloseToSplitting(final RegionState rs) {
     if (!rs.isPendingClose()) return false;
-    LOG.debug("Converting PENDING_CLOSE to SPLITING; rs=" + rs);
+    LOG.debug("Converting PENDING_CLOSE to SPLITTING; rs=" + rs);
     regionStates.updateRegionState(
       rs.getRegion(), RegionState.State.SPLITTING);
     // Clean up existing state.  Clear from region plans seems all we
@@ -1659,12 +1656,13 @@ public class AssignmentManager extends ZooKeeperListener {
       final String assignMsg = "Failed assignment of " + region.getRegionNameAsString() +
           " to " + plan.getDestination();
       try {
-        regionOpenState = doRegionOpenRPC(plan.getDestination(), region, versionOfOfflineNode);
+        regionOpenState = serverManager.sendRegionOpen(
+            plan.getDestination(), region, versionOfOfflineNode);
 
         if (regionOpenState == RegionOpeningState.FAILED_OPENING) {
           // Failed opening this region, looping again on a new server.
           needNewPlan = true;
-          LOG.warn(assignMsg+", regionserver says 'FAILED_OPENING', " +
+          LOG.warn(assignMsg + ", regionserver says 'FAILED_OPENING', " +
               " trying to assign elsewhere instead; " +
               "try=" + i + " of " + this.maximumAttempts);
         } else {
@@ -1675,42 +1673,62 @@ public class AssignmentManager extends ZooKeeperListener {
           return;
         }
 
-      } catch (PleaseHoldException t) {
-
-        LOG.warn(assignMsg+", waiting a little before trying on the same region server " +
-           "try=" + i + " of " + this.maximumAttempts, t);
-
-        if (maxRegionServerStartupWaitTime < 0) {
-          maxRegionServerStartupWaitTime = EnvironmentEdgeManager.currentTimeMillis() +
-              this.server.getConfiguration().
-                  getLong("hbase.regionserver.rpc.startup.waittime", 60000);
+      } catch (Throwable t) {
+        if (t instanceof RemoteException) {
+          t = ((RemoteException) t).unwrapRemoteException();
         }
-        try {
-          long now = EnvironmentEdgeManager.currentTimeMillis();
-          if (now < maxRegionServerStartupWaitTime) {
-            LOG.debug("Server is not yet up; waiting up to " +
-                (maxRegionServerStartupWaitTime - now) + "ms", t);
-            Thread.sleep(100);
-            i--; // reset the try count
-            needNewPlan = false;
-          } else {
-            LOG.debug("Server is not up for a while; try a new one", t);
-            needNewPlan = true;
+
+        // Should we wait a little before retrying? If the server is starting it's yes.
+        // If the region is already in transition, it's yes as well: we want to be sure that
+        //  the region will get opened but we don't want a double assignment.
+        boolean hold = (t instanceof RegionAlreadyInTransitionException ||
+            t instanceof ServerNotRunningYetException);
+
+        // In case socket is timed out and the region server is still online,
+        // the openRegion RPC could have been accepted by the server and
+        // just the response didn't go through.  So we will retry to
+        // open the region on the same server to avoid possible
+        // double assignment.
+        boolean retry = !hold && (t instanceof java.net.SocketTimeoutException
+            && this.serverManager.isServerOnline(plan.getDestination()));
+
+
+        if (hold) {
+          LOG.warn(assignMsg + ", waiting a little before trying on the same region server " +
+              "try=" + i + " of " + this.maximumAttempts, t);
+
+          if (maxRegionServerStartupWaitTime < 0) {
+            maxRegionServerStartupWaitTime = EnvironmentEdgeManager.currentTimeMillis() +
+                this.server.getConfiguration().
+                    getLong("hbase.regionserver.rpc.startup.waittime", 60000);
           }
-        } catch (InterruptedException ie) {
-          LOG.warn("Failed to assign "
-              + region.getRegionNameAsString() + " since interrupted", ie);
-          Thread.currentThread().interrupt();
-          return;
+          try {
+            long now = EnvironmentEdgeManager.currentTimeMillis();
+            if (now < maxRegionServerStartupWaitTime) {
+              LOG.debug("Server is not yet up; waiting up to " +
+                  (maxRegionServerStartupWaitTime - now) + "ms", t);
+              Thread.sleep(100);
+              i--; // reset the try count
+              needNewPlan = false;
+            } else {
+              LOG.debug("Server is not up for a while; try a new one", t);
+              needNewPlan = true;
+            }
+          } catch (InterruptedException ie) {
+            LOG.warn("Failed to assign "
+                + region.getRegionNameAsString() + " since interrupted", ie);
+            Thread.currentThread().interrupt();
+            return;
+          }
+        } else if (retry) {
+          needNewPlan = false;
+          LOG.warn(assignMsg + ", trying to assign to the same region server " +
+              "try=" + i + " of " + this.maximumAttempts, t);
+        } else {
+          needNewPlan = true;
+          LOG.warn(assignMsg + ", trying to assign elsewhere instead;" +
+              " try=" + i + " of " + this.maximumAttempts, t);
         }
-      } catch (PleaseRetryException t) {
-        needNewPlan = false;
-        LOG.warn(assignMsg + ", trying to assign to the same region server " +
-            "try=" + i + " of " + this.maximumAttempts, t);
-      } catch (DoNotRetryIOException t) {
-        needNewPlan = true;
-        LOG.warn(assignMsg + ", trying to assign elsewhere instead;" +
-            " try=" + i + " of " + this.maximumAttempts, t);
       }
 
       if (i == this.maximumAttempts) {
@@ -1748,66 +1766,6 @@ public class AssignmentManager extends ZooKeeperListener {
     }
   }
 
-
-  /**
-   *
-   * Handles the different cases when calling an open.
-   *
-   * 1) Success (i.e. the server returned something. It may be a failed open, but the call is a
-   *   success).
-   * 2) Server not yet started: we know we should wait.
-   * 2.1) Operation already in progress. You can ask again to be sure, but please wait a little.
-   * 3) Failure that could be temporary, it's worth retrying.
-   * 4) Dead destination. No need to retry.
-   *
-   * @param destination the destination
-   * @param region the region to open
-   * @param znodeVersion the znode version (should be already created)
-   * @return RegionOpeningState
-   * @throws PleaseHoldException  - retry after waiting. The server is starting.
-   * @throws DoNotRetryIOException - don't retry on this region server
-   * @throws PleaseRetryException - retry on this region server
-   */
-  private RegionOpeningState doRegionOpenRPC(ServerName destination, HRegionInfo region,
-                                             final int znodeVersion)
-      throws PleaseHoldException, DoNotRetryIOException, PleaseRetryException {
-    try {
-      // Send OPEN RPC. This can fail if the server on other end is is not up.
-      // Pass the version that was obtained while setting the node to OFFLINE.
-      return serverManager.sendRegionOpen(destination, region, znodeVersion);
-
-    } catch (Throwable t) {
-      if (t instanceof RemoteException) {
-        t = ((RemoteException) t).unwrapRemoteException();
-      }
-      if (t instanceof RegionAlreadyInTransitionException) {
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Failed assignment in: " + destination + " due to " + t.getMessage());
-        }
-        throw new PleaseHoldException(t);
-      } else if (t instanceof ServerNotRunningYetException) {
-        throw new PleaseHoldException(t);
-      } else if (t instanceof java.net.SocketTimeoutException
-          && this.serverManager.isServerOnline(destination)) {
-        // In case socket is timed out and the region server is still online,
-        // the openRegion RPC could have been accepted by the server and
-        // just the response didn't go through.  So we will retry to
-        // open the region on the same server to avoid possible
-        // double assignment.
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Call openRegion() to " + destination
-              + " has timed out when trying to assign "
-              + region.getRegionNameAsString()
-              + ", but the region might already be opened on "
-              + destination + ".", t);
-        }
-        throw new PleaseRetryException(t);
-      }
-
-      throw new DoNotRetryIOException(t);
-    }
-  }
-
   private void processAlreadyOpenedRegion(HRegionInfo region, ServerName sn) {
     // Remove region from in-memory transition and unassigned node from ZK
     // While trying to enable the table the regions of the table were
@@ -1820,7 +1778,7 @@ public class AssignmentManager extends ZooKeeperListener {
     } catch (KeeperException.NoNodeException e) {
       if (LOG.isDebugEnabled()) {
         LOG.debug("The unassigned node " + encodedRegionName
-            + " doesnot exist.");
+            + " does not exist.");
       }
     } catch (KeeperException e) {
       server.abort(
