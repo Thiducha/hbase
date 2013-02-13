@@ -61,6 +61,23 @@ import java.util.List;
  * - start another box
  * - kill the region server or the box with all regions
  * - measure time.
+ * <p></p>
+ * The cluster must be already deployed, i.e. the right packages must have been copied, the ssh must be
+ *  working between the different boxes, ...
+ * <p></p>
+ *
+ * The following env variable must be defined:
+ *  HBASE_HOME
+ *  HADOOP_HOME
+ *  HADOOP_CONF_DIR
+ *  <p></p>
+ * The boxes are defined with the following env variables:
+ *  HBASE_IT_MAIN_BOX
+ *  HBASE_IT_WILLDIE_BOX
+ *  HBASE_IT_WILLSURVIVE_BOX
+ *  HBASE_IT_LATE_BOX
+ *
+ *
  */
 
 public abstract class AbstractIntegrationTestRecovery {
@@ -208,34 +225,28 @@ public abstract class AbstractIntegrationTestRecovery {
   }
 
 
-  protected void moveToRS(String tableName, ServerName destSN) throws Exception {
+  protected void moveToSecondRSSync(String tableName) throws Exception {
     HBaseAdmin admin = util.getHBaseAdmin();
-    List<HRegionInfo> regs = admin.getTableRegions(tableName.getBytes());
+    ServerName mainSN = dhc.getServerHoldingMeta();
 
-    int toMove = 0;
-    for (HRegionInfo hri : regs) {
-      if (!dhc.getServerHoldingRegion(hri.getRegionName()).equals(destSN)) {
-        admin.move(hri.getEncodedNameAsBytes(), destSN.getVersionedBytes());
-        toMove++;
+    for (HRegionInfo hri : admin.getTableRegions(tableName.getBytes())) {
+      if (dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
+        admin.move(hri.getEncodedNameAsBytes(), null);
       }
     }
 
     // wait for the moves to be done
     waitForNoTransition();
 
-    // Check that they have been moved
-    int moved = 0;
-    for (HRegionInfo hri : regs) {
-      if (!dhc.getServerHoldingRegion(hri.getRegionName()).equals(destSN)) {
-        moved++;
+    // Check that the regions have been moved
+    int remaining = 0;
+    for (HRegionInfo hri : admin.getTableRegions(tableName.getBytes())) {
+      if (dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
+        remaining++;
       }
     }
 
-    System.out.println("toMove=" + toMove + ", moved=" + moved);
-    // todo: it differs sometimes, it should not!
-
-
-    admin.close();
+    assert remaining == 0 : "Some regions did not move! remaining=" + remaining;
   }
 
   @Test
@@ -247,22 +258,8 @@ public abstract class AbstractIntegrationTestRecovery {
 
     createTable();
 
-    // now moving all the regions on the regionserver we're gonna kill
-    List<HRegionInfo> regs = admin.getTableRegions(TABLE_NAME.getBytes());
-    ServerName mainSN = dhc.getServerHoldingMeta();
-
-    // todo: find a less horrible way to get this servername
-    ServerName otherSN = null;
-    for (HRegionInfo hri : regs) {
-      if (!dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
-        otherSN = dhc.getServerHoldingRegion(hri.getRegionName());
-        break;
-      }
-    }
-    Assert.assertNotNull(otherSN);
-    Assert.assertNotEquals(mainSN, otherSN);
-
-    moveToRS(TABLE_NAME, otherSN);
+    // now moving all the regions on the regionserver we're gonna kil
+    moveToSecondRSSync(TABLE_NAME);
 
     beforeKill();
 
@@ -298,17 +295,20 @@ public abstract class AbstractIntegrationTestRecovery {
         Thread.sleep(200);
       }
       failureDetectedTime = System.currentTimeMillis();
+
       afterDetection();
 
       // Now, how long does it take to recover?
       boolean ok;
+      ServerName mainSN = dhc.getServerHoldingMeta();
       do {
         waitForNoTransition();
         ok = true;
-        for (HRegionInfo hri : regs) {
+        for (HRegionInfo hri : admin.getTableRegions(TABLE_NAME.getBytes())) {
           try {
             if (!dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
               ok = false;
+              break;
             }
           } catch (IOException e) {
             // It seems we can receive exceptions if the regionserver is dead...
@@ -327,6 +327,8 @@ public abstract class AbstractIntegrationTestRecovery {
     }
     LOG.info("Detection took: " + (failureDetectedTime - startTime));
     LOG.info(("Failure fix took: " + (failureFixedTime - failureDetectedTime)));
+
+    validate(failureDetectedTime, failureFixedTime);
   }
 
   /**
@@ -374,5 +376,14 @@ public abstract class AbstractIntegrationTestRecovery {
    * Called once the recovery is ok.
    */
   protected void afterRecovery() throws Exception {
+  }
+
+  /**
+   * Called at the end to validate the results
+   * @param failureDetectedTime the time for detection
+   * @param failureFixedTime the time for fixing the failure
+   * @throws Exception
+   */
+  protected void validate(long failureDetectedTime, long failureFixedTime) throws Exception{
   }
 }

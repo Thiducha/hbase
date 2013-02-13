@@ -22,7 +22,6 @@ package org.apache.hadoop.hbase.mttr;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HConnection;
 import org.apache.hadoop.hbase.client.HConnectionManager;
@@ -87,11 +86,6 @@ public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestR
     Object o = h.get(g);
     Assert.isNotNull(o);
 
-    // zookeeper.session.timeout 180000 -> recommended 60000
-    // hbase.client.operation.timeout - see https://reviews.apache.org/r/755/    - Integer.MAX
-    // hbase.rpc.timeout
-    // hbase.client.scanner.timeout.period
-
     // The server has been unplugged, but we don't know yet.
     // So we will wait until: the get timeout OR the server is marked as dead.
 
@@ -99,6 +93,6 @@ public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestR
 
     long getTime = (endGetTime - startGetTime);
 
-    Assert.isTrue(getTime <  zkTimeout + 30000);
+    Assert.isTrue(getTime < zkTimeout + 30000); // i.e. we didn't wait for the socket timeout
   }
 }
