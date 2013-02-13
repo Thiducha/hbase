@@ -121,6 +121,8 @@ public abstract class ClusterManager extends Configured {
 
   /**
    * Simulate an unplug of a remote host. Always calls replug after!
+   * Technically, this is implemented by configuring the firewall: all messages from this
+   *  hosts are discarded.
    */
   public abstract void unplug(String hostname) throws Exception;
 

@@ -131,9 +131,6 @@ public class HBaseClusterManager extends ClusterManager {
     }
   }
 
-  static String getITestDirectory() {
-    return System.getenv("HOME") + Path.SEPARATOR + "tmp-recotest";
-  }
 
   /**
    * We want everybody to use the same java dir, this allows to test multiple Java versions
@@ -142,30 +139,30 @@ public class HBaseClusterManager extends ClusterManager {
     return System.getenv("JAVA_HOME");
   }
 
-  static String getHadoopVersion() {
-    return System.getenv("HADOOP_VERSION");
-  }
-
   /**
    * CommandProvider to manage the service using bin/hbase-* scripts
    */
   static class HBaseShellCommandProvider extends CommandProvider {
     private String getHBaseHome() {
-      return getITestDirectory() + Path.SEPARATOR + "hbase";
+      assert System.getenv("HBASE_HOME") != null : "HBASE_HOME is null";
+      return System.getenv("HBASE_HOME");
     }
 
-    private String getConfig() {
+    private String getConfigDir() {
+      if (System.getenv("HBASE_CONFIG_HOME") != null) {
+        System.getenv("HBASE_CONFIG_HOME");
+      }
+
       return getHBaseHome() + Path.SEPARATOR + "conf";
     }
 
     @Override
     public String getCommand(ServiceType service, Operation op) {
       String cmd = "";
-      cmd += "export HBASE_OPTS=-Djava.net.preferIPv4Stack=true;";
       cmd += "export JAVA_HOME=" + getJavaHome() + ";";
-      cmd += "export HADOOP_SSH_OPTS='-A';";
+      cmd += "export HBASE_SSH_OPTS='-A';";
       cmd += "export HBASE_HEAPSIZE=500;";
-      cmd += "export HBASE_CONF_DIR=" + getConfig() + ";";
+      cmd += "export HBASE_CONF_DIR=" + getConfigDir() + ";";
       cmd += "export HBASE_HOME=" + getHBaseHome() + ";";
       return cmd + String.format("%s/bin/hbase-daemon%s.sh %s  %s",
           getHBaseHome(),
@@ -179,26 +176,38 @@ public class HBaseClusterManager extends ClusterManager {
    * CommandProvider to manage the service using bin/hbase-* scripts
    */
   static class HadoopShellCommandProvider extends CommandProvider {
-    private String getHadoopHome() {
-      return getITestDirectory();
+    private static String getHadoopVersion() {
+      return System.getenv("HADOOP_VERSION");
     }
 
-    private String getConfig() {
-      return getHadoopHome() + Path.SEPARATOR + "conf" + Path.SEPARATOR + "conf-hadoop";
+    private static String getHadoopHome() {
+      return System.getenv("HADOOP_HOME");
+    }
+
+    private String getConfigDir() {
+      return System.getenv("HADOOP_CONF_DIR");
     }
 
     private String getHadoopCommonHome() {
+      if (System.getenv("HADOOP_COMMON_HOME") != null) {
+        return System.getenv("HADOOP_COMMON_HOME");
+      }
+
       if (getHadoopVersion().startsWith("1")) {
-        return getHadoopHome() + Path.SEPARATOR + "hadoop-common/build/hadoop-" +
+        return getHadoopHome() + Path.SEPARATOR + "build/hadoop-" +
             getHadoopVersion();
       } else {
         return getHadoopHome() + Path.SEPARATOR +
-            "hadoop-common/hadoop-common-project/hadoop-common/target/hadoop-common-" +
+            "hadoop-common-project/hadoop-common/target/hadoop-common-" +
             getHadoopVersion();
       }
     }
 
     private String getHDFSHome() {
+      if (System.getenv("HADOOP_HDFS_HOME") != null) {
+        return System.getenv("HADOOP_HDFS_HOME");
+      }
+
       if (getHadoopVersion().startsWith("1")) {
         return getHadoopCommonHome();
       } else {
@@ -215,9 +224,12 @@ public class HBaseClusterManager extends ClusterManager {
 
     public String getCommand(ServiceType service, String op) {
       String cmd = "";
-      cmd += "export JAVA_HOME=/opt/jdk1.6;";
+      cmd += "export JAVA_HOME=" + getJavaHome() + ";";
+      cmd += "export HADOOP_SSH_OPTS='-A';";
       cmd += "export HADOOP_COMMON_HOME=" + getHadoopCommonHome() + ";";
+      cmd += "export HADOOP_VERSION=" + getHadoopVersion() + ";";
       cmd += "export HADOOP_HDFS_HOME=" + getHDFSHome() + ";";
+      cmd += "export HADOOP_CONF_DIR=" + getConfigDir() + ";";
 
       if ("START".equals(op)) {
         op = null;
@@ -225,7 +237,7 @@ public class HBaseClusterManager extends ClusterManager {
 
       return cmd + String.format("%s/bin/%s --config %s %s %s",
           getHDFSHome(), getHadoopVersion().startsWith("1") ? "hadoop" : "hdfs",
-          getConfig(), service, op != null ? op : "");
+          getConfigDir(), service, op != null ? op : "");
     }
   }
 

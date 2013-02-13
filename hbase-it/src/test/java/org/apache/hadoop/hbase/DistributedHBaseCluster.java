@@ -149,7 +149,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
       if (!clusterManager.isRunning(service, serverName.getHostname())) {
         return;
       }
-      Threads.sleep(1000);
+      Threads.sleep(200);
     }
     throw new IOException("did timeout waiting for service to stop:" + serverName);
   }
@@ -201,7 +201,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
       } catch (ZooKeeperConnectionException e) {
         LOG.warn("Failed to connect to ZK " + e);
       }
-      Threads.sleep(1000);
+      Threads.sleep(200);
     }
     return false;
   }
@@ -225,7 +225,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
   public void waitForDatanodesRegistered(int minDatanodes) throws Exception {
     DistributedFileSystem fs = (DistributedFileSystem) FileSystem.get(conf);
     while (fs.getDataNodeStats().length < minDatanodes) {
-      Thread.sleep(1000);
+      Thread.sleep(200);
     }
   }
 
@@ -236,7 +236,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
         DistributedFileSystem fs = (DistributedFileSystem) FileSystem.get(conf);
         ok = (fs.getContentSummary(new Path("/")) != null);
       } catch (IOException ignored) {
-        Thread.sleep(1000);
+        Thread.sleep(200);
       }
 
     } while (!ok);

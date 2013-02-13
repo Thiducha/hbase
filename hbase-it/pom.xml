@@ -72,6 +72,9 @@
               <DYLD_LIBRARY_PATH>${env.DYLD_LIBRARY_PATH}:${project.build.directory}/nativelib</DYLD_LIBRARY_PATH>
               <MALLOC_ARENA_MAX>4</MALLOC_ARENA_MAX>
               <HADOOP_VERSION>${hadoop.version}</HADOOP_VERSION>
+              <HBASE_HOME>${env.HBASE_HOME}</HBASE_HOME>
+              <HADOOP_HOME>${env.HADOOP_HOME}</HADOOP_HOME>
+              <HADOOP_CONF_DIR>${env.HADOOP_CONF_DIR}</HADOOP_CONF_DIR>
             </environmentVariables>
             <failIfNoTests>false</failIfNoTests>
             <testFailureIgnore>false</testFailureIgnore>
