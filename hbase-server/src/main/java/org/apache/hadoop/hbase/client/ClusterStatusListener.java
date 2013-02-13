@@ -72,10 +72,19 @@ abstract public class ClusterStatusListener implements Closeable {
     abstract public void newDead(ServerName sn);
   }
 
+
+  /**
+   * Returns true if we know for sure that the server is dead.
+   * @param sn the ServerName
+   * @return true if the server is dead, false if it's alive or we don't know.
+   */
   public abstract boolean isDead(ServerName sn);
 
+  /**
+   * Called to close the resources, if any. Cannot throw an exception.
+   */
   @Override
-  public void close(){} // No exception
+  public void close(){}
 
 
   /**
@@ -127,7 +136,7 @@ abstract public class ClusterStatusListener implements Closeable {
 
       b.setOption("reuseAddress", true);
       b.setOption("receivedBufferSizePredictorFactory",
-          new FixedReceiveBufferSizePredictorFactory(1024));      //todo
+          new FixedReceiveBufferSizePredictorFactory(1024));
 
 
       String mcAddress = conf.get(HConstants.STATUS_MULTICAST_ADDRESS,
@@ -161,6 +170,7 @@ abstract public class ClusterStatusListener implements Closeable {
         if (ncs.getDeadServerNames() != null) {
           for (ServerName sn : ncs.getDeadServerNames()) {
             if (!isDead(sn)) {
+              LOG.info("There is a new dead server: " + sn);
               deadServers.add(sn);
               if (deadServerHandler != null) {
                 deadServerHandler.newDead(sn);

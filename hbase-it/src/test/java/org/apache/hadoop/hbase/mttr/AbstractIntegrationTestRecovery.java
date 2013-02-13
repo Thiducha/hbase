@@ -24,26 +24,22 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.ClusterManager;
 import org.apache.hadoop.hbase.DistributedHBaseCluster;
+import org.apache.hadoop.hbase.HBaseCluster;
 import org.apache.hadoop.hbase.HBaseClusterManager;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.IntegrationTestingUtility;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.util.RegionSplitter;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.io.File;
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.MalformedURLException;
 import java.net.Socket;
-import java.net.URL;
 import java.util.List;
 
 /**
@@ -68,10 +64,10 @@ import java.util.List;
  */
 
 public abstract class AbstractIntegrationTestRecovery {
-  protected String mainBox = System.getenv("HBASE_IT_MAIN_BOX");
-  protected String willDieBox = System.getenv("HBASE_IT_WILLDIE_BOX");
-  protected String willSurviveBox = System.getenv("HBASE_IT_WILLSURVIVE_BOX");
-  protected String lateBox = System.getenv("HBASE_IT_LATE_BOX");
+  protected String mainBox = HBaseCluster.getEnvNotNull("HBASE_IT_MAIN_BOX");
+  protected String willDieBox = HBaseCluster.getEnvNotNull("HBASE_IT_WILLDIE_BOX");
+  protected String willSurviveBox = HBaseCluster.getEnvNotNull("HBASE_IT_WILLSURVIVE_BOX");
+  protected String lateBox = HBaseCluster.getEnvNotNull("HBASE_IT_LATE_BOX");
 
   protected static final Log LOG
       = LogFactory.getLog(AbstractIntegrationTestRecovery.class);
@@ -92,36 +88,10 @@ public abstract class AbstractIntegrationTestRecovery {
     REGION_COUNT = regCount;
   }
 
-  private static URL getConfFile(String file) throws MalformedURLException {
-    // 2 tries: one inside an editor, once inside maven
-    File case1 = new File(".." + File.separator + "hbase-it" + File.separator + "src" +
-        File.separator + "test" + File.separator + "resources" + File.separator + file);
-    File case2 = new File("hbase-it" + File.separator + "src" + File.separator +
-        "test" + File.separator + "resources" + File.separator + file);
-
-    case1 = new File(System.getenv("HOME") + File.separator + "tmp-recotest" + File.separator + "hbase" +
-        File.separator + "conf" + File.separator + file);
-
-    if (case1.exists() && case1.canRead()) {
-      return case1.toURI().toURL();
-    }
-
-    if (case2.exists() && case2.canRead()) {
-      return case2.toURI().toURL();
-    }
-
-    throw new RuntimeException(
-        "Can't find " + file + " tried " + case1.getAbsolutePath() +
-            " and " + case2.getAbsolutePath());
-  }
 
   @BeforeClass
   public static void setUp() throws Exception {
-    Configuration c = new Configuration();
-    c.clear();
-
-    c.addResource(getConfFile("core-site.xml"));
-    c.addResource(getConfFile("hbase-site.xml"));
+    Configuration c = HBaseClusterManager.createHBaseConfiguration();
 
     Assert.assertTrue(c.getBoolean("hbase.cluster.distributed", false));
 
@@ -155,7 +125,7 @@ public abstract class AbstractIntegrationTestRecovery {
     HBaseAdmin admin = util.getHBaseAdmin();
 
     while (!admin.getClusterStatus().getRegionsInTransition().isEmpty()) {
-      Thread.sleep(1000);
+      Thread.sleep(200);
     }
   }
 
@@ -191,49 +161,31 @@ public abstract class AbstractIntegrationTestRecovery {
     hcm.formatNN(mainBox); // synchronous
 
     hcm.start(ClusterManager.ServiceType.HADOOP_NAMENODE, mainBox);
-
-    Thread.sleep(30000);
-    //dhc.waitForNamenodeAvailable();
+    dhc.waitForNamenodeAvailable();
 
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willDieBox);
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willSurviveBox);
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, mainBox);
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, lateBox);
-
-
     dhc.waitForDatanodesRegistered(4);
 
 
     hcm.start(ClusterManager.ServiceType.HBASE_MASTER, mainBox);
-
     hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, mainBox);
-    // We want meta & root on the main server.
+    // We want meta & root on the main server, so we start only one RS at the beginning
 
-    Thread.sleep(20000);
-    // todo: we have an issue here, we don't know yet if the master has started
-    //  it could make the test fail. "The node /hbase is not in ZooKeeper."
-    //  We could check this is ZK first
-    while (util.getHBaseAdmin().getClusterStatus().getServersSize() == 0) {
-      Thread.sleep(1000);
+    while (!dhc.waitForActiveAndReadyMaster() ||
+        util.getHBaseAdmin().getClusterStatus().getRegionsCount() != 2) {
+      Thread.sleep(200);
     }
-
-    boolean masterOk = false;
-    while (!masterOk) {
-      try {
-        masterOk = util.getHBaseAdmin().isMasterRunning() &&
-            util.getHBaseAdmin().getClusterStatus().getRegionsCount() == 2;
-      } catch (Exception e) {
-        Thread.sleep(1000);
-      }
-    }
-
 
     // No balance please
     util.getHBaseAdmin().setBalancerRunning(false, true);
 
+    // We can now start the second master
     hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, willDieBox);
     while (util.getHBaseAdmin().getClusterStatus().getServersSize() != 2) {
-      Thread.sleep(1000);
+      Thread.sleep(200);
     }
 
     // Now we have 2 region servers and 3 datanodes.
@@ -313,33 +265,37 @@ public abstract class AbstractIntegrationTestRecovery {
     moveToRS(TABLE_NAME, otherSN);
 
     beforeKill();
-    writeDataToWal();
 
     // Now killing
-    final long startTime = System.currentTimeMillis();
+    final long startTime;
     final long failureDetectedTime;
     final long failureFixedTime;
 
     kill(willDieBox);
+
+    // Check that the RS is really killed. We do that by trying to connect to the server with
+    //  a minimum connect timeout. If it succeeds, it means it's still there...
     try {
       Socket socket = new Socket();
-      InetSocketAddress dest = new InetSocketAddress(willDieBox, util.getConfiguration().getInt("hbase.regionserver.port", 60020));
+      InetSocketAddress dest = new InetSocketAddress(
+          willDieBox, util.getConfiguration().getInt("hbase.regionserver.port", 60020));
       boolean stillThere = true;
       while (stillThere) {
         try {
-          socket.connect(dest, 200);
-          Thread.sleep(200);
+          Thread.sleep(100);
+          socket.connect(dest, 400);
         } catch (IOException ignored) {
           stillThere = false;
         }
       }
 
-      afterKill();
+      startTime = System.currentTimeMillis();
 
+      afterKill();
 
       // How long does it take to discover that we need to do something?
       while (admin.getClusterStatus().getDeadServers() == 0) {
-        Thread.sleep(1000);
+        Thread.sleep(200);
       }
       failureDetectedTime = System.currentTimeMillis();
       afterDetection();
@@ -369,19 +325,54 @@ public abstract class AbstractIntegrationTestRecovery {
       // If it was an unplug, we replug it now
       hcm.replug(willDieBox);
     }
-    System.out.println("Detection took: " + (failureDetectedTime - startTime));
-    System.out.println("Failure fix took: " + (failureFixedTime - failureDetectedTime));
+    LOG.info("Detection took: " + (failureDetectedTime - startTime));
+    LOG.info(("Failure fix took: " + (failureFixedTime - failureDetectedTime)));
   }
 
-  protected void beforeStart()  throws Exception{}
-  protected void beforeKill()  throws Exception {}
-  protected void afterKill()  throws Exception {}
+  /**
+   * Called before the cluster start.
+   *
+   * @throws Exception
+   */
+  protected void beforeStart() throws Exception {
+  }
+
+  /**
+   * Called just before the kill; when the cluster is up and running.
+   *
+   * @throws Exception
+   */
+  protected void beforeKill() throws Exception {
+  }
 
 
-  protected void writeDataToWal() throws Exception {}
+  /**
+   * Called just after the kill.
+   *
+   * @throws Exception
+   */
+  protected void afterKill() throws Exception {
+  }
 
+  /**
+   * Kill the RS. It's up to the implementer to choose the mean (kill 15, 9, box unplugged...
+   *
+   * @param willDieBox the box to kill
+   * @throws Exception
+   */
   protected abstract void kill(String willDieBox) throws Exception;
 
-  protected void afterDetection()  throws Exception{}
-  protected void afterRecovery()  throws Exception{}
+  /**
+   * Called once we detected that the RS is dead (i.e. the ZK node expired)
+   *
+   * @throws Exception
+   */
+  protected void afterDetection() throws Exception {
+  }
+
+  /**
+   * Called once the recovery is ok.
+   */
+  protected void afterRecovery() throws Exception {
+  }
 }
