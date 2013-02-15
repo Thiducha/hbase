@@ -36,6 +36,7 @@ import org.apache.hadoop.ipc.RemoteException;
 
 import java.io.IOException;
 import java.lang.reflect.UndeclaredThrowableException;
+import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
@@ -159,11 +160,11 @@ public abstract class ServerCallable<T> implements Callable<T> {
     List<RetriesExhaustedException.ThrowableWithExtraContext> exceptions =
       new ArrayList<RetriesExhaustedException.ThrowableWithExtraContext>();
     this.globalStartTime = EnvironmentEdgeManager.currentTimeMillis();
-    for (int tries = 0; tries < numRetries; tries++) {
+    for (int tries = 0;; tries++) {
       long expectedSleep = 0;
       try {
         beforeCall();
-        connect(tries != 0);
+        connect(tries != 0); // if called with false, check table status on ZK
         return call();
       } catch (Throwable t) {
         LOG.warn("Received exception, tries=" + tries + ", numRetries=" + numRetries +
@@ -172,16 +173,27 @@ public abstract class ServerCallable<T> implements Callable<T> {
         t = translateException(t);
         // translateException throws an exception when we should not retry, i.e. when it's the
         //  request that is bad.
-        getConnection().clearCaches(location.getHostnamePort());
+
+        if (t instanceof SocketTimeoutException ||
+            t instanceof ConnectException ||
+            t instanceof RetriesExhaustedException ||
+            getConnection().isDead(location.getServerName())) {
+          // if thrown these exceptions, we clear all the cache entries that
+          // map to that slow/dead server; otherwise, let cache miss and ask
+          // .META. again to find the new location
+          getConnection().clearCaches(location.getHostnamePort());
+        }
 
         RetriesExhaustedException.ThrowableWithExtraContext qt =
           new RetriesExhaustedException.ThrowableWithExtraContext(t,
               EnvironmentEdgeManager.currentTimeMillis(), toString());
         exceptions.add(qt);
-        if (tries == numRetries - 1) {
+        if (tries >= numRetries - 1) {
           throw new RetriesExhaustedException(tries, exceptions);
         }
 
+        // If the server is dead, we need to wait a little before retrying, to give
+        //  a chance to the regions to be
         expectedSleep = ConnectionUtils.getPauseTime(pause, tries);
         if (expectedSleep < MIN_WAIT_DEAD_SERVER &&
             getConnection().isDead(location.getServerName())){
@@ -204,11 +216,9 @@ public abstract class ServerCallable<T> implements Callable<T> {
         Thread.sleep(expectedSleep);
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
-        throw new IOException("Interrupted after tries=" + tries +
-            ", numRetries=" + numRetries, e);
+        throw new IOException("Interrupted after " + tries + " tries  on " + numRetries, e);
       }
     }
-    return null;
   }
 
   /**

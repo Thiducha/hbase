@@ -31,14 +31,10 @@ import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.VersionInfo;
 import org.jboss.netty.bootstrap.ConnectionlessBootstrap;
-import org.jboss.netty.channel.ChannelPipeline;
-import org.jboss.netty.channel.ChannelPipelineFactory;
 import org.jboss.netty.channel.Channels;
-import org.jboss.netty.channel.FixedReceiveBufferSizePredictorFactory;
 import org.jboss.netty.channel.socket.DatagramChannel;
 import org.jboss.netty.channel.socket.DatagramChannelFactory;
 import org.jboss.netty.channel.socket.oio.OioDatagramChannelFactory;
-import org.jboss.netty.handler.codec.protobuf.ProtobufDecoder;
 import org.jboss.netty.handler.codec.protobuf.ProtobufEncoder;
 
 import java.net.InetAddress;
@@ -54,9 +50,15 @@ public class ClusterStatusPublisher extends Chore {
   private HMaster master;
   private DatagramChannel channel;
   private volatile AtomicBoolean connected = new AtomicBoolean(false);
-  private final int messagePeriod;
-  private static int MAX_SERVER_PER_MESSAGE = 10;
+  private final int messagePeriod; // time between two message
+  private final int periodRange; // number of period we're considering for the dead servers.
 
+
+  /**
+   * We want to limit the size of the protobuf message sent, do fit into a single packet.
+   *  a reasonable size ofr ip / ethernet is less than 1Kb.
+   */
+  public static int MAX_SERVER_PER_MESSAGE = 10;
 
   public ClusterStatusPublisher(HMaster master, Configuration conf)
       throws UnknownHostException {
@@ -66,6 +68,8 @@ public class ClusterStatusPublisher extends Chore {
     this.master = master;
     this.messagePeriod =  conf.getInt(HConstants.STATUS_MULTICAST_PERIOD,
         HConstants.DEFAULT_STATUS_MULTICAST_PERIOD);
+    this.periodRange =  conf.getInt(HConstants.STATUS_MULTICAST_PERIOD_RANGE,
+        HConstants.DEFAULT_STATUS_MULTICAST_PERIOD_RANGE);
     connect(conf);
   }
 
@@ -76,17 +80,15 @@ public class ClusterStatusPublisher extends Chore {
     int port = conf.getInt(HConstants.STATUS_MULTICAST_PORT,
         HConstants.DEFAULT_STATUS_MULTICAST_PORT);
 
-    // Can't be NiO with Netty today => not implemented.
+    // Can't be NiO with Netty today => not implemented in Netty.
     DatagramChannelFactory f = new OioDatagramChannelFactory(Executors.newSingleThreadExecutor());
 
     ConnectionlessBootstrap b = new ConnectionlessBootstrap(f);
     b.setPipeline(Channels.pipeline(new ProtobufEncoder()));
 
-    b.setOption("reuseAddress", true);
-    b.setOption("receivedBufferSizePredictorFactory",
-        new FixedReceiveBufferSizePredictorFactory(1024));
 
     channel = (DatagramChannel) b.bind(new InetSocketAddress(0));
+    channel.getConfig().setReuseAddress(true);
 
     InetAddress ina = InetAddress.getByName(mcAddress);
     channel.joinGroup(ina);
@@ -148,7 +150,7 @@ public class ClusterStatusPublisher extends Chore {
   }
 
   private List<ServerName> getLastDeadServers(){
-    long since = EnvironmentEdgeManager.currentTimeMillis() - messagePeriod * 3;
+    long since = EnvironmentEdgeManager.currentTimeMillis() - messagePeriod * periodRange;
     List<Pair<ServerName, Long>> deads =
         master.getServerManager().getDeadServers().copyDeadServersSince(since);
 
@@ -161,5 +163,4 @@ public class ClusterStatusPublisher extends Chore {
 
     return res;
   }
-
 }

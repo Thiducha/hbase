@@ -279,13 +279,4 @@ public abstract class HBaseCluster implements Closeable, Configurable {
   public abstract void close() throws IOException;
 
 
-  /**
-   * Get the environment variable, fails with an assert if it's not defined.
-   * @param envVN
-   * @return
-   */
-  public static String getEnvNotNull(String envVN){
-    assert System.getenv(envVN) != null : envVN + " is not defined.";
-    return System.getenv(envVN);
-  }
 }

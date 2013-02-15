@@ -139,14 +139,14 @@ public class HBaseClusterManager extends ClusterManager {
    * We want everybody to use the same java dir, this allows to test multiple Java versions
    */
   static String getJavaHome() {
-    return HBaseCluster.getEnvNotNull("JAVA_HOME");
+    return getEnvNotNull("JAVA_HOME");
   }
 
   /**
-   * Create a configuration objects from the configuration files in the HBASE_HOME_CONFIG
+   * Create a configuration object from the configuration files in the HBASE_HOME_CONFIG
    */
   public static Configuration createHBaseConfiguration() {
-    Configuration c = new Configuration();
+    Configuration c = new Configuration(false);
     c.clear();
 
     c.addResource(HBaseShellCommandProvider.getConfFile("core-site.xml"));
@@ -175,7 +175,7 @@ public class HBaseClusterManager extends ClusterManager {
 
 
     private static String getHBaseHome() {
-      return HBaseCluster.getEnvNotNull("HBASE_HOME");
+      return getEnvNotNull("HBASE_HOME");
     }
 
     private static String getConfigDir() {
@@ -191,7 +191,7 @@ public class HBaseClusterManager extends ClusterManager {
       String cmd = "";
       cmd += "export JAVA_HOME=" + getJavaHome() + ";";
       cmd += "export HBASE_SSH_OPTS='-A';";
-      cmd += "export HBASE_HEAPSIZE=500;";
+      cmd += "export HBASE_HEAPSIZE=5000;";
       cmd += "export HBASE_CONF_DIR=" + getConfigDir() + ";";
       cmd += "export HBASE_HOME=" + getHBaseHome() + ";";
       return cmd + String.format("%s/bin/hbase-daemon%s.sh %s  %s",
@@ -212,15 +212,15 @@ public class HBaseClusterManager extends ClusterManager {
     }
 
     private static String getHadoopVersion() {
-      return HBaseCluster.getEnvNotNull("HADOOP_VERSION");
+      return getEnvNotNull("HADOOP_VERSION");
     }
 
     private static String getHadoopHome() {
-      return HBaseCluster.getEnvNotNull("HADOOP_HOME");
+      return getEnvNotNull("HADOOP_HOME");
     }
 
     private String getConfigDir() {
-      return HBaseCluster.getEnvNotNull("HADOOP_CONF_DIR");
+      return getEnvNotNull("HADOOP_CONF_DIR");
     }
 
     private String getHadoopCommonHome() {
@@ -373,6 +373,7 @@ public class HBaseClusterManager extends ClusterManager {
 
   /**
    * Find the path for dev-support, that contains the scripts we need.
+   * Two possible paths, one from maven, one from the IDE.
    */
   private File getDevSupportCmd(String prg) {
     File case1 = new File("." + File.separator + "dev-support" + File.separator + prg);
@@ -430,6 +431,11 @@ public class HBaseClusterManager extends ClusterManager {
   }
 
 
+  /**
+   * Delete the root hdfs data dir on the remote machine. Use the hadoop.tmp.dir val.
+   * @param hostname the remote machine
+   * @throws IOException
+   */
   public void rmDataDir(String hostname) throws IOException {
     String hdfsDataDir = getConf().get("hadoop.tmp.dir");
     if (hdfsDataDir == null) {

@@ -24,7 +24,6 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.ClusterManager;
 import org.apache.hadoop.hbase.DistributedHBaseCluster;
-import org.apache.hadoop.hbase.HBaseCluster;
 import org.apache.hadoop.hbase.HBaseClusterManager;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HRegionInfo;
@@ -40,7 +39,6 @@ import org.junit.Test;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.util.List;
 
 /**
  * An integration test to measure the time needed to recover when we lose a regionserver.
@@ -81,10 +79,10 @@ import java.util.List;
  */
 
 public abstract class AbstractIntegrationTestRecovery {
-  protected String mainBox = HBaseCluster.getEnvNotNull("HBASE_IT_MAIN_BOX");
-  protected String willDieBox = HBaseCluster.getEnvNotNull("HBASE_IT_WILLDIE_BOX");
-  protected String willSurviveBox = HBaseCluster.getEnvNotNull("HBASE_IT_WILLSURVIVE_BOX");
-  protected String lateBox = HBaseCluster.getEnvNotNull("HBASE_IT_LATE_BOX");
+  protected String mainBox = ClusterManager.getEnvNotNull("HBASE_IT_MAIN_BOX");
+  protected String willDieBox = ClusterManager.getEnvNotNull("HBASE_IT_WILLDIE_BOX");
+  protected String willSurviveBox = ClusterManager.getEnvNotNull("HBASE_IT_WILLSURVIVE_BOX");
+  protected String lateBox = ClusterManager.getEnvNotNull("HBASE_IT_LATE_BOX");
 
   protected static final Log LOG
       = LogFactory.getLog(AbstractIntegrationTestRecovery.class);

@@ -15,7 +15,7 @@
 
   <property>
     <name>hbase.zookeeper.property.dataDir</name>
-    <value>${user.home}/tmp-recotest/data/zookeeper</value>
+    <value>/tmp/${user.name}/mttr-test-data/zookeeper</value>   <!-- subdir of hdfs data dir to have deleted -->
   </property>
 
   <property>

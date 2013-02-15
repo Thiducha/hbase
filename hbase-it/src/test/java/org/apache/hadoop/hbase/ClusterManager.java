@@ -131,6 +131,18 @@ public abstract class ClusterManager extends Configured {
    */
   public abstract void replug(String hostname) throws IOException, Exception;
 
+
+
+  /**
+   * Helper function to get an environment variable, fails with an assert if it's not defined.
+   * @param envVN
+   * @return
+   */
+  public static String getEnvNotNull(String envVN){
+    assert System.getenv(envVN) != null : envVN + " is not defined.";
+    return System.getenv(envVN);
+  }
+
   /* TODO: further API ideas:
    *
    * //return services running on host:

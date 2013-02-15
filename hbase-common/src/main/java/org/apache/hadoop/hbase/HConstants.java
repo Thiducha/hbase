@@ -40,16 +40,6 @@ public final class HConstants {
   /** When we encode strings, we always specify UTF8 encoding */
   public static final Charset UTF8_CHARSET = Charset.forName(UTF8_ENCODING);
 
-
-  public static final String STATUS_MULTICAST_ADDRESS = "hbase.status.multicast.address.ip";
-  public static final String DEFAULT_STATUS_MULTICAST_ADDRESS = null; // "226.1.1.3"; - no mc by default
-
-  public static final String STATUS_MULTICAST_PORT = "hbase.status.multicast.port";
-  public static final int DEFAULT_STATUS_MULTICAST_PORT = 60100;
-
-  public static final String STATUS_MULTICAST_PERIOD = "hbase.status.period";
-  public static final int DEFAULT_STATUS_MULTICAST_PERIOD = 10000;
-
   private static byte[] toBytes(String target) {
     return target.getBytes(UTF8_CHARSET);
   }
@@ -760,9 +750,9 @@ public final class HConstants {
 
   /** Directories that are not HBase table directories */
   public static final List<String> HBASE_NON_TABLE_DIRS =
-    Collections.unmodifiableList(Arrays.asList(new String[] { HREGION_LOGDIR_NAME,
-      HREGION_OLDLOGDIR_NAME, CORRUPT_DIR_NAME, SPLIT_LOGDIR_NAME,
-      HBCK_SIDELINEDIR_NAME, HFILE_ARCHIVE_DIRECTORY }));
+    Collections.unmodifiableList(Arrays.asList(HREGION_LOGDIR_NAME,
+        HREGION_OLDLOGDIR_NAME, CORRUPT_DIR_NAME, SPLIT_LOGDIR_NAME,
+        HBCK_SIDELINEDIR_NAME, HFILE_ARCHIVE_DIRECTORY));
 
   /** Directories that are not HBase user table directories */
   public static final List<String> HBASE_NON_USER_TABLE_DIRS =
@@ -782,6 +772,34 @@ public final class HConstants {
   public static final String HEALTH_FAILURE_THRESHOLD =
       "hbase.node.health.failure.threshold";
   public static final int DEFAULT_HEALTH_FAILURE_THRESHOLD = 3;
+
+
+  /**
+   * IP to use for the multicast status messages between the master and the clients.
+   * If not set, the master wo,'t send any message.
+   */
+  public static final String STATUS_MULTICAST_ADDRESS = "hbase.status.multicast.address.ip";
+  public static final String DEFAULT_STATUS_MULTICAST_ADDRESS = null; // "226.1.1.3";
+
+  /**
+   * The port to use for the multicast messages.
+   */
+  public static final String STATUS_MULTICAST_PORT = "hbase.status.multicast.port";
+  public static final int DEFAULT_STATUS_MULTICAST_PORT = 60100;
+
+  /**
+   * The minimum time between two status messages.
+   */
+  public static final String STATUS_MULTICAST_PERIOD = "hbase.status.period";
+  public static final int DEFAULT_STATUS_MULTICAST_PERIOD = 10000;
+
+  /**
+   * The timeframe considered to send a message. If there is a dead server, it will be included in
+   *  the status message for hbase.status.period.range * hbase.status.period milliseconds.
+   */
+  public static final String STATUS_MULTICAST_PERIOD_RANGE = "hbase.status.period.range";
+  public static final int DEFAULT_STATUS_MULTICAST_PERIOD_RANGE = 5;
+
 
   private HConstants() {
     // Can't be instantiated with this ctor.

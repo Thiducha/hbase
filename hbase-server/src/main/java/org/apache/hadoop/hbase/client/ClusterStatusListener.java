@@ -97,7 +97,7 @@ abstract public class ClusterStatusListener implements Closeable {
     private DeadServerHandler deadServerHandler = null;
 
     /**
-     * Check if we know a server is dead.
+     * Check if we know if a server is dead.
      *
      * @param sn the server name to check.
      * @return true if we know for sure that the server is dead, false otherwise.
@@ -127,23 +127,21 @@ abstract public class ClusterStatusListener implements Closeable {
 
 
     public void connect(Configuration conf) throws InterruptedException, UnknownHostException {
-      DatagramChannelFactory f = new OioDatagramChannelFactory(Executors.newSingleThreadExecutor());
+      DatagramChannelFactory f =
+          new OioDatagramChannelFactory(Executors.newSingleThreadExecutor());
 
       ConnectionlessBootstrap b = new ConnectionlessBootstrap(f);
       b.setPipeline(Channels.pipeline(
           new ProtobufDecoder(ClusterStatusProtos.ClusterStatus.getDefaultInstance()),
           new ClusterStatusHandler()));
 
-      b.setOption("reuseAddress", true);
-      b.setOption("receivedBufferSizePredictorFactory",
-          new FixedReceiveBufferSizePredictorFactory(1024));
-
-
       String mcAddress = conf.get(HConstants.STATUS_MULTICAST_ADDRESS,
           HConstants.DEFAULT_STATUS_MULTICAST_ADDRESS);
       int port = conf.getInt(HConstants.STATUS_MULTICAST_PORT,
           HConstants.DEFAULT_STATUS_MULTICAST_PORT);
       channel = (DatagramChannel) b.bind(new InetSocketAddress(mcAddress, port));
+
+      channel.getConfig().setReuseAddress(true);
 
       InetAddress ina = InetAddress.getByName(mcAddress);
       channel.joinGroup(ina);
