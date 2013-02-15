@@ -85,8 +85,8 @@ public class RegionMovedException extends NotServingRegionException {
     try {
       // TODO: this whole thing is extremely brittle.
       tmpHostname = s.substring(posHostname, s.indexOf(' ', posHostname));
-      tmpPort = Integer.parseInt(s.substring(posPort, s.indexOf('.', posPort)));
-      tmpStartCode =  Long.parseLong(s.substring(posSeqNum, s.indexOf('.', posStartCode)));
+      tmpPort = Integer.parseInt(s.substring(posPort, s.indexOf(' ', posPort)));
+      tmpStartCode =  Long.parseLong(s.substring(posStartCode, s.indexOf('.', posStartCode)));
       tmpSeqNum = Long.parseLong(s.substring(posSeqNum, s.indexOf('.', posSeqNum)));
     } catch (Exception ignored) {
       LOG.warn("Can't parse the hostname, port and startCode from this string: " +

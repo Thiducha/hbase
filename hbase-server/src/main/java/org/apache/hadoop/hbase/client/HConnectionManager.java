@@ -1216,7 +1216,7 @@ public class HConnectionManager {
         return possibleRegion;
       }
 
-      // Passed all the way through, so we got nothin - complete cache miss
+      // Passed all the way through, so we got nothing - complete cache miss
       return null;
     }
 

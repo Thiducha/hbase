@@ -134,7 +134,7 @@ public class TestHCM {
    * that we really delete it.
    * @throws Exception
    */
-  @Test(timeout = 60000)
+  @Test(timeout = 600000)
   public void testRegionCaching() throws Exception{
     HTable table = TEST_UTIL.createTable(TABLE_NAME, FAM_NAM);
     TEST_UTIL.createMultiRegions(table, FAM_NAM);
