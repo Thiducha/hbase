@@ -72,7 +72,7 @@ public class TestStartStop {
       rs = hbaseCluster.getLiveRegionServerThreads();
     } while (rs.size() != 8);
 
-    htu.createTable(TABLE_NAME2, new byte[][]{FAM_NAME}, 3, Bytes.toBytes(Long.MIN_VALUE), Bytes.toBytes(Long.MAX_VALUE), 200);
+    htu.createTable(TABLE_NAME2, new byte[][]{FAM_NAME}, 3, HConstants.EMPTY_START_ROW, Bytes.toBytes(Long.MAX_VALUE), 200);
     hba.split(TABLE_NAME1);
     int nb = rs.get(0).getRegionServer().getNumberOfOnlineRegions();
     hba.setBalancerRunning(true, true);
