@@ -29,7 +29,9 @@ public class TestStartStop {
     final byte[] QUAL_NAME = Bytes.toBytes("qual");
     final byte[] VALUE = Bytes.toBytes("value");
 
-    table1 = htu.createTable(TABLE_NAME1, new byte[][]{FAM_NAME}, 3, "0".getBytes(), (Long.MAX_VALUE+"").getBytes(), 200);
+    table1 = htu.createTable(
+        TABLE_NAME1, new byte[][]{FAM_NAME}, 3,
+        HConstants.EMPTY_BYTE_ARRAY, HConstants.EMPTY_BYTE_ARRAY, 20);
 
     htu.waitTableEnabled(TABLE_NAME1, 30000);
 
@@ -70,9 +72,7 @@ public class TestStartStop {
       rs = hbaseCluster.getLiveRegionServerThreads();
     } while (rs.size() != 8);
 
-
-
-    htu.createTable(TABLE_NAME2, new byte[][]{FAM_NAME}, 3, "0".getBytes(), (Long.MAX_VALUE+"").getBytes(), 20);
+    htu.createTable(TABLE_NAME2, new byte[][]{FAM_NAME}, 3, HConstants.EMPTY_BYTE_ARRAY, HConstants.EMPTY_BYTE_ARRAY, 200);
     hba.split(TABLE_NAME1);
     int nb = rs.get(0).getRegionServer().getNumberOfOnlineRegions();
     hba.setBalancerRunning(true, true);
