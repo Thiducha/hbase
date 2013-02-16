@@ -55,6 +55,9 @@ public class TestStartStop {
     MiniHBaseCluster hbaseCluster = htu.startMiniHBaseCluster(1, 3);
 
     hbaseCluster.getMaster().shutdown();
+    while (!hbaseCluster.getLiveRegionServerThreads().isEmpty()){
+      Thread.sleep(200);
+    }
 
     dfsCluster.shutdown();
     zkCluster.shutdown();
