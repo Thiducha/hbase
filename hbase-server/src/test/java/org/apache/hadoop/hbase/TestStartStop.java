@@ -13,6 +13,7 @@ import org.junit.Test;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Random;
 
 
 public class TestStartStop {
@@ -22,7 +23,6 @@ public class TestStartStop {
   private void putData() throws IOException, InterruptedException {
     final byte[] TABLE_NAME = Bytes.toBytes("test");
     final byte[] FAM_NAME = Bytes.toBytes("fam");
-    final byte[] ROW = Bytes.toBytes("row");
     final byte[] QUAL_NAME = Bytes.toBytes("qual");
     final byte[] VALUE = Bytes.toBytes("value");
 
@@ -30,14 +30,14 @@ public class TestStartStop {
 
     htu.waitTableEnabled(TABLE_NAME);
 
-    Put put = new Put(ROW);
-    put.add(FAM_NAME, QUAL_NAME, VALUE);
-    table1.put(put);
+    Random rd = new Random();
+    for (int i = 0; i < 10000; ++i) {
 
-    put = new Put("zfds".getBytes());
-    put.add(FAM_NAME, QUAL_NAME, VALUE);
-    table1.put(put);
+      Put put = new Put(("" + rd.nextLong()).getBytes());
+      put.add(FAM_NAME, QUAL_NAME, VALUE);
+      table1.put(put);
 
+    }
     hba.split(TABLE_NAME);
 
     table1.close();
