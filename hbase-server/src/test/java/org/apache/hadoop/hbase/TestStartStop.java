@@ -37,8 +37,8 @@ public class TestStartStop {
       Put put = new Put(("" + rd.nextLong()).getBytes());
       put.add(FAM_NAME, QUAL_NAME, VALUE);
       table1.put(put);
-
     }
+
     hba.setBalancerRunning(true, true);
     hba.split(TABLE_NAME);
     hba.balancer();
@@ -62,6 +62,7 @@ public class TestStartStop {
       Thread.sleep(200);
       rs = hbaseCluster.getLiveRegionServerThreads();
     } while (rs.size() != 8);
+
     putData();
 
     hbaseCluster.getMaster().shutdown();
