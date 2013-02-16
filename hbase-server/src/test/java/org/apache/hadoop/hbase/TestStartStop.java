@@ -3,6 +3,7 @@ package org.apache.hadoop.hbase;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
@@ -35,22 +36,25 @@ public class TestStartStop {
     put.add(FAM_NAME, QUAL_NAME, VALUE);
     table1.put(put);
 
-    Get get = new Get(ROW);
-    get.addColumn(FAM_NAME, QUAL_NAME);
-    Result res = table1.get(get);
-    assertEquals(1, res.size());
+    put = new Put("zfds".getBytes());
+    put.add(FAM_NAME, QUAL_NAME, VALUE);
+    table1.put(put);
+
+    hba.split(TABLE_NAME);
 
     table1.close();
   }
-
+  MiniHBaseCluster hbaseCluster;
+  HBaseAdmin hba;
 
   @Test
   public void testSimpleStartStop() throws Exception {
     htu.getClusterTestDir();
     MiniZooKeeperCluster zkCluster = htu.startMiniZKCluster();
     MiniDFSCluster dfsCluster = htu.startMiniDFSCluster(3, null);
-    MiniHBaseCluster hbaseCluster = htu.startMiniHBaseCluster(1, 3);
-
+    hbaseCluster = htu.startMiniHBaseCluster(1, 3);
+    hba = new HBaseAdmin(htu.getConfiguration());
+    hba.setBalancerRunning(false, true);
     putData();
 
     hbaseCluster.getMaster().shutdown();
