@@ -54,7 +54,7 @@ public class MetricsRegionAggregateSourceImpl extends BaseSourceImpl
   public void deregister(MetricsRegionSource source) {
     if (source != null && !(source instanceof MetricsRegionSourceImpl)) {
       LOG.error("bad source type " + source.getClass().getName()+" for " + source);
-      return;
+      //return;
     }
     regionSources.remove(source);
   }
