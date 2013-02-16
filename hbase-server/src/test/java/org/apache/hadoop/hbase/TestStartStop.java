@@ -20,16 +20,17 @@ import java.util.Random;
 public class TestStartStop {
   private final static Log LOG = LogFactory.getLog(TestStartStop.class);
   private HBaseTestingUtility htu = new HBaseTestingUtility();
+  final byte[] TABLE_NAME = Bytes.toBytes("test");
+  HTable table1;
 
   private void putData() throws IOException, InterruptedException, ServiceException {
-    final byte[] TABLE_NAME = Bytes.toBytes("test");
     final byte[] FAM_NAME = Bytes.toBytes("fam");
     final byte[] QUAL_NAME = Bytes.toBytes("qual");
     final byte[] VALUE = Bytes.toBytes("value");
 
-    HTable table1 = htu.createTable(TABLE_NAME, new byte[][]{FAM_NAME}, 3, "0".getBytes(), (Long.MAX_VALUE+"").getBytes(), 200);
+    table1 = htu.createTable(TABLE_NAME, new byte[][]{FAM_NAME}, 3, "0".getBytes(), (Long.MAX_VALUE+"").getBytes(), 200);
 
-    htu.waitTableEnabled(TABLE_NAME);
+    htu.waitTableEnabled(TABLE_NAME, 30000);
 
     Random rd = new Random();
     for (int i = 0; i < 100000; ++i) {
@@ -38,12 +39,6 @@ public class TestStartStop {
       put.add(FAM_NAME, QUAL_NAME, VALUE);
       table1.put(put);
     }
-
-    hba.setBalancerRunning(true, true);
-    hba.split(TABLE_NAME);
-    hba.balancer();
-
-    table1.close();
   }
 
   MiniHBaseCluster hbaseCluster;
@@ -54,17 +49,31 @@ public class TestStartStop {
     htu.getClusterTestDir();
     MiniZooKeeperCluster zkCluster = htu.startMiniZKCluster();
     MiniDFSCluster dfsCluster = htu.startMiniDFSCluster(3, null);
-    hbaseCluster = htu.startMiniHBaseCluster(1, 8);
+    hbaseCluster = htu.startMiniHBaseCluster(1, 3);
     hba = new HBaseAdmin(htu.getConfiguration());
     hba.setBalancerRunning(false, true);
     List<JVMClusterUtil.RegionServerThread> rs;
     do {
       Thread.sleep(200);
       rs = hbaseCluster.getLiveRegionServerThreads();
-    } while (rs.size() != 8);
+    } while (rs.size() != 3);
 
     putData();
 
+    hbaseCluster.startRegionServer();
+    hbaseCluster.startRegionServer();
+    hbaseCluster.startRegionServer();
+    hbaseCluster.startRegionServer();
+    hbaseCluster.startRegionServer();
+    do {
+      Thread.sleep(200);
+      rs = hbaseCluster.getLiveRegionServerThreads();
+    } while (rs.size() != 8);
+
+    hba.setBalancerRunning(true, true);
+    hba.balancer();
+    hba.split(TABLE_NAME);
+    Thread.sleep(5);
     hbaseCluster.getMaster().shutdown();
 
     boolean ok;
@@ -76,7 +85,6 @@ public class TestStartStop {
           ok = false;
         }
       }
-
     } while (!ok);
 
     dfsCluster.shutdown();
