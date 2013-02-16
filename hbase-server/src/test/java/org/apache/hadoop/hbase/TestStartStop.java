@@ -20,21 +20,21 @@ import java.util.Random;
 public class TestStartStop {
   private final static Log LOG = LogFactory.getLog(TestStartStop.class);
   private HBaseTestingUtility htu = new HBaseTestingUtility();
-  final byte[] TABLE_NAME = Bytes.toBytes("test");
+  final byte[] TABLE_NAME1 = Bytes.toBytes("TestStartStop1");
+  final byte[] TABLE_NAME2 = Bytes.toBytes("TestStartStop2");
+  final byte[] FAM_NAME = Bytes.toBytes("fam");
   HTable table1;
 
   private void putData() throws IOException, InterruptedException, ServiceException {
-    final byte[] FAM_NAME = Bytes.toBytes("fam");
     final byte[] QUAL_NAME = Bytes.toBytes("qual");
     final byte[] VALUE = Bytes.toBytes("value");
 
-    table1 = htu.createTable(TABLE_NAME, new byte[][]{FAM_NAME}, 3, "0".getBytes(), (Long.MAX_VALUE+"").getBytes(), 200);
+    table1 = htu.createTable(TABLE_NAME1, new byte[][]{FAM_NAME}, 3, "0".getBytes(), (Long.MAX_VALUE+"").getBytes(), 200);
 
-    htu.waitTableEnabled(TABLE_NAME, 30000);
+    htu.waitTableEnabled(TABLE_NAME1, 30000);
 
     Random rd = new Random();
-    for (int i = 0; i < 100000; ++i) {
-
+    for (int i = 0; i < 150000; ++i) {
       Put put = new Put(("" + rd.nextLong()).getBytes());
       put.add(FAM_NAME, QUAL_NAME, VALUE);
       table1.put(put);
@@ -70,10 +70,18 @@ public class TestStartStop {
       rs = hbaseCluster.getLiveRegionServerThreads();
     } while (rs.size() != 8);
 
+
+
+    htu.createTable(TABLE_NAME2, new byte[][]{FAM_NAME}, 3, "0".getBytes(), (Long.MAX_VALUE+"").getBytes(), 20);
+    hba.split(TABLE_NAME1);
+    int nb = rs.get(0).getRegionServer().getNumberOfOnlineRegions();
     hba.setBalancerRunning(true, true);
     hba.balancer();
-    hba.split(TABLE_NAME);
-    Thread.sleep(5);
+    // 0.94.5 crashes if you do a split just after the balance (just invert the lines).
+    do {
+      Thread.sleep(1);
+    } while (rs.get(0).getRegionServer().getNumberOfOnlineRegions() == nb);
+
     hbaseCluster.getMaster().shutdown();
 
     boolean ok;
