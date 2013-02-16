@@ -7,6 +7,7 @@ import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.HashedBytes;
 import org.apache.hadoop.hbase.util.JVMClusterUtil;
 import org.apache.hadoop.hbase.zookeeper.MiniZooKeeperCluster;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
@@ -31,13 +32,13 @@ public class TestStartStop {
 
     table1 = htu.createTable(
         TABLE_NAME1, new byte[][]{FAM_NAME}, 3,
-        HConstants.EMPTY_BYTE_ARRAY, HConstants.EMPTY_BYTE_ARRAY, 20);
+        Bytes.toBytes(Long.MIN_VALUE)     , Bytes.toBytes(Long.MAX_VALUE), 20);
 
     htu.waitTableEnabled(TABLE_NAME1, 30000);
 
     Random rd = new Random();
     for (int i = 0; i < 150000; ++i) {
-      Put put = new Put(("" + rd.nextLong()).getBytes());
+      Put put = new Put(Bytes.toBytes(rd.nextLong()));
       put.add(FAM_NAME, QUAL_NAME, VALUE);
       table1.put(put);
     }
