@@ -1,5 +1,6 @@
 package org.apache.hadoop.hbase;
 
+import com.google.protobuf.ServiceException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
@@ -20,25 +21,27 @@ public class TestStartStop {
   private final static Log LOG = LogFactory.getLog(TestStartStop.class);
   private HBaseTestingUtility htu = new HBaseTestingUtility();
 
-  private void putData() throws IOException, InterruptedException {
+  private void putData() throws IOException, InterruptedException, ServiceException {
     final byte[] TABLE_NAME = Bytes.toBytes("test");
     final byte[] FAM_NAME = Bytes.toBytes("fam");
     final byte[] QUAL_NAME = Bytes.toBytes("qual");
     final byte[] VALUE = Bytes.toBytes("value");
 
-    HTable table1 = htu.createTable(TABLE_NAME, new byte[][]{FAM_NAME}, 3, "0".getBytes(), (Long.MAX_VALUE+"").getBytes(), 30);
+    HTable table1 = htu.createTable(TABLE_NAME, new byte[][]{FAM_NAME}, 3, "0".getBytes(), (Long.MAX_VALUE+"").getBytes(), 200);
 
     htu.waitTableEnabled(TABLE_NAME);
 
     Random rd = new Random();
-    for (int i = 0; i < 10000; ++i) {
+    for (int i = 0; i < 100000; ++i) {
 
       Put put = new Put(("" + rd.nextLong()).getBytes());
       put.add(FAM_NAME, QUAL_NAME, VALUE);
       table1.put(put);
 
     }
+    hba.setBalancerRunning(true, true);
     hba.split(TABLE_NAME);
+    hba.balancer();
 
     table1.close();
   }
