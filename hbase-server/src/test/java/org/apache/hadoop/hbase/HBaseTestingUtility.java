@@ -322,7 +322,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
    * Creates it if it does not exist already.  A subdir of {@link #getBaseTestDir()}
    * @see #getTestFileSystem()
    */
-  Path getClusterTestDir() {
+  public Path getClusterTestDir() {
     if (clusterTestDir == null){
       setupClusterTestDir();
     }
