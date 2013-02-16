@@ -1,9 +1,6 @@
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
-import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.MiniHBaseCluster;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
@@ -17,12 +14,10 @@ import org.junit.Test;
 import java.io.IOException;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 
-public class StartStopTest {
-  private final static Log LOG = LogFactory.getLog(StartStopTest.class);
+public class TestStartStop {
+  private final static Log LOG = LogFactory.getLog(TestStartStop.class);
   private HBaseTestingUtility htu = new HBaseTestingUtility();
 
   private void putData() throws IOException {
