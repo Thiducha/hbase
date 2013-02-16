@@ -1,7 +1,7 @@
+package org.apache.hadoop.hbase;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.hbase.HBaseTestingUtility;
-import org.apache.hadoop.hbase.MiniHBaseCluster;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
@@ -47,7 +47,8 @@ public class TestStartStop {
   }
 
 
-  @Test public void testMiniZooKeeper() throws Exception {
+  @Test
+  public void testSimpleStartStop() throws Exception {
     htu.getClusterTestDir();
     MiniZooKeeperCluster zkCluster = htu.startMiniZKCluster();
     MiniDFSCluster dfsCluster = htu.startMiniDFSCluster(3, null);
@@ -55,8 +56,8 @@ public class TestStartStop {
 
     hbaseCluster.getMaster().shutdown();
 
+    dfsCluster.shutdown();
+    zkCluster.shutdown();
   }
-
-
 }
 
