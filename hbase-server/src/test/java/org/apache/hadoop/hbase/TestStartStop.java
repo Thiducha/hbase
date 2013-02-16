@@ -65,6 +65,7 @@ public class TestStartStop {
 
     boolean ok;
     do {
+      Thread.sleep(200);
       ok = true;
       for (JVMClusterUtil.RegionServerThread rt : rs) {
         if (rt.isAlive()) {
