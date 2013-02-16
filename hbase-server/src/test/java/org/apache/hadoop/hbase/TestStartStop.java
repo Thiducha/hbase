@@ -20,30 +20,27 @@ public class TestStartStop {
   private final static Log LOG = LogFactory.getLog(TestStartStop.class);
   private HBaseTestingUtility htu = new HBaseTestingUtility();
 
-  private void putData() throws IOException {
-      final byte[] TABLE_NAME = Bytes.toBytes("test");
-      final byte[] FAM_NAME = Bytes.toBytes("fam");
-      final byte[] ROW = Bytes.toBytes("row");
-      final byte[] QUAL_NAME = Bytes.toBytes("qual");
-      final byte[] VALUE = Bytes.toBytes("value");
+  private void putData() throws IOException, InterruptedException {
+    final byte[] TABLE_NAME = Bytes.toBytes("test");
+    final byte[] FAM_NAME = Bytes.toBytes("fam");
+    final byte[] ROW = Bytes.toBytes("row");
+    final byte[] QUAL_NAME = Bytes.toBytes("qual");
+    final byte[] VALUE = Bytes.toBytes("value");
 
-      HTable table1 = htu.createTable(TABLE_NAME, FAM_NAME);
-      HTable table2 = htu.createTable(TABLE_NAME, FAM_NAME);
+    HTable table1 = htu.createTable(TABLE_NAME, FAM_NAME);
 
-      Put put = new Put(ROW);
-      put.add(FAM_NAME, QUAL_NAME, VALUE);
-      table1.put(put);
+    htu.waitTableEnabled(TABLE_NAME);
 
-      Get get = new Get(ROW);
-      get.addColumn(FAM_NAME, QUAL_NAME);
-      Result res = table1.get(get);
-      assertEquals(1, res.size());
+    Put put = new Put(ROW);
+    put.add(FAM_NAME, QUAL_NAME, VALUE);
+    table1.put(put);
 
-      res = table2.get(get);
-      assertEquals(0, res.size());
+    Get get = new Get(ROW);
+    get.addColumn(FAM_NAME, QUAL_NAME);
+    Result res = table1.get(get);
+    assertEquals(1, res.size());
 
-      table1.close();
-      table2.close();
+    table1.close();
   }
 
 
@@ -54,8 +51,10 @@ public class TestStartStop {
     MiniDFSCluster dfsCluster = htu.startMiniDFSCluster(3, null);
     MiniHBaseCluster hbaseCluster = htu.startMiniHBaseCluster(1, 3);
 
+    putData();
+
     hbaseCluster.getMaster().shutdown();
-    while (!hbaseCluster.getLiveRegionServerThreads().isEmpty()){
+    while (!hbaseCluster.getLiveRegionServerThreads().isEmpty()) {
       Thread.sleep(200);
     }
 
