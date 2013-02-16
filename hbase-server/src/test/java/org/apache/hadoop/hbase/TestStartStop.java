@@ -7,7 +7,6 @@ import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.hbase.util.HashedBytes;
 import org.apache.hadoop.hbase.util.JVMClusterUtil;
 import org.apache.hadoop.hbase.zookeeper.MiniZooKeeperCluster;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
@@ -32,7 +31,7 @@ public class TestStartStop {
 
     table1 = htu.createTable(
         TABLE_NAME1, new byte[][]{FAM_NAME}, 3,
-        Bytes.toBytes(Long.MIN_VALUE)     , Bytes.toBytes(Long.MAX_VALUE), 20);
+        Bytes.toBytes(Long.MIN_VALUE), Bytes.toBytes(Long.MAX_VALUE), 20);
 
     htu.waitTableEnabled(TABLE_NAME1, 30000);
 
