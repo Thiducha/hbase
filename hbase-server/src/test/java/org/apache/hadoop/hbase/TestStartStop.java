@@ -2,19 +2,17 @@ package org.apache.hadoop.hbase;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.JVMClusterUtil;
 import org.apache.hadoop.hbase.zookeeper.MiniZooKeeperCluster;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.junit.Test;
 
 import java.io.IOException;
-
-import static org.junit.Assert.assertEquals;
+import java.util.List;
 
 
 public class TestStartStop {
@@ -44,6 +42,7 @@ public class TestStartStop {
 
     table1.close();
   }
+
   MiniHBaseCluster hbaseCluster;
   HBaseAdmin hba;
 
@@ -52,15 +51,28 @@ public class TestStartStop {
     htu.getClusterTestDir();
     MiniZooKeeperCluster zkCluster = htu.startMiniZKCluster();
     MiniDFSCluster dfsCluster = htu.startMiniDFSCluster(3, null);
-    hbaseCluster = htu.startMiniHBaseCluster(1, 3);
+    hbaseCluster = htu.startMiniHBaseCluster(1, 8);
     hba = new HBaseAdmin(htu.getConfiguration());
     hba.setBalancerRunning(false, true);
+    List<JVMClusterUtil.RegionServerThread> rs;
+    do {
+      Thread.sleep(200);
+      rs = hbaseCluster.getLiveRegionServerThreads();
+    } while (rs.size() != 8);
     putData();
 
     hbaseCluster.getMaster().shutdown();
-    while (!hbaseCluster.getLiveRegionServerThreads().isEmpty()) {
-      Thread.sleep(200);
-    }
+
+    boolean ok;
+    do {
+      ok = true;
+      for (JVMClusterUtil.RegionServerThread rt : rs) {
+        if (rt.isAlive()) {
+          ok = false;
+        }
+      }
+
+    } while (!ok);
 
     dfsCluster.shutdown();
     zkCluster.shutdown();
