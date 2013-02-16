@@ -26,7 +26,7 @@ public class TestStartStop {
     final byte[] QUAL_NAME = Bytes.toBytes("qual");
     final byte[] VALUE = Bytes.toBytes("value");
 
-    HTable table1 = htu.createTable(TABLE_NAME, FAM_NAME);
+    HTable table1 = htu.createTable(TABLE_NAME, new byte[][]{FAM_NAME}, 3, null, null, 30);
 
     htu.waitTableEnabled(TABLE_NAME);
 
