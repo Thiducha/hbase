@@ -72,12 +72,15 @@ public class TestStartStop {
       rs = hbaseCluster.getLiveRegionServerThreads();
     } while (rs.size() != 8);
 
-    htu.createTable(TABLE_NAME2, new byte[][]{FAM_NAME}, 3, Bytes.toBytes(0), Bytes.toBytes(Long.MAX_VALUE), 200);
+
     hba.split(TABLE_NAME1);
     int nb = rs.get(0).getRegionServer().getNumberOfOnlineRegions();
     hba.setBalancerRunning(true, true);
     hba.balancer();
     // 0.94.5 crashes if you do a split just after the balance (just invert the lines).
+    htu.createTable(TABLE_NAME2, new byte[][]{FAM_NAME}, 3, Bytes.toBytes(0), Bytes.toBytes(Long.MAX_VALUE), 200);
+
+
     do {
       Thread.sleep(1);
     } while (rs.get(0).getRegionServer().getNumberOfOnlineRegions() == nb);
