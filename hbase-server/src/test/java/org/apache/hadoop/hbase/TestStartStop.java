@@ -36,7 +36,7 @@ public class TestStartStop {
     htu.waitTableEnabled(TABLE_NAME1, 30000);
 
     Random rd = new Random();
-    for (int i = 0; i < 150000; ++i) {
+    for (int i = 0; i < 500000; ++i) {
       Put put = new Put(Bytes.toBytes(rd.nextLong()));
       put.add(FAM_NAME, QUAL_NAME, VALUE);
       table1.put(put);
@@ -50,7 +50,7 @@ public class TestStartStop {
   public void testSimpleStartStop() throws Exception {
     htu.getClusterTestDir();
     MiniZooKeeperCluster zkCluster = htu.startMiniZKCluster();
-    MiniDFSCluster dfsCluster = htu.startMiniDFSCluster(10, null);
+    MiniDFSCluster dfsCluster = htu.startMiniDFSCluster(3, null);
     hbaseCluster = htu.startMiniHBaseCluster(1, 3);
     hba = new HBaseAdmin(htu.getConfiguration());
     hba.setBalancerRunning(false, true);
@@ -72,7 +72,7 @@ public class TestStartStop {
       rs = hbaseCluster.getLiveRegionServerThreads();
     } while (rs.size() != 8);
 
-    createTableAsync();
+    //createTableAsync();
     hba.split(TABLE_NAME1);
     hba.setBalancerRunning(true, true);
     hba.balancer();
