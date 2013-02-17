@@ -50,7 +50,7 @@ public class TestStartStop {
   public void testSimpleStartStop() throws Exception {
     htu.getClusterTestDir();
     MiniZooKeeperCluster zkCluster = htu.startMiniZKCluster();
-    MiniDFSCluster dfsCluster = htu.startMiniDFSCluster(3, null);
+    MiniDFSCluster dfsCluster = htu.startMiniDFSCluster(10, null);
     hbaseCluster = htu.startMiniHBaseCluster(1, 3);
     hba = new HBaseAdmin(htu.getConfiguration());
     hba.setBalancerRunning(false, true);
@@ -105,7 +105,7 @@ public class TestStartStop {
     zkCluster.shutdown();
   }
 
-  public void createTableAsync() throws IOException {
+  private void createTableAsync() throws IOException {
     final byte [][] splitKeys = new byte[200][];
 
     for (int i=0; i < splitKeys.length; i++){
@@ -118,6 +118,5 @@ public class TestStartStop {
 
     hba.createTableAsync(htd, splitKeys);
   }
-
 }
 
