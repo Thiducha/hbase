@@ -50,7 +50,7 @@ public class TestStartStop {
   public void testSimpleStartStop() throws Exception {
     htu.getClusterTestDir();
     MiniZooKeeperCluster zkCluster = htu.startMiniZKCluster();
-    MiniDFSCluster dfsCluster = htu.startMiniDFSCluster(3, null);
+    MiniDFSCluster dfsCluster = htu.startMiniDFSCluster(8, null);
     hbaseCluster = htu.startMiniHBaseCluster(1, 3);
     hba = new HBaseAdmin(htu.getConfiguration());
     hba.setBalancerRunning(false, true);
@@ -89,11 +89,12 @@ public class TestStartStop {
       }
     } while (!ok);
 
+    JVMClusterUtil.MasterThread master = hbaseCluster.getLiveMasterThreads().get(0);
     hbaseCluster.getMaster().shutdown();
 
     do {
       Thread.sleep(200);
-      ok = true;
+      ok = !master.isAlive();
       for (JVMClusterUtil.RegionServerThread rt : rs) {
         if (rt.isAlive()) {
           ok = false;
