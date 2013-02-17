@@ -72,12 +72,11 @@ public class TestStartStop {
       rs = hbaseCluster.getLiveRegionServerThreads();
     } while (rs.size() != 8);
 
-
+    createTableAsync();
     hba.split(TABLE_NAME1);
     hba.setBalancerRunning(true, true);
     hba.balancer();
     // 0.94.5 crashes if you do a split just after the balance (just invert the lines).
-    htu.createTable(TABLE_NAME2, new byte[][]{FAM_NAME}, 3, Bytes.toBytes(0), Bytes.toBytes(Long.MAX_VALUE), 200);
 
     boolean ok;
     do {
@@ -105,5 +104,20 @@ public class TestStartStop {
     dfsCluster.shutdown();
     zkCluster.shutdown();
   }
+
+  public void createTableAsync() throws IOException {
+    final byte [][] splitKeys = new byte[200][];
+
+    for (int i=0; i < splitKeys.length; i++){
+      splitKeys[i] = Bytes.toBytes(i*100);
+    }
+
+    HTableDescriptor htd = new HTableDescriptor(TABLE_NAME2);
+    HColumnDescriptor family = new HColumnDescriptor(TABLE_NAME2);
+    htd.addFamily(family);
+
+    hba.createTableAsync(htd, splitKeys);
+  }
+
 }
 
