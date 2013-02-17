@@ -68,7 +68,7 @@ public class TestStartStop {
     hbaseCluster.startRegionServer();
     hbaseCluster.startRegionServer();
     do {
-      Thread.sleep(200);
+      Thread.sleep(1);
       rs = hbaseCluster.getLiveRegionServerThreads();
     } while (rs.size() != 8);
 
@@ -79,14 +79,19 @@ public class TestStartStop {
     // 0.94.5 crashes if you do a split just after the balance (just invert the lines).
     htu.createTable(TABLE_NAME2, new byte[][]{FAM_NAME}, 3, Bytes.toBytes(0), Bytes.toBytes(Long.MAX_VALUE), 200);
 
-
+    boolean ok;
     do {
       Thread.sleep(1);
-    } while (rs.get(0).getRegionServer().getRegionsInTransitionInRS().isEmpty());
+      ok = false;
+      for (JVMClusterUtil.RegionServerThread rt : rs) {
+        if (!rt.getRegionServer().getRegionsInTransitionInRS().isEmpty()){
+          ok = true;
+        }
+      }
+    } while (!ok);
 
     hbaseCluster.getMaster().shutdown();
 
-    boolean ok;
     do {
       Thread.sleep(200);
       ok = true;
