@@ -74,7 +74,6 @@ public class TestStartStop {
 
 
     hba.split(TABLE_NAME1);
-    int nb = rs.get(0).getRegionServer().getNumberOfOnlineRegions();
     hba.setBalancerRunning(true, true);
     hba.balancer();
     // 0.94.5 crashes if you do a split just after the balance (just invert the lines).
@@ -83,7 +82,7 @@ public class TestStartStop {
 
     do {
       Thread.sleep(1);
-    } while (rs.get(0).getRegionServer().getNumberOfOnlineRegions() == nb);
+    } while (rs.get(0).getRegionServer().getRegionsInTransitionInRS().isEmpty());
 
     hbaseCluster.getMaster().shutdown();
 
