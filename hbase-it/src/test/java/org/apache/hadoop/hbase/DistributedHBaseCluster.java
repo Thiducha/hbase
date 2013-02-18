@@ -109,7 +109,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
 
   @Override
   public AdminProtocol getAdminProtocol(ServerName serverName) throws IOException {
-    return getAdmin().getConnection().getAdmin(serverName.getHostname(), serverName.getPort());
+    return admin.getConnection().getAdmin(serverName);
   }
 
   @Override
@@ -217,7 +217,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
       return null;
     }
 
-    AdminProtocol client = connection.getAdmin(regionLoc.getHostname(), regionLoc.getPort());
+    AdminProtocol client = connection.getAdmin(regionLoc.getServerName());
     ServerInfo info = ProtobufUtil.getServerInfo(client);
     return ProtobufUtil.toServerName(info.getServerName());
   }
