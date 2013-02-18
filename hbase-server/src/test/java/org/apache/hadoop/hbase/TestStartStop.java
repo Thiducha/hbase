@@ -48,6 +48,7 @@ public class TestStartStop {
     MiniZooKeeperCluster zkCluster = htu.startMiniZKCluster();
     MiniDFSCluster dfsCluster = htu.startMiniDFSCluster(8, null);
 
+    String tableName = null;
     for (int i = 0; i < 200; i++) {
       hbaseCluster = htu.startMiniHBaseCluster(1, 8);
       hba = new HBaseAdmin(htu.getConfiguration());
@@ -58,7 +59,11 @@ public class TestStartStop {
         rs = hbaseCluster.getLiveRegionServerThreads();
       } while (rs.size() != 8);
 
-      putData("table "+i);
+      if (tableName != null){
+        hba.deleteTable(tableName);
+      }
+      tableName = "table "+i;
+      putData(tableName);
 
       JVMClusterUtil.MasterThread master = hbaseCluster.getLiveMasterThreads().get(0);
       hbaseCluster.getMaster().shutdown();
