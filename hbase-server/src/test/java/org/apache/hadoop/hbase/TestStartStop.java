@@ -31,12 +31,12 @@ public class TestStartStop {
 
     table1 = htu.createTable(
         TABLE_NAME1, new byte[][]{FAM_NAME}, 3,
-        Bytes.toBytes(0), Bytes.toBytes(Long.MAX_VALUE), 20);
+        Bytes.toBytes(0), Bytes.toBytes(Long.MAX_VALUE), 200);
 
     htu.waitTableEnabled(TABLE_NAME1, 30000);
 
     Random rd = new Random();
-    for (int i = 0; i < 500000; ++i) {
+    for (int i = 0; i < 10000; ++i) {
       Put put = new Put(Bytes.toBytes(rd.nextLong()));
       put.add(FAM_NAME, QUAL_NAME, VALUE);
       table1.put(put);
@@ -51,17 +51,17 @@ public class TestStartStop {
     htu.getClusterTestDir();
     MiniZooKeeperCluster zkCluster = htu.startMiniZKCluster();
     MiniDFSCluster dfsCluster = htu.startMiniDFSCluster(8, null);
-    hbaseCluster = htu.startMiniHBaseCluster(1, 3);
+    hbaseCluster = htu.startMiniHBaseCluster(1, 8);
     hba = new HBaseAdmin(htu.getConfiguration());
     hba.setBalancerRunning(false, true);
     List<JVMClusterUtil.RegionServerThread> rs;
     do {
       Thread.sleep(200);
       rs = hbaseCluster.getLiveRegionServerThreads();
-    } while (rs.size() != 3);
+    } while (rs.size() != 8);
 
     putData();
-
+                        /*
     hbaseCluster.startRegionServer();
     hbaseCluster.startRegionServer();
     hbaseCluster.startRegionServer();
@@ -88,19 +88,20 @@ public class TestStartStop {
         }
       }
     } while (!ok);
-
+                          */
     JVMClusterUtil.MasterThread master = hbaseCluster.getLiveMasterThreads().get(0);
     hbaseCluster.getMaster().shutdown();
 
+    boolean stillAlive;
     do {
       Thread.sleep(200);
-      ok = !master.isAlive();
+      stillAlive = master.isAlive();
       for (JVMClusterUtil.RegionServerThread rt : rs) {
         if (rt.isAlive()) {
-          ok = false;
+          stillAlive = true;
         }
       }
-    } while (!ok);
+    } while (stillAlive);
 
     dfsCluster.shutdown();
     zkCluster.shutdown();
