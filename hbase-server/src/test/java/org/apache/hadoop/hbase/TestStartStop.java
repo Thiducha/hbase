@@ -1,8 +1,6 @@
 package org.apache.hadoop.hbase;
 
 import com.google.protobuf.ServiceException;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
@@ -18,10 +16,8 @@ import java.util.Random;
 
 
 public class TestStartStop {
-  private final static Log LOG = LogFactory.getLog(TestStartStop.class);
   private HBaseTestingUtility htu = new HBaseTestingUtility();
   final byte[] TABLE_NAME1 = Bytes.toBytes("TestStartStop1");
-  final byte[] TABLE_NAME2 = Bytes.toBytes("TestStartStop2");
   final byte[] FAM_NAME = Bytes.toBytes("fam");
   HTable table1;
 
@@ -61,34 +57,7 @@ public class TestStartStop {
     } while (rs.size() != 8);
 
     putData();
-                        /*
-    hbaseCluster.startRegionServer();
-    hbaseCluster.startRegionServer();
-    hbaseCluster.startRegionServer();
-    hbaseCluster.startRegionServer();
-    hbaseCluster.startRegionServer();
-    do {
-      Thread.sleep(1);
-      rs = hbaseCluster.getLiveRegionServerThreads();
-    } while (rs.size() != 8);
 
-    //createTableAsync();
-    hba.split(TABLE_NAME1);
-    hba.setBalancerRunning(true, true);
-    hba.balancer();
-    // 0.94.5 crashes if you do a split just after the balance (just invert the lines).
-
-    boolean ok;
-    do {
-      Thread.sleep(1);
-      ok = false;
-      for (JVMClusterUtil.RegionServerThread rt : rs) {
-        if (!rt.getRegionServer().getRegionsInTransitionInRS().isEmpty()){
-          ok = true;
-        }
-      }
-    } while (!ok);
-                          */
     JVMClusterUtil.MasterThread master = hbaseCluster.getLiveMasterThreads().get(0);
     hbaseCluster.getMaster().shutdown();
 
@@ -105,20 +74,6 @@ public class TestStartStop {
 
     dfsCluster.shutdown();
     zkCluster.shutdown();
-  }
-
-  private void createTableAsync() throws IOException {
-    final byte [][] splitKeys = new byte[200][];
-
-    for (int i=0; i < splitKeys.length; i++){
-      splitKeys[i] = Bytes.toBytes(i*100);
-    }
-
-    HTableDescriptor htd = new HTableDescriptor(TABLE_NAME2);
-    HColumnDescriptor family = new HColumnDescriptor(TABLE_NAME2);
-    htd.addFamily(family);
-
-    hba.createTableAsync(htd, splitKeys);
   }
 }
 
