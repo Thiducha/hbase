@@ -31,7 +31,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Random;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -164,7 +163,7 @@ public class TestHCM {
         getServerManager().getDeadServers().isDeadServer(sn));
 
     // The client knows that the server is dead
-    Assert.assertTrue(hci.clusterStatusListener.isDead(sn));
+    Assert.assertTrue(hci.isDeadServer(sn));
 
     hci.getClient(sn);  // will throw an exception: RegionServerStoppedException
   }

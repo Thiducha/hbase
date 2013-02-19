@@ -28,7 +28,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionLocation;
-import org.apache.hadoop.hbase.PleaseHoldException;
 import org.apache.hadoop.hbase.ipc.HBaseClientRPC;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
@@ -177,7 +176,7 @@ public abstract class ServerCallable<T> implements Callable<T> {
         if (t instanceof SocketTimeoutException ||
             t instanceof ConnectException ||
             t instanceof RetriesExhaustedException ||
-            getConnection().isDead(location.getServerName())) {
+            getConnection().isDeadServer(location.getServerName())) {
           // if thrown these exceptions, we clear all the cache entries that
           // map to that slow/dead server; otherwise, let cache miss and ask
           // .META. again to find the new location
@@ -196,7 +195,7 @@ public abstract class ServerCallable<T> implements Callable<T> {
         //  a chance to the regions to be
         expectedSleep = ConnectionUtils.getPauseTime(pause, tries);
         if (expectedSleep < MIN_WAIT_DEAD_SERVER &&
-            getConnection().isDead(location.getServerName())){
+            getConnection().isDeadServer(location.getServerName())){
           expectedSleep = ConnectionUtils.addJitter(MIN_WAIT_DEAD_SERVER, 0.10f);
         }
 

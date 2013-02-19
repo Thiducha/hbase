@@ -52,11 +52,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ClusterStatusPublisher extends Chore {
   private long lastMessageTime = 0;
-  private HMaster master;
+  private final HMaster master;
   private DatagramChannel channel;
-  private volatile AtomicBoolean connected = new AtomicBoolean(false);
+  private final AtomicBoolean connected = new AtomicBoolean(false);
   private final int messagePeriod; // time between two message
-  private ConcurrentMap<ServerName, Integer> lastSent =
+  private final ConcurrentMap<ServerName, Integer> lastSent =
       new ConcurrentHashMap<ServerName, Integer>();
 
   /**
@@ -85,6 +85,7 @@ public class ClusterStatusPublisher extends Chore {
   // for tests
   protected ClusterStatusPublisher(){
     messagePeriod  = 0;
+    master = null;
   }
 
 
@@ -203,6 +204,10 @@ public class ClusterStatusPublisher extends Chore {
    * protected because it can be subclassed by the tests.
    */
   protected List<Pair<ServerName, Long>> getDeadServers(long since){
+    if (master.getServerManager() == null){
+      return Collections.emptyList();
+    }
+
     return master.getServerManager().getDeadServers().copyDeadServersSince(since);
   }
 }

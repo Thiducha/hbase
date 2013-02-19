@@ -924,11 +924,11 @@ public class HConnectionManager {
     }
 
     @Override
-    public boolean isDead(ServerName sn) {
+    public boolean isDeadServer(ServerName sn) {
       if (clusterStatusListener == null) {
         return false;
       } else {
-        return clusterStatusListener.isDead(sn);
+        return clusterStatusListener.isDeadServer(sn);
       }
     }
 
@@ -1162,7 +1162,7 @@ public class HConnectionManager {
               Bytes.toStringBinary(row));
           }
 
-          if (isDead(serverName)){
+          if (isDeadServer(serverName)){
             throw new RegionServerStoppedException(".META. says the region "+
                 regionInfo.getRegionNameAsString()+" is managed by the server " + serverName +
                 ", but it is dead.");
@@ -1418,7 +1418,7 @@ public class HConnectionManager {
     @Override
     public ClientProtocol getClient(final ServerName serverName)
         throws IOException {
-      if (isDead(serverName)){
+      if (isDeadServer(serverName)){
         throw new RegionServerStoppedException("The server " + serverName + " is dead.");
       }
       return (ClientProtocol)
@@ -1436,7 +1436,7 @@ public class HConnectionManager {
     @Override
     public AdminProtocol getAdmin(final ServerName serverName, final boolean master)
         throws IOException {
-      if (isDead(serverName)){
+      if (isDeadServer(serverName)){
         throw new RegionServerStoppedException("The server " + serverName + " is dead.");
       }
       return (AdminProtocol)getProtocol(

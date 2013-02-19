@@ -64,7 +64,8 @@ abstract public class ClusterStatusListener implements Closeable {
   public abstract static class DeadServerHandler {
 
     /**
-     * Called when a server is identified as dead.
+     * Called when a server is identified as dead. Called only once even if we receive the
+     *  information multiple times.
      *
      * @param sn - the server name
      */
@@ -78,7 +79,7 @@ abstract public class ClusterStatusListener implements Closeable {
    * @param sn the ServerName
    * @return true if the server is dead, false if it's alive or we don't know.
    */
-  public abstract boolean isDead(ServerName sn);
+  public abstract boolean isDeadServer(ServerName sn);
 
   /**
    * Called to close the resources, if any. Cannot throw an exception.
@@ -103,7 +104,7 @@ abstract public class ClusterStatusListener implements Closeable {
      * @param sn the server name to check.
      * @return true if we know for sure that the server is dead, false otherwise.
      */
-    public boolean isDead(ServerName sn) {
+    public boolean isDeadServer(ServerName sn) {
       if (sn.getStartcode() <= 0) {
         return false;
       }
@@ -168,7 +169,7 @@ abstract public class ClusterStatusListener implements Closeable {
 
         if (ncs.getDeadServerNames() != null) {
           for (ServerName sn : ncs.getDeadServerNames()) {
-            if (!isDead(sn)) {
+            if (!isDeadServer(sn)) {
               LOG.info("There is a new dead server: " + sn);
               deadServers.add(sn);
               if (deadServerHandler != null) {

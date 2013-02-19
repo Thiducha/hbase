@@ -417,6 +417,6 @@ public interface HConnection extends Abortable, Closeable {
    * @param serverName
    * @return true if the server is known as dead, false otherwise.
    */
-  public boolean isDead(ServerName serverName);
+  public boolean isDeadServer(ServerName serverName);
 }
 
