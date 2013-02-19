@@ -46,7 +46,7 @@ import org.apache.hadoop.hbase.SmallTests;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.regionserver.HRegion;
-import org.apache.hadoop.hbase.regionserver.HStore;
+import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.regionserver.InternalScanner;
 import org.apache.hadoop.hbase.regionserver.RegionCoprocessorHost;
 import org.apache.hadoop.hbase.regionserver.RegionScanner;
@@ -187,13 +187,13 @@ public class TestCoprocessorInterface extends HBaseTestCase {
     }
     @Override
     public InternalScanner preCompact(ObserverContext<RegionCoprocessorEnvironment> e,
-        HStore store, InternalScanner scanner, ScanType scanType) {
+        Store store, InternalScanner scanner, ScanType scanType) {
       preCompactCalled = true;
       return scanner;
     }
     @Override
     public void postCompact(ObserverContext<RegionCoprocessorEnvironment> e,
-        HStore store, StoreFile resultFile) {
+        Store store, StoreFile resultFile) {
       postCompactCalled = true;
     }
     @Override
@@ -401,8 +401,7 @@ public class TestCoprocessorInterface extends HBaseTestCase {
   HRegion reopenRegion(final HRegion closedRegion, Class<?> ... implClasses)
       throws IOException {
     //HRegionInfo info = new HRegionInfo(tableName, null, null, false);
-    HRegion r = new HRegion(closedRegion);
-    r.initialize();
+    HRegion r = HRegion.openHRegion(closedRegion, null);
 
     // this following piece is a hack. currently a coprocessorHost
     // is secretly loaded at OpenRegionHandler. we don't really

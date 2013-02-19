@@ -24,7 +24,8 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.regionserver.StoreConfiguration;
+import org.apache.hadoop.hbase.regionserver.HStore;
+import org.apache.hadoop.hbase.regionserver.StoreConfigInformation;
 
 /**
  * Compaction configuration for a particular instance of HStore.
@@ -49,7 +50,7 @@ public class CompactionConfiguration {
   private static final String CONFIG_PREFIX = "hbase.hstore.compaction.";
 
   Configuration conf;
-  StoreConfiguration storeConfig;
+  StoreConfigInformation storeConfigInfo;
 
   long maxCompactSize;
   long minCompactSize;
@@ -57,42 +58,32 @@ public class CompactionConfiguration {
   int maxFilesToCompact;
   double compactionRatio;
   double offPeekCompactionRatio;
-  int offPeakStartHour;
-  int offPeakEndHour;
   long throttlePoint;
   boolean shouldDeleteExpired;
   long majorCompactionPeriod;
   float majorCompactionJitter;
+  int blockingStoreFileCount;
 
-  CompactionConfiguration(Configuration conf, StoreConfiguration storeConfig) {
+  CompactionConfiguration(Configuration conf, StoreConfigInformation storeConfigInfo) {
     this.conf = conf;
-    this.storeConfig = storeConfig;
+    this.storeConfigInfo = storeConfigInfo;
 
     maxCompactSize = conf.getLong(CONFIG_PREFIX + "max.size", Long.MAX_VALUE);
     minCompactSize = conf.getLong(CONFIG_PREFIX + "min.size",
-        storeConfig.getMemstoreFlushSize());
+        storeConfigInfo.getMemstoreFlushSize());
     minFilesToCompact = Math.max(2, conf.getInt(CONFIG_PREFIX + "min",
           /*old name*/ conf.getInt("hbase.hstore.compactionThreshold", 3)));
     maxFilesToCompact = conf.getInt(CONFIG_PREFIX + "max", 10);
     compactionRatio = conf.getFloat(CONFIG_PREFIX + "ratio", 1.2F);
     offPeekCompactionRatio = conf.getFloat(CONFIG_PREFIX + "ratio.offpeak", 5.0F);
-    offPeakStartHour = conf.getInt("hbase.offpeak.start.hour", -1);
-    offPeakEndHour = conf.getInt("hbase.offpeak.end.hour", -1);
-
-    if (!isValidHour(offPeakStartHour) || !isValidHour(offPeakEndHour)) {
-      if (!(offPeakStartHour == -1 && offPeakEndHour == -1)) {
-        LOG.warn("Ignoring invalid start/end hour for peak hour : start = " +
-            this.offPeakStartHour + " end = " + this.offPeakEndHour +
-            ". Valid numbers are [0-23]");
-      }
-      this.offPeakStartHour = this.offPeakEndHour = -1;
-    }
 
     throttlePoint =  conf.getLong("hbase.regionserver.thread.compaction.throttle",
-          2 * maxFilesToCompact * storeConfig.getMemstoreFlushSize());
+          2 * maxFilesToCompact * storeConfigInfo.getMemstoreFlushSize());
     shouldDeleteExpired = conf.getBoolean("hbase.store.delete.expired.storefile", true);
     majorCompactionPeriod = conf.getLong(HConstants.MAJOR_COMPACTION_PERIOD, 1000*60*60*24);
     majorCompactionJitter = conf.getFloat("hbase.hregion.majorcompaction.jitter", 0.20F);
+    blockingStoreFileCount =
+        conf.getInt("hbase.hstore.blockingStoreFiles", HStore.DEFAULT_BLOCKING_STOREFILE_COUNT);
 
     LOG.info("Compaction configuration " + this.toString());
   }
@@ -100,20 +91,25 @@ public class CompactionConfiguration {
   @Override
   public String toString() {
     return String.format(
-      "size [%d, %d); files [%d, %d); ratio %f; off-peak ratio %f; off-peak hours %d-%d; "
-      + "throttle point %d;%s delete expired; major period %d, major jitter %f",
+      "size [%d, %d); files [%d, %d); ratio %f; off-peak ratio %f; throttle point %d;"
+      + "%s delete expired; major period %d, major jitter %f",
       minCompactSize,
       maxCompactSize,
       minFilesToCompact,
       maxFilesToCompact,
       compactionRatio,
       offPeekCompactionRatio,
-      offPeakStartHour,
-      offPeakEndHour,
       throttlePoint,
       shouldDeleteExpired ? "" : " don't",
       majorCompactionPeriod,
       majorCompactionJitter);
+  }
+
+  /**
+   * @return store file count that will cause the memstore of this store to be blocked.
+   */
+  int getBlockingStorefileCount() {
+    return this.blockingStoreFileCount;
   }
 
   /**
@@ -159,20 +155,6 @@ public class CompactionConfiguration {
   }
 
   /**
-   * @return Hour at which off-peak compactions start
-   */
-  int getOffPeakStartHour() {
-    return offPeakStartHour;
-  }
-
-  /**
-   * @return Hour at which off-peak compactions end
-   */
-  int getOffPeakEndHour() {
-    return offPeakEndHour;
-  }
-
-  /**
    * @return ThrottlePoint used for classifying small and large compactions
    */
   long getThrottlePoint() {
@@ -184,12 +166,6 @@ public class CompactionConfiguration {
    * Major compactions are selected periodically according to this parameter plus jitter
    */
   long getMajorCompactionPeriod() {
-    if (storeConfig != null) {
-      Long storeSpecificPeriod = storeConfig.getMajorCompactionPeriod();
-      if (storeSpecificPeriod != null) {
-        return storeSpecificPeriod;
-      }
-    }
     return majorCompactionPeriod;
   }
 
@@ -206,9 +182,5 @@ public class CompactionConfiguration {
    */
   boolean shouldDeleteExpired() {
     return shouldDeleteExpired;
-  }
-
-  private static boolean isValidHour(int hour) {
-    return (hour >= 0 && hour <= 23);
   }
 }

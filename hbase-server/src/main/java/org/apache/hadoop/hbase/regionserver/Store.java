@@ -18,16 +18,20 @@
 package org.apache.hadoop.hbase.regionserver;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.List;
 import java.util.NavigableSet;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.HeapSize;
+import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.io.hfile.HFileDataBlockEncoder;
 import org.apache.hadoop.hbase.regionserver.compactions.CompactionProgress;
@@ -41,7 +45,7 @@ import com.google.common.collect.ImmutableList;
  */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
-public interface Store extends  HeapSize {
+public interface Store extends HeapSize, StoreConfigInformation {
 
   /* The default priority for user-specified compaction requests.
    * The user gets top priority unless we have blocking compactions. (Pri <= 0)
@@ -52,7 +56,7 @@ public interface Store extends  HeapSize {
   // General Accessors
   public KeyValue.KVComparator getComparator();
 
-  public List<StoreFile> getStorefiles();
+  public Collection<StoreFile> getStorefiles();
 
   /**
    * Close all the readers We don't need to worry about subsequent requests because the HRegion
@@ -60,7 +64,7 @@ public interface Store extends  HeapSize {
    * @return the {@link StoreFile StoreFiles} that were previously being used.
    * @throws IOException on failure
    */
-  public ImmutableList<StoreFile> close() throws IOException;
+  public Collection<StoreFile> close() throws IOException;
 
   /**
    * Return a scanner for both the memstore and the HStore files. Assumes we are not in a
@@ -72,6 +76,23 @@ public interface Store extends  HeapSize {
    */
   public KeyValueScanner getScanner(Scan scan, final NavigableSet<byte[]> targetCols)
       throws IOException;
+
+  /**
+   * Get all scanners with no filtering based on TTL (that happens further down
+   * the line).
+   * @param cacheBlocks
+   * @param isGet
+   * @param isCompaction
+   * @param matcher
+   * @param startRow
+   * @param stopRow
+   * @return all scanners for this store
+   */
+  public List<KeyValueScanner> getScanners(boolean cacheBlocks,
+      boolean isGet, boolean isCompaction, ScanQueryMatcher matcher, byte[] startRow,
+      byte[] stopRow) throws IOException;
+
+  public ScanInfo getScanInfo();
 
   /**
    * Adds or replaces the specified KeyValues.
@@ -115,6 +136,17 @@ public interface Store extends  HeapSize {
    * @throws IOException
    */
   public KeyValue getRowKeyAtOrBefore(final byte[] row) throws IOException;
+
+  public FileSystem getFileSystem();
+
+  /*
+   * @param maxKeyCount
+   * @param compression Compression algorithm to use
+   * @param isCompaction whether we are creating a new file in a compaction
+   * @return Writer for a new StoreFile in the tmp dir.
+   */
+  public StoreFile.Writer createWriterInTmp(int maxKeyCount,
+    Compression.Algorithm compression, boolean isCompaction) throws IOException;
 
   // Compaction oriented methods
 
@@ -208,11 +240,6 @@ public interface Store extends  HeapSize {
    */
   public HFileDataBlockEncoder getDataBlockEncoder();
 
-  /**
-   * @return the number of files in this store
-   */
-  public int getNumberOfStoreFiles();
-
   /** @return aggregate size of all HStores used in the last compaction */
   public long getLastCompactSize();
 
@@ -257,24 +284,38 @@ public interface Store extends  HeapSize {
   // Test-helper methods
 
   /**
-   * Compact the most recent N files. Used in testing.
-   * @param N number of files to compact. Must be less than or equal to current number of files.
-   * @throws IOException on failure
-   */
-  public void compactRecentForTesting(int N) throws IOException;
-
-  /**
    * Used for tests.
    * @return cache configuration for this Store.
    */
   public CacheConfig getCacheConfig();
 
   /**
-   * @return the parent region hosting this store
+   * @return the parent region info hosting this store
    */
-  public HRegion getHRegion();
+  public HRegionInfo getRegionInfo();
+
+  public RegionCoprocessorHost getCoprocessorHost();
+
+  public boolean areWritesEnabled();
+
+  /**
+   * @return The smallest mvcc readPoint across all the scanners in this
+   * region. Writes older than this readPoint, are included  in every
+   * read operation.
+   */
+  public long getSmallestReadPoint();
 
   public String getColumnFamilyName();
 
   public String getTableName();
+
+  /*
+   * @param o Observer who wants to know about changes in set of Readers
+   */
+  public void addChangedReaderObserver(ChangedReadersObserver o);
+
+  /*
+   * @param o Observer no longer interested in changes in set of Readers.
+   */
+  public void deleteChangedReaderObserver(ChangedReadersObserver o);
 }

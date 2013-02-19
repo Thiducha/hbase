@@ -23,6 +23,7 @@ import static org.mockito.Mockito.spy;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -280,8 +281,8 @@ public class TestCompaction extends HBaseTestCase {
     final int ttl = 1000;
     for (Store hstore : this.r.stores.values()) {
       HStore store = ((HStore) hstore);
-      HStore.ScanInfo old = store.getScanInfo();
-      HStore.ScanInfo si = new HStore.ScanInfo(old.getFamily(),
+      ScanInfo old = store.getScanInfo();
+      ScanInfo si = new ScanInfo(old.getFamily(),
           old.getMinVersions(), old.getMaxVersions(), ttl,
           old.getKeepDeletedCells(), 0, old.getComparator());
       store.setScanInfo(si);
@@ -314,7 +315,7 @@ public class TestCompaction extends HBaseTestCase {
 
       // ensure that major compaction time is deterministic
       DefaultCompactionPolicy c = (DefaultCompactionPolicy)s.compactionPolicy;
-      List<StoreFile> storeFiles = s.getStorefiles();
+      Collection<StoreFile> storeFiles = s.getStorefiles();
       long mcTime = c.getNextMajorCompactTime(storeFiles);
       for (int i = 0; i < 10; ++i) {
         assertEquals(mcTime, c.getNextMajorCompactTime(storeFiles));
@@ -439,7 +440,7 @@ public class TestCompaction extends HBaseTestCase {
     Store store2 = this.r.stores.get(fam2);
     int numFiles1 = store2.getStorefiles().size();
     assertTrue("Was expecting to see 4 store files", numFiles1 > compactionThreshold); // > 3
-    store2.compactRecentForTesting(compactionThreshold);   // = 3
+    ((HStore)store2).compactRecentForTestingAssumingDefaultPolicy(compactionThreshold);   // = 3
     int numFiles2 = store2.getStorefiles().size();
     // Check that we did compact
     assertTrue("Number of store files should go down", numFiles1 > numFiles2);
@@ -539,8 +540,8 @@ public class TestCompaction extends HBaseTestCase {
       final int ttl = 1000;
       for (Store hstore: this.r.stores.values()) {
         HStore store = (HStore)hstore;
-        HStore.ScanInfo old = store.getScanInfo();
-        HStore.ScanInfo si = new HStore.ScanInfo(old.getFamily(),
+        ScanInfo old = store.getScanInfo();
+        ScanInfo si = new ScanInfo(old.getFamily(),
             old.getMinVersions(), old.getMaxVersions(), ttl,
             old.getKeepDeletedCells(), 0, old.getComparator());
         store.setScanInfo(si);
@@ -587,7 +588,7 @@ public class TestCompaction extends HBaseTestCase {
     }
     HStore store = (HStore) r.getStore(COLUMN_FAMILY);
 
-    List<StoreFile> storeFiles = store.getStorefiles();
+    Collection<StoreFile> storeFiles = store.getStorefiles();
     Compactor tool = store.compactionPolicy.getCompactor();
 
     List<Path> newFiles =

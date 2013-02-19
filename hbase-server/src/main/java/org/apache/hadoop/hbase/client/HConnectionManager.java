@@ -85,7 +85,6 @@ import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDe
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.util.Addressing;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.SoftValueSortedMap;
 import org.apache.hadoop.hbase.util.Triple;
@@ -584,9 +583,6 @@ public class HConnectionManager {
     throws ZooKeeperConnectionException {
       this.conf = conf;
       this.managed = managed;
-      // ProtobufRpcClientEngine is the main RpcClientEngine implementation,
-      // but we maintain access through an interface to allow overriding for tests
-      this.rpcEngine = new ProtobufRpcClientEngine(conf);
       String adminClassName = conf.get(REGION_PROTOCOL_CLASS,
         DEFAULT_ADMIN_PROTOCOL_CLASS);
       this.closed = false;
@@ -621,6 +617,10 @@ public class HConnectionManager {
           HConstants.DEFAULT_HBASE_CLIENT_PREFETCH_LIMIT);
 
       retrieveClusterId();
+      // ProtobufRpcClientEngine is the main RpcClientEngine implementation,
+      // but we maintain access through an interface to allow overriding for tests
+      // RPC engine setup must follow obtaining the cluster ID for token authentication to work
+      this.rpcEngine = new ProtobufRpcClientEngine(this.conf);
     }
 
     /**
@@ -958,8 +958,7 @@ public class HConnectionManager {
           LOG.debug("Looked up root region location, connection=" + this +
             "; serverName=" + ((servername == null) ? "null" : servername));
           if (servername == null) return null;
-          return new HRegionLocation(HRegionInfo.ROOT_REGIONINFO, servername.getHostname(),
-              servername.getPort(), 0);
+          return new HRegionLocation(HRegionInfo.ROOT_REGIONINFO, servername, 0);
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
           return null;
@@ -1007,8 +1006,8 @@ public class HConnectionManager {
               return true; // don't cache it
             }
             // instantiate the location
-            HRegionLocation loc = new HRegionLocation(regionInfo, serverName.getHostname(),
-                serverName.getPort(), HRegionInfo.getSeqNumDuringOpen(result));
+            HRegionLocation loc = new HRegionLocation(regionInfo, serverName,
+                HRegionInfo.getSeqNumDuringOpen(result));
             // cache this meta entry
             cacheLocation(tableName, null, loc);
             return true;
@@ -1062,7 +1061,7 @@ public class HConnectionManager {
           // If null still, go around again.
           if (metaLocation == null) continue;
           ClientProtocol server =
-            getClient(metaLocation.getHostname(), metaLocation.getPort());
+            getClient(metaLocation.getServerName());
 
           Result regionInfoRow = null;
           // This block guards against two threads trying to load the meta
@@ -1132,8 +1131,8 @@ public class HConnectionManager {
           }
 
           // Instantiate the location
-          location = new HRegionLocation(regionInfo, serverName.getHostname(),
-                  serverName.getPort(), HRegionInfo.getSeqNumDuringOpen(regionInfoRow));
+          location = new HRegionLocation(regionInfo, serverName,
+              HRegionInfo.getSeqNumDuringOpen(regionInfoRow));
           cacheLocation(tableName, null, location);
           return location;
         } catch (TableNotFoundException e) {
@@ -1217,7 +1216,7 @@ public class HConnectionManager {
         return possibleRegion;
       }
 
-      // Passed all the way through, so we got nothin - complete cache miss
+      // Passed all the way through, so we got nothing - complete cache miss
       return null;
     }
 
@@ -1367,22 +1366,44 @@ public class HConnectionManager {
     }
 
     @Override
-    public AdminProtocol getAdmin(final String hostname,
-        final int port) throws IOException {
-      return getAdmin(hostname, port, false);
+    @Deprecated
+    public AdminProtocol getAdmin(final String hostname, final int port) throws IOException {
+      return getAdmin(new ServerName(hostname, port, 0L));
     }
 
     @Override
+    public AdminProtocol getAdmin(final ServerName serverName)
+        throws IOException {
+      return getAdmin(serverName, false);
+    }
+
+    @Override
+    @Deprecated
     public ClientProtocol getClient(final String hostname, final int port)
     throws IOException {
       return (ClientProtocol)getProtocol(hostname, port, clientClass);
     }
 
     @Override
+    public ClientProtocol getClient(final ServerName serverName)
+        throws IOException {
+      return (ClientProtocol)
+          getProtocol(serverName.getHostname(), serverName.getPort(), clientClass);
+    }
+
+    @Override
+    @Deprecated
     public AdminProtocol getAdmin(final String hostname, final int port,
         final boolean master)
     throws IOException {
       return (AdminProtocol)getProtocol(hostname, port, adminClass);
+    }
+
+    @Override
+    public AdminProtocol getAdmin(final ServerName serverName, final boolean master)
+        throws IOException {
+      return (AdminProtocol)getProtocol(
+          serverName.getHostname(), serverName.getPort(), adminClass);
     }
 
     /**
@@ -1756,8 +1777,7 @@ public class HConnectionManager {
 
               @Override
               public void connect(boolean reload) throws IOException {
-                server = connection.getClient(
-                  loc.getHostname(), loc.getPort());
+                server = connection.getClient(loc.getServerName());
               }
             };
           return callable.withoutRetries();
@@ -1766,8 +1786,8 @@ public class HConnectionManager {
    }
 
    void updateCachedLocation(HRegionInfo hri, HRegionLocation source,
-       String hostname, int port, long seqNum) {
-      HRegionLocation newHrl = new HRegionLocation(hri, hostname, port, seqNum);
+       ServerName serverName, long seqNum) {
+      HRegionLocation newHrl = new HRegionLocation(hri, serverName, seqNum);
       synchronized (this.cachedRegionLocations) {
         cacheLocation(hri.getTableName(), source, newHrl);
       }
@@ -1780,7 +1800,7 @@ public class HConnectionManager {
     */
     void deleteCachedLocation(HRegionInfo hri, HRegionLocation source) {
       boolean isStaleDelete = false;
-      HRegionLocation oldLocation = null;
+      HRegionLocation oldLocation;
       synchronized (this.cachedRegionLocations) {
         Map<byte[], HRegionLocation> tableLocations =
           getTableLocations(hri.getTableName());
@@ -1828,7 +1848,7 @@ public class HConnectionManager {
         LOG.info("Region " + regionInfo.getRegionNameAsString() + " moved to " +
           rme.getHostname() + ":" + rme.getPort() + " according to " + source.getHostnamePort());
         updateCachedLocation(
-            regionInfo, source, rme.getHostname(), rme.getPort(), rme.getLocationSeqNum());
+            regionInfo, source, rme.getServerName(), rme.getLocationSeqNum());
       } else {
         deleteCachedLocation(regionInfo, source);
       }
@@ -2123,8 +2143,7 @@ public class HConnectionManager {
           }
         }
 
-        public String getDescriptionAndClear()
-        {
+        public String getDescriptionAndClear(){
           if (exceptions.isEmpty()) {
             return "";
           }
@@ -2133,7 +2152,7 @@ public class HConnectionManager {
           actions.clear();
           addresses.clear();
           return result;
-        };
+        }
 
         private RetriesExhaustedWithDetailsException makeException() {
           return new RetriesExhaustedWithDetailsException(exceptions, actions, addresses);
