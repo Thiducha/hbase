@@ -67,7 +67,7 @@ public class TestHCM {
   private static final byte[] FAM_NAM = Bytes.toBytes("f");
   private static final byte[] ROW = Bytes.toBytes("bbb");
 
-  private static final int MC_PERIOD = 1000;
+  private static final int MC_PERIOD = 2000;
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
@@ -123,14 +123,14 @@ public class TestHCM {
    *  exception.
    */
   @Test(expected = RegionServerStoppedException.class)
-  public void testClusterStatus() throws IOException, InterruptedException {
+  public void testClusterStatus() throws Exception {
     byte[] tn = "testClusterStatus".getBytes();
     byte[] cf = "cf".getBytes();
     byte[] rk = "rk1".getBytes();
 
     JVMClusterUtil.RegionServerThread rs = TEST_UTIL.getHBaseCluster().startRegionServer();
     rs.waitForServerOnline();
-    ServerName sn = rs.getRegionServer().getServerName();
+    final ServerName sn = rs.getRegionServer().getServerName();
 
 
     HTable t = TEST_UTIL.createTable(tn, cf);
@@ -140,7 +140,7 @@ public class TestHCM {
         isRegionsInTransition()){
       Thread.sleep(1);
     }
-    HConnectionImplementation hci =  (HConnectionImplementation)t.getConnection();
+    final HConnectionImplementation hci =  (HConnectionImplementation)t.getConnection();
     while (t.getRegionLocation(rk).getPort() != sn.getPort()){
       TEST_UTIL.getHBaseAdmin().move(t.getRegionLocation(rk).getRegionInfo().
           getEncodedNameAsBytes(), sn.getVersionedBytes());
@@ -158,12 +158,14 @@ public class TestHCM {
 
     rs.getRegionServer().abort("I'm dead");
 
-    Thread.sleep(MC_PERIOD * 3); // Give some time for the status to be updated.
-    Assert.assertTrue(TEST_UTIL.getHBaseCluster().getMaster().
-        getServerManager().getDeadServers().isDeadServer(sn));
-
     // The client knows that the server is dead
-    Assert.assertTrue(hci.isDeadServer(sn));
+    // Give some time for the status to be updated.
+    TEST_UTIL.waitFor(MC_PERIOD * 5, 100, new Waiter.Predicate<Exception>() {
+      @Override
+      public boolean evaluate() throws Exception {
+        return hci.isDeadServer(sn);
+      }
+    });
 
     hci.getClient(sn);  // will throw an exception: RegionServerStoppedException
   }

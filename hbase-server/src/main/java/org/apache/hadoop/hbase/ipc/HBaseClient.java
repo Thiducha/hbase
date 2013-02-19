@@ -1361,7 +1361,8 @@ public class HBaseClient {
           LOG.info("The server on " + hostname + ":" + port +
               " is dead - stopping " + connection.remoteId);
           connection.closeConnection();
-          connection.interrupt(); // stop waiting - could be dangerous.
+          // We could do a connection.interrupt();, but it's safer not to do it, as the
+          //  interrupted exception behavior is not defined not enforced enough.
         }
       }
     }

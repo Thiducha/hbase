@@ -96,7 +96,7 @@ abstract public class ClusterStatusListener implements Closeable {
     private static final Log LOG = LogFactory.getLog(ClusterStatusMultiCastListener.class);
     private DatagramChannel channel;
     private final List<ServerName> deadServers = new ArrayList<ServerName>();
-    private DeadServerHandler deadServerHandler = null;
+    private final DeadServerHandler deadServerHandler;
 
     /**
      * Check if we know if a server is dead.
