@@ -22,7 +22,6 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.hbase.util.Addressing;
 
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Data structure to hold HRegionInfo and the address for the hosting
@@ -99,7 +98,7 @@ public class HRegionLocation implements Comparable<HRegionLocation> {
   }
 
   public long getSeqNum() {
-    return this.servername.getStartcode();
+    return seqNum;
   }
 
   /**

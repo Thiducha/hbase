@@ -24,7 +24,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.Map;
 
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -43,7 +42,6 @@ import org.apache.hadoop.io.VersionedWritable;
 
 import com.google.protobuf.ByteString;
 
-import javax.swing.text.html.StyleSheet;
 
 /**
  * Status information on the HBase cluster.
@@ -279,12 +277,13 @@ public class ClusterStatus extends VersionedWritable {
   }
 
    /**
-    * Convert a ClutserStatus to a protobuf ClusterStatus
+    * Convert a ClusterStatus to a protobuf ClusterStatus
     *
     * @return the protobuf ClusterStatus
     */
   public ClusterStatusProtos.ClusterStatus convert() {
-    ClusterStatusProtos.ClusterStatus.Builder builder = ClusterStatusProtos.ClusterStatus.newBuilder();
+    ClusterStatusProtos.ClusterStatus.Builder builder =
+        ClusterStatusProtos.ClusterStatus.newBuilder();
     builder.setHbaseVersion(HBaseVersionFileContent.newBuilder().setVersion(getHBaseVersion()));
 
     if (liveServers != null){

@@ -538,8 +538,6 @@ public class HBaseAdmin implements Abortable, Closeable {
     });
 
     // Wait until all regions deleted
-    ClientProtocol server =
-      connection.getClient(firstMetaServer.getServerName());
     for (int tries = 0; tries < (this.numRetries * this.retryLongerMultiplier); tries++) {
       try {
 

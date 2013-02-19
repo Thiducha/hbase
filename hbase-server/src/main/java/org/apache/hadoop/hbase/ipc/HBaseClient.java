@@ -1358,7 +1358,8 @@ public class HBaseClient {
         if (connection.isAlive() &&
             connection.getRemoteAddress().getPort() == port &&
             connection.getRemoteAddress().getHostName().equals(hostname)) {
-          LOG.info("The server on " + hostname + ":" + port + " is dead - stopping " + connection.remoteId);
+          LOG.info("The server on " + hostname + ":" + port +
+              " is dead - stopping " + connection.remoteId);
           connection.closeConnection();
           connection.interrupt(); // stop waiting - could be dangerous.
         }

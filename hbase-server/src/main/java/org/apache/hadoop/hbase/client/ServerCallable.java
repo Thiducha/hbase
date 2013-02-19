@@ -181,7 +181,7 @@ public abstract class ServerCallable<T> implements Callable<T> {
           // if thrown these exceptions, we clear all the cache entries that
           // map to that slow/dead server; otherwise, let cache miss and ask
           // .META. again to find the new location
-          getConnection().clearCaches(location.getHostnamePort());
+          getConnection().clearCaches(location.getServerName());
         }
 
         RetriesExhaustedException.ThrowableWithExtraContext qt =

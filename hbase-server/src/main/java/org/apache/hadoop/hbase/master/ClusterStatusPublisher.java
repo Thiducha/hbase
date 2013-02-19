@@ -41,7 +41,12 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -51,26 +56,35 @@ public class ClusterStatusPublisher extends Chore {
   private DatagramChannel channel;
   private volatile AtomicBoolean connected = new AtomicBoolean(false);
   private final int messagePeriod; // time between two message
-  private final int periodRange; // number of period we're considering for the dead servers.
-
+  private ConcurrentMap<ServerName, Integer> lastSent =
+      new ConcurrentHashMap<ServerName, Integer>();
 
   /**
    * We want to limit the size of the protobuf message sent, do fit into a single packet.
-   *  a reasonable size ofr ip / ethernet is less than 1Kb.
+   * a reasonable size ofr ip / ethernet is less than 1Kb.
    */
   public static int MAX_SERVER_PER_MESSAGE = 10;
+
+  /**
+   * If a server dies, we're sending the information multiple times in case a receiver misses the
+   * message.
+   */
+  public static int NB_SEND = 5;
 
   public ClusterStatusPublisher(HMaster master, Configuration conf)
       throws UnknownHostException {
     super("HBase clusterStatusPublisher for " + master.getName(),
         conf.getInt(HConstants.STATUS_MULTICAST_PERIOD,
-        HConstants.DEFAULT_STATUS_MULTICAST_PERIOD), master);
+            HConstants.DEFAULT_STATUS_MULTICAST_PERIOD), master);
     this.master = master;
-    this.messagePeriod =  conf.getInt(HConstants.STATUS_MULTICAST_PERIOD,
+    this.messagePeriod = conf.getInt(HConstants.STATUS_MULTICAST_PERIOD,
         HConstants.DEFAULT_STATUS_MULTICAST_PERIOD);
-    this.periodRange =  conf.getInt(HConstants.STATUS_MULTICAST_PERIOD_RANGE,
-        HConstants.DEFAULT_STATUS_MULTICAST_PERIOD_RANGE);
     connect(conf);
+  }
+
+  // for tests
+  protected ClusterStatusPublisher(){
+    messagePeriod  = 0;
   }
 
 
@@ -97,26 +111,21 @@ public class ClusterStatusPublisher extends Chore {
     connected.set(true);
   }
 
-  /**
-   * We're sending:
-   * - at max one message every 10 seconds
-   * - immediately if there is a new dead server and the
-   * previous message is more than 10 seconds ago.
-   */
+
   @Override
   protected void chore() {
     if (!connected.get()) {
       return;
     }
 
-    List<ServerName> sns = getLastDeadServers();
-    if (sns.isEmpty()){
+    List<ServerName> sns = generateDeadServersListToSend();
+    if (sns.isEmpty()) {
       // Nothing to send. Done.
       return;
     }
 
     final long curTime = EnvironmentEdgeManager.currentTimeMillis();
-    if (lastMessageTime > curTime - messagePeriod){
+    if (lastMessageTime > curTime - messagePeriod) {
       // We already sent something less than 10 second ago. Done.
       return;
     }
@@ -130,7 +139,7 @@ public class ClusterStatusPublisher extends Chore {
     ClusterStatus cs = new ClusterStatus(VersionInfo.getVersion(),
         master.getMasterFileSystem().getClusterId().toString(),
         null,
-        getLastDeadServers(),
+        sns,
         master.getServerName(),
         null,
         null,
@@ -149,18 +158,51 @@ public class ClusterStatusPublisher extends Chore {
     connected.set(false);
   }
 
-  private List<ServerName> getLastDeadServers(){
-    long since = EnvironmentEdgeManager.currentTimeMillis() - messagePeriod * periodRange;
-    List<Pair<ServerName, Long>> deads =
-        master.getServerManager().getDeadServers().copyDeadServersSince(since);
+  /**
+   * Create the dead server to send. A dead server is sent NB_SEND times. We send at max
+   *  MAX_SERVER_PER_MESSAGE at a time. if there are too many dead servers, we send the newly
+   *  dead first.
+   */
+  protected List<ServerName> generateDeadServersListToSend() {
+    // We're getting the message sent since last time, and add them to the list
+    long since = EnvironmentEdgeManager.currentTimeMillis() - messagePeriod * 2;
+    for (Pair<ServerName, Long> dead : getDeadServers(since)) {
+      lastSent.putIfAbsent(dead.getFirst(), 0);
+    }
 
-    List<ServerName> res = new ArrayList<ServerName>(MAX_SERVER_PER_MESSAGE);
+    // We're sending the new deads first.
+    List<Map.Entry<ServerName, Integer>> entries = new ArrayList<Map.Entry<ServerName, Integer>>();
+    entries.addAll(lastSent.entrySet());
+    Collections.sort(entries, new Comparator<Map.Entry<ServerName, Integer>>() {
+      @Override
+      public int compare(Map.Entry<ServerName, Integer> o1, Map.Entry<ServerName, Integer> o2) {
+        return o1.getValue().compareTo(o2.getValue());
+      }
+    });
 
-    int max = deads.size() > MAX_SERVER_PER_MESSAGE ? MAX_SERVER_PER_MESSAGE : deads.size();
-    for (int i=0; i< max; i++){
-      res.add( deads.get(i).getFirst() );
+    // With a limit of MAX_SERVER_PER_MESSAGE
+    int max = entries.size() > MAX_SERVER_PER_MESSAGE ? MAX_SERVER_PER_MESSAGE : entries.size();
+    List<ServerName> res = new ArrayList<ServerName>(max);
+
+    for (int i = 0; i < max; i++) {
+      Map.Entry<ServerName, Integer> toSend = entries.get(i);
+      if (toSend.getValue() >= (NB_SEND -1)) {
+        lastSent.remove(toSend.getKey());
+      } else {
+        lastSent.replace(toSend.getKey(), toSend.getValue(), toSend.getValue() + 1);
+      }
+
+      res.add(toSend.getKey());
     }
 
     return res;
+  }
+
+  /**
+   * Get the servers dies since a given timestamp.
+   * protected because it can be subclassed by the tests.
+   */
+  protected List<Pair<ServerName, Long>> getDeadServers(long since){
+    return master.getServerManager().getDeadServers().copyDeadServersSince(since);
   }
 }

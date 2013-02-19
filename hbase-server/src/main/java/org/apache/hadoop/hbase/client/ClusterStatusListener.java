@@ -33,7 +33,6 @@ import org.jboss.netty.bootstrap.ConnectionlessBootstrap;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.Channels;
 import org.jboss.netty.channel.ExceptionEvent;
-import org.jboss.netty.channel.FixedReceiveBufferSizePredictorFactory;
 import org.jboss.netty.channel.MessageEvent;
 import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
 import org.jboss.netty.channel.socket.DatagramChannel;
@@ -67,7 +66,7 @@ abstract public class ClusterStatusListener implements Closeable {
     /**
      * Called when a server is identified as dead.
      *
-     * @param sn
+     * @param sn - the server name
      */
     abstract public void newDead(ServerName sn);
   }
@@ -75,6 +74,7 @@ abstract public class ClusterStatusListener implements Closeable {
 
   /**
    * Returns true if we know for sure that the server is dead.
+   *
    * @param sn the ServerName
    * @return true if the server is dead, false if it's alive or we don't know.
    */
@@ -84,7 +84,8 @@ abstract public class ClusterStatusListener implements Closeable {
    * Called to close the resources, if any. Cannot throw an exception.
    */
   @Override
-  public void close(){}
+  public void close() {
+  }
 
 
   /**
