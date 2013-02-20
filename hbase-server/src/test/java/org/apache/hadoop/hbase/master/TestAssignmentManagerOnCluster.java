@@ -31,11 +31,15 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.MediumTests;
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.Waiter;
 import org.apache.hadoop.hbase.catalog.MetaEditor;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.zookeeper.ZKUtil;
+import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
+import org.apache.zookeeper.KeeperException;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -122,6 +126,49 @@ public class TestAssignmentManagerOnCluster {
     } finally {
       TEST_UTIL.deleteTable(Bytes.toBytes(table));
     }
+  }
+
+  @Test
+  public void testMoveRegionWithDraining() throws Exception {
+    setDrainingServer(TEST_UTIL.getHBaseCluster().getRegionServer(0));
+    setDrainingServer(TEST_UTIL.getHBaseCluster().getRegionServer(1));
+
+    TEST_UTIL.waitFor(20000, 100, new Waiter.Predicate<Exception>() {
+      @Override
+      public boolean evaluate() throws Exception {
+        return TEST_UTIL.getHBaseCluster().getMaster().getServerManager().getDrainingServersList().size() == 2;
+      }
+    });
+
+    byte[] table = "myT".getBytes();
+    HTable ht = TEST_UTIL.createTable(table, table);
+    TEST_UTIL.waitTableEnabled(table);
+
+    TEST_UTIL.getHBaseAdmin().move(ht.getRegionLocations().keySet().iterator().next().getEncodedNameAsBytes(), null);
+
+    Thread.sleep(200);
+
+
+    unsetDrainingServer(TEST_UTIL.getHBaseCluster().getRegionServer(0));
+    unsetDrainingServer(TEST_UTIL.getHBaseCluster().getRegionServer(1));
+  }
+
+  private static HRegionServer setDrainingServer(final HRegionServer hrs)
+      throws KeeperException {
+    ZooKeeperWatcher zkw = hrs.getZooKeeper();
+    String hrsDrainingZnode =
+        ZKUtil.joinZNode(zkw.drainingZNode, hrs.getServerName().toString());
+    ZKUtil.createWithParents(zkw, hrsDrainingZnode);
+    return hrs;
+  }
+
+  private static HRegionServer unsetDrainingServer(final HRegionServer hrs)
+      throws KeeperException {
+    ZooKeeperWatcher zkw = hrs.getZooKeeper();
+    String hrsDrainingZnode =
+        ZKUtil.joinZNode(zkw.drainingZNode, hrs.getServerName().toString());
+    ZKUtil.deleteNode(zkw, hrsDrainingZnode);
+    return hrs;
   }
 
   /**

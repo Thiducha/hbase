@@ -2448,26 +2448,6 @@ public class AssignmentManager extends ZooKeeperListener {
     }
   }
 
-  /**
-   * Wait on region to clear regions-in-transition.
-   * @param hri Region to wait on.
-   * @throws IOException
-   */
-  public void waitOnRegionToClearRegionsInTransition(final HRegionInfo hri)
-      throws IOException, InterruptedException {
-    if (!regionStates.isRegionInTransition(hri)) return;
-    RegionState rs = null;
-    // There is already a timeout monitor on regions in transition so I
-    // should not have to have one here too?
-    while(!this.server.isStopped() && regionStates.isRegionInTransition(hri)) {
-      LOG.info("Waiting on " + rs + " to clear regions-in-transition");
-      regionStates.waitForUpdate(100);
-    }
-    if (this.server.isStopped()) {
-      LOG.info("Giving up wait on regions in " +
-        "transition because stoppable.isStopped is set");
-    }
-  }
 
   void invokeAssign(HRegionInfo regionInfo) {
     threadPoolExecutorService.submit(new AssignCallable(this, regionInfo));
