@@ -18,27 +18,7 @@
  */
 package org.apache.hadoop.hbase.master;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListSet;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
-
+import com.google.common.collect.LinkedHashMultimap;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -84,7 +64,25 @@ import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.KeeperException.NodeExistsException;
 import org.apache.zookeeper.data.Stat;
 
-import com.google.common.collect.LinkedHashMultimap;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Manages and performs region assignment.
@@ -105,10 +103,6 @@ public class AssignmentManager extends ZooKeeperListener {
   private ServerManager serverManager;
 
   private CatalogTracker catalogTracker;
-
-  final TimeoutMonitor timeoutMonitor;
-
-  private TimerUpdater timerUpdater;
 
   private LoadBalancer balancer;
 
@@ -134,13 +128,6 @@ public class AssignmentManager extends ZooKeeperListener {
     new TreeMap<String, RegionPlan>();
 
   private final ZKTable zkTable;
-
-  /**
-   * Contains the server which need to update timer, these servers will be
-   * handled by {@link TimerUpdater}
-   */
-  private final ConcurrentSkipListSet<ServerName> serversInUpdatingTimer =
-    new ConcurrentSkipListSet<ServerName>();
 
   private final ExecutorService executorService;
 
@@ -201,14 +188,6 @@ public class AssignmentManager extends ZooKeeperListener {
     this.regionsToReopen = Collections.synchronizedMap
                            (new HashMap<String, HRegionInfo> ());
     Configuration conf = server.getConfiguration();
-    this.timeoutMonitor = new TimeoutMonitor(
-      conf.getInt("hbase.master.assignment.timeoutmonitor.period", 30000),
-      server, serverManager,
-      conf.getInt("hbase.master.assignment.timeoutmonitor.timeout", 600000));
-    this.timerUpdater = new TimerUpdater(conf.getInt(
-      "hbase.master.assignment.timerupdater.period", 10000), server);
-    Threads.setDaemonThreadRunning(timerUpdater.getThread(),
-      server.getServerName() + ".timerUpdater");
     this.zkTable = new ZKTable(this.watcher);
     this.maximumAttempts =
       this.server.getConfiguration().getInt("hbase.assignment.maximum.attempts", 10);
@@ -228,11 +207,6 @@ public class AssignmentManager extends ZooKeeperListener {
     ThreadFactory threadFactory = Threads.newDaemonThreadFactory("hbase-am-zkevent-worker");
     zkEventWorkers = Threads.getBoundedCachedThreadPool(workers, 60L,
             TimeUnit.SECONDS, threadFactory);
-  }
-
-  void startTimeOutMonitor() {
-    Threads.setDaemonThreadRunning(timeoutMonitor.getThread(), server.getServerName()
-        + ".timeoutMonitor");
   }
 
   /**
@@ -982,6 +956,9 @@ public class AssignmentManager extends ZooKeeperListener {
   private final LinkedHashMultimap <String, RegionRunnable>
       zkEventWorkerWaitingList = LinkedHashMultimap.create();
 
+  public void stop() {
+  }
+
   /**
    * A specific runnable that works only on a region.
    */
@@ -1164,8 +1141,6 @@ public class AssignmentManager extends ZooKeeperListener {
 
     // Remove plan if one.
     clearRegionPlan(regionInfo);
-    // Add the server to serversInUpdatingTimer
-    addToServersInUpdatingTimer(sn);
   }
 
   /**
@@ -1205,49 +1180,6 @@ public class AssignmentManager extends ZooKeeperListener {
     }
   }
 
-  /**
-   * Add the server to the set serversInUpdatingTimer, then {@link TimerUpdater}
-   * will update timers for this server in background
-   * @param sn
-   */
-  private void addToServersInUpdatingTimer(final ServerName sn) {
-    this.serversInUpdatingTimer.add(sn);
-  }
-
-  /**
-   * Touch timers for all regions in transition that have the passed
-   * <code>sn</code> in common.
-   * Call this method whenever a server checks in.  Doing so helps the case where
-   * a new regionserver has joined the cluster and its been given 1k regions to
-   * open.  If this method is tickled every time the region reports in a
-   * successful open then the 1k-th region won't be timed out just because its
-   * sitting behind the open of 999 other regions.  This method is NOT used
-   * as part of bulk assign -- there we have a different mechanism for extending
-   * the regions in transition timer (we turn it off temporarily -- because
-   * there is no regionplan involved when bulk assigning.
-   * @param sn
-   */
-  private void updateTimers(final ServerName sn) {
-    if (sn == null) return;
-
-    // This loop could be expensive.
-    // First make a copy of current regionPlan rather than hold sync while
-    // looping because holding sync can cause deadlock.  Its ok in this loop
-    // if the Map we're going against is a little stale
-    List<Map.Entry<String, RegionPlan>> rps;
-    synchronized(this.regionPlans) {
-      rps = new ArrayList<Map.Entry<String, RegionPlan>>(regionPlans.entrySet());
-    }
-
-    for (Map.Entry<String, RegionPlan> e : rps) {
-      if (e.getValue() != null && e.getKey() != null && sn.equals(e.getValue().getDestination())) {
-        RegionState regionState = regionStates.getRegionTransitionState(e.getKey());
-        if (regionState != null) {
-          regionState.updateTimestampToNow();
-        }
-      }
-    }
-  }
 
   /**
    * Marks the region as offline.  Removes it from regions in transition and
@@ -1615,7 +1547,6 @@ public class AssignmentManager extends ZooKeeperListener {
       }
       if (plan == null) {
         LOG.warn("Unable to determine a plan to assign " + region);
-        this.timeoutMonitor.setAllRegionServersOffline(true);
         return; // Should get reassigned later when RIT times out.
       }
       if (setOfflineInZK && versionOfOfflineNode == -1) {
@@ -1748,7 +1679,6 @@ public class AssignmentManager extends ZooKeeperListener {
         RegionPlan newPlan = getRegionPlan(region, true);
 
         if (newPlan == null) {
-          this.timeoutMonitor.setAllRegionServersOffline(true);
           LOG.warn("Unable to find a viable location to assign region " +
               region.getRegionNameAsString());
           return;
@@ -2542,35 +2472,6 @@ public class AssignmentManager extends ZooKeeperListener {
   }
 
   /**
-   * Update timers for all regions in transition going against the server in the
-   * serversInUpdatingTimer.
-   */
-  public class TimerUpdater extends Chore {
-
-    public TimerUpdater(final int period, final Stoppable stopper) {
-      super("AssignmentTimerUpdater", period, stopper);
-    }
-
-    @Override
-    protected void chore() {
-      ServerName serverToUpdateTimer = null;
-      while (!serversInUpdatingTimer.isEmpty() && !stopper.isStopped()) {
-        if (serverToUpdateTimer == null) {
-          serverToUpdateTimer = serversInUpdatingTimer.first();
-        } else {
-          serverToUpdateTimer = serversInUpdatingTimer
-              .higher(serverToUpdateTimer);
-        }
-        if (serverToUpdateTimer == null) {
-          break;
-        }
-        updateTimers(serverToUpdateTimer);
-        serversInUpdatingTimer.remove(serverToUpdateTimer);
-      }
-    }
-  }
-
-  /**
    * Monitor to check for time outs on region transition operations
    */
   public class TimeoutMonitor extends Chore {
@@ -2854,11 +2755,6 @@ public class AssignmentManager extends ZooKeeperListener {
       this.regionPlans.put(plan.getRegionName(), plan);
     }
     unassign(plan.getRegionInfo(), false, plan.getDestination());
-  }
-
-  public void stop() {
-    this.timeoutMonitor.interrupt();
-    this.timerUpdater.interrupt();
   }
 
   /**
