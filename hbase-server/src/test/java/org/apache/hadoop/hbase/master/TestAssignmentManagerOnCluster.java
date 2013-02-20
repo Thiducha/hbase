@@ -23,11 +23,13 @@ import static org.junit.Assert.fail;
 import java.io.IOException;
 import java.util.List;
 
+import org.junit.Assert;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
+import org.apache.hadoop.hbase.HRegionLocation;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.MediumTests;
 import org.apache.hadoop.hbase.ServerName;
@@ -79,7 +81,7 @@ public class TestAssignmentManagerOnCluster {
 
       HTable meta = new HTable(conf, HConstants.META_TABLE_NAME);
       HRegionInfo hri = new HRegionInfo(
-        desc.getName(), Bytes.toBytes("A"), Bytes.toBytes("Z"));
+          desc.getName(), Bytes.toBytes("A"), Bytes.toBytes("Z"));
       MetaEditor.addRegionToMeta(meta, hri);
 
       HMaster master = TEST_UTIL.getHBaseCluster().getMaster();
@@ -87,7 +89,7 @@ public class TestAssignmentManagerOnCluster {
       master.getAssignmentManager().waitForAssignment(hri);
 
       ServerName serverName = master.getAssignmentManager().
-        getRegionStates().getRegionServerOfRegion(hri);
+          getRegionStates().getRegionServerOfRegion(hri);
       TEST_UTIL.assertRegionOnServer(hri, serverName, 200);
     } finally {
       TEST_UTIL.deleteTable(Bytes.toBytes(table));
@@ -104,7 +106,7 @@ public class TestAssignmentManagerOnCluster {
       HRegionInfo hri = createTableAndGetOneRegion(table);
 
       RegionStates regionStates = TEST_UTIL.getHBaseCluster().
-        getMaster().getAssignmentManager().getRegionStates();
+          getMaster().getAssignmentManager().getRegionStates();
       ServerName serverName = regionStates.getRegionServerOfRegion(hri);
       TEST_UTIL.assertRegionOnServer(hri, serverName, 200);
       admin.offline(hri.getRegionName());
@@ -112,7 +114,7 @@ public class TestAssignmentManagerOnCluster {
       long timeoutTime = System.currentTimeMillis() + 800;
       while (true) {
         List<HRegionInfo> regions =
-          regionStates.getRegionsOfTable(Bytes.toBytes(table));
+            regionStates.getRegionsOfTable(Bytes.toBytes(table));
         if (!regions.contains(hri)) break;
         long now = System.currentTimeMillis();
         if (now > timeoutTime) {
@@ -133,21 +135,42 @@ public class TestAssignmentManagerOnCluster {
     setDrainingServer(TEST_UTIL.getHBaseCluster().getRegionServer(0));
     setDrainingServer(TEST_UTIL.getHBaseCluster().getRegionServer(1));
 
+    final HRegionServer remainingRS = TEST_UTIL.getHBaseCluster().getRegionServer(2);
+    final ServerName remainingSN = remainingRS.getServerName();
+
     TEST_UTIL.waitFor(20000, 100, new Waiter.Predicate<Exception>() {
       @Override
       public boolean evaluate() throws Exception {
-        return TEST_UTIL.getHBaseCluster().getMaster().getServerManager().getDrainingServersList().size() == 2;
+        return TEST_UTIL.getHBaseCluster().getMaster().getServerManager().
+            getDrainingServersList().size() == 2;
       }
     });
 
     byte[] table = "myT".getBytes();
     HTable ht = TEST_UTIL.createTable(table, table);
     TEST_UTIL.waitTableEnabled(table);
+    HRegionLocation hrl = ht.getRegionLocation(table);
+    HRegionInfo hri = hrl.getRegionInfo();
+    Assert.assertTrue(hrl.getServerName().equals(remainingSN));
+    Assert.assertTrue(remainingRS.getRegionsInTransitionInRS().isEmpty());
 
-    TEST_UTIL.getHBaseAdmin().move(ht.getRegionLocations().keySet().iterator().next().getEncodedNameAsBytes(), null);
+    TEST_UTIL.getHBaseAdmin().move(hri.getEncodedNameAsBytes(), null);
+    TEST_UTIL.waitFor(1000, 1, new Waiter.Predicate<Exception>() {
+      @Override
+      public boolean evaluate() throws Exception {
+        return !remainingRS.getRegionsInTransitionInRS().isEmpty();
+      }
+    });
 
-    Thread.sleep(200);
+    TEST_UTIL.waitFor(10000, 1, new Waiter.Predicate<Exception>() {
+      @Override
+      public boolean evaluate() throws Exception {
+        return remainingRS.getRegionsInTransitionInRS().isEmpty();
+      }
+    });
 
+    hrl = ht.getRegionLocation(table);
+    Assert.assertTrue(hrl.getServerName().equals(remainingSN));
 
     unsetDrainingServer(TEST_UTIL.getHBaseCluster().getRegionServer(0));
     unsetDrainingServer(TEST_UTIL.getHBaseCluster().getRegionServer(1));
@@ -181,7 +204,7 @@ public class TestAssignmentManagerOnCluster {
       HRegionInfo hri = createTableAndGetOneRegion(table);
 
       RegionStates regionStates = TEST_UTIL.getHBaseCluster().
-        getMaster().getAssignmentManager().getRegionStates();
+          getMaster().getAssignmentManager().getRegionStates();
       ServerName serverName = regionStates.getRegionServerOfRegion(hri);
       ServerName destServerName = null;
       for (int i = 0; i < 3; i++) {
@@ -192,9 +215,9 @@ public class TestAssignmentManagerOnCluster {
         }
       }
       assertTrue(destServerName != null
-        && !destServerName.equals(serverName));
+          && !destServerName.equals(serverName));
       TEST_UTIL.getHBaseAdmin().move(hri.getEncodedNameAsBytes(),
-        Bytes.toBytes(destServerName.getServerName()));
+          Bytes.toBytes(destServerName.getServerName()));
 
       long timeoutTime = System.currentTimeMillis() + 800;
       while (true) {
@@ -226,7 +249,7 @@ public class TestAssignmentManagerOnCluster {
     long timeoutTime = System.currentTimeMillis() + 100;
     while (true) {
       List<HRegionInfo> regions = master.getAssignmentManager().
-        getRegionStates().getRegionsOfTable(Bytes.toBytes(tableName));
+          getRegionStates().getRegionsOfTable(Bytes.toBytes(tableName));
       if (regions.size() > 3) {
         return regions.get(2);
       }
