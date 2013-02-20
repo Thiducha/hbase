@@ -52,7 +52,7 @@ import java.util.concurrent.Executors;
 /**
  * A class that receives the cluster status, and provide it as a set of service to the client.
  * Today, manages only the dead server list.
- * The class is abstract to allow multiple implementation, from ZooKeeper to multicast based.
+ * The class is abstract to allow multiple implementations, from ZooKeeper to multicast based.
  */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
