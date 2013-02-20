@@ -1545,7 +1545,7 @@ public class AssignmentManager extends ZooKeeperListener {
       }
       if (plan == null) {
         LOG.warn("Unable to determine a plan to assign " + region);
-        return; // Should get reassigned later when RIT times out.
+        return;  // todo
       }
       if (setOfflineInZK && versionOfOfflineNode == -1) {
         // get the version of the znode after setting it to OFFLINE.
