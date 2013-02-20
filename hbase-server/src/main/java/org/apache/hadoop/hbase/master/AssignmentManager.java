@@ -23,7 +23,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.Chore;
 import org.apache.hadoop.hbase.DeserializationException;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
@@ -31,7 +30,6 @@ import org.apache.hadoop.hbase.NotServingRegionException;
 import org.apache.hadoop.hbase.RegionTransition;
 import org.apache.hadoop.hbase.Server;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.Stoppable;
 import org.apache.hadoop.hbase.TableNotFoundException;
 import org.apache.hadoop.hbase.catalog.CatalogTracker;
 import org.apache.hadoop.hbase.catalog.MetaReader;
@@ -2471,156 +2469,10 @@ public class AssignmentManager extends ZooKeeperListener {
     }
   }
 
-  /**
-   * Monitor to check for time outs on region transition operations
-   */
-  public class TimeoutMonitor extends Chore {
-    private boolean allRegionServersOffline = false;
-    private ServerManager serverManager;
-    private final int timeout;
-
-    /**
-     * Creates a periodic monitor to check for time outs on region transition
-     * operations.  This will deal with retries if for some reason something
-     * doesn't happen within the specified timeout.
-     * @param period
-   * @param stopper When {@link Stoppable#isStopped()} is true, this thread will
-   * cleanup and exit cleanly.
-     * @param timeout
-     */
-    public TimeoutMonitor(final int period, final Stoppable stopper,
-        ServerManager serverManager,
-        final int timeout) {
-      super("AssignmentTimeoutMonitor", period, stopper);
-      this.timeout = timeout;
-      this.serverManager = serverManager;
-    }
-
-    private synchronized void setAllRegionServersOffline(
-      boolean allRegionServersOffline) {
-      this.allRegionServersOffline = allRegionServersOffline;
-    }
-
-    @Override
-    protected void chore() {
-      boolean noRSAvailable = this.serverManager.createDestinationServersList().isEmpty();
-
-      // Iterate all regions in transition checking for time outs
-      long now = System.currentTimeMillis();
-      // no lock concurrent access ok: we will be working on a copy, and it's java-valid to do
-      //  a copy while another thread is adding/removing items
-      for (String regionName : regionStates.getRegionsInTransition().keySet()) {
-        RegionState regionState = regionStates.getRegionTransitionState(regionName);
-        if (regionState == null) continue;
-
-        if (regionState.getStamp() + timeout <= now) {
-          // decide on action upon timeout
-          actOnTimeOut(regionState);
-        } else if (this.allRegionServersOffline && !noRSAvailable) {
-          RegionPlan existingPlan = regionPlans.get(regionName);
-          if (existingPlan == null
-              || !this.serverManager.isServerOnline(existingPlan
-                  .getDestination())) {
-            // if some RSs just came back online, we can start the assignment
-            // right away
-            actOnTimeOut(regionState);
-          }
-        }
-      }
-      setAllRegionServersOffline(noRSAvailable);
-    }
-
-    private void actOnTimeOut(RegionState regionState) {
-      HRegionInfo regionInfo = regionState.getRegion();
-      LOG.info("Regions in transition timed out:  " + regionState);
-      // Expired! Do a retry.
-      switch (regionState.getState()) {
-      case CLOSED:
-        LOG.info("Region " + regionInfo.getEncodedName()
-            + " has been CLOSED for too long, waiting on queued "
-            + "ClosedRegionHandler to run or server shutdown");
-        // Update our timestamp.
-        regionState.updateTimestampToNow();
-        break;
-      case OFFLINE:
-        LOG.info("Region has been OFFLINE for too long, " + "reassigning "
-            + regionInfo.getRegionNameAsString() + " to a random server");
-        invokeAssign(regionInfo);
-        break;
-      case PENDING_OPEN:
-        LOG.info("Region has been PENDING_OPEN for too "
-            + "long, reassigning region=" + regionInfo.getRegionNameAsString());
-        invokeAssign(regionInfo);
-        break;
-      case OPENING:
-        processOpeningState(regionInfo);
-        break;
-      case OPEN:
-        LOG.error("Region has been OPEN for too long, " +
-            "we don't know where region was opened so can't do anything");
-        regionState.updateTimestampToNow();
-        break;
-
-      case PENDING_CLOSE:
-        LOG.info("Region has been PENDING_CLOSE for too "
-            + "long, running forced unassign again on region="
-            + regionInfo.getRegionNameAsString());
-        invokeUnassign(regionInfo);
-        break;
-      case CLOSING:
-        LOG.info("Region has been CLOSING for too " +
-          "long, this should eventually complete or the server will " +
-          "expire, send RPC again");
-        invokeUnassign(regionInfo);
-        break;
-
-      case SPLIT:
-      case SPLITTING:
-        break;
-
-      default:
-        throw new IllegalStateException("Received event is not valid.");
-      }
-    }
-  }
-
-  private void processOpeningState(HRegionInfo regionInfo) {
-    LOG.info("Region has been OPENING for too long, reassigning region="
-        + regionInfo.getRegionNameAsString());
-    // Should have a ZK node in OPENING state
-    try {
-      String node = ZKAssign.getNodeName(watcher, regionInfo.getEncodedName());
-      Stat stat = new Stat();
-      byte [] data = ZKAssign.getDataNoWatch(watcher, node, stat);
-      if (data == null) {
-        LOG.warn("Data is null, node " + node + " no longer exists");
-        return;
-      }
-      RegionTransition rt = RegionTransition.parseFrom(data);
-      EventType et = rt.getEventType();
-      if (et == EventType.RS_ZK_REGION_OPENED) {
-        LOG.debug("Region has transitioned to OPENED, allowing "
-            + "watched event handlers to process");
-        return;
-      } else if (et != EventType.RS_ZK_REGION_OPENING && et != EventType.RS_ZK_REGION_FAILED_OPEN ) {
-        LOG.warn("While timing out a region, found ZK node in unexpected state: " + et);
-        return;
-      }
-      invokeAssign(regionInfo);
-    } catch (KeeperException ke) {
-      LOG.error("Unexpected ZK exception timing out CLOSING region", ke);
-    } catch (DeserializationException e) {
-      LOG.error("Unexpected exception parsing CLOSING region", e);
-    }
-  }
-
   void invokeAssign(HRegionInfo regionInfo) {
     threadPoolExecutorService.submit(new AssignCallable(this, regionInfo));
   }
 
-  private void invokeUnassign(HRegionInfo regionInfo) {
-    threadPoolExecutorService.submit(new UnAssignCallable(this, regionInfo));
-  }
 
   public boolean isCarryingRoot(ServerName serverName) {
     return isCarryingRegion(serverName, HRegionInfo.ROOT_REGIONINFO);
