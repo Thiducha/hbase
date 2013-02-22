@@ -26,6 +26,7 @@ import java.util.List;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.KeyValue;
@@ -43,36 +44,32 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.util.StringUtils;
 
 /**
- * Compact passed set of files.
- * Create an instance and then call {@ink #compact(Collection, boolean, long)}.
+ * Compact passed set of files. Create an instance and then call {@link #compact(CompactionRequest)}
  */
 @InterfaceAudience.Private
-class DefaultCompactor extends Compactor {
+public class DefaultCompactor extends Compactor {
   private static final Log LOG = LogFactory.getLog(DefaultCompactor.class);
+  private final Store store;
 
-  DefaultCompactor(final CompactionPolicy policy) {
-    super(policy);
+  public DefaultCompactor(final Configuration conf, final Store store) {
+    super(conf);
+    this.store = store;
   }
 
   /**
    * Do a minor/major compaction on an explicit set of storefiles from a Store.
-   *
-   * @param filesToCompact which files to compact
-   * @param majorCompaction true to major compact (prune all deletes, max versions, etc)
-   * @return Product of compaction or an empty list if all cells expired or deleted and
-   * nothing made it through the compaction.
-   * @throws IOException
    */
   @SuppressWarnings("deprecation")
-  public List<Path> compact(final Collection<StoreFile> filesToCompact,
-      final boolean majorCompaction) throws IOException {
+  @Override
+  public List<Path> compact(final CompactionRequest request) throws IOException {
+    final Collection<StoreFile> filesToCompact = request.getFiles();
+    boolean majorCompaction = request.isMajor();
     // Max-sequenceID is the last key in the files we're compacting
     long maxId = StoreFile.getMaxSequenceIdInList(filesToCompact, true);
 
     // Calculate maximum key count after compaction (for blooms)
     // Also calculate earliest put timestamp if major compaction
     int maxKeyCount = 0;
-    Store store = policy.store;
     long earliestPutTs = HConstants.LATEST_TIMESTAMP;
     for (StoreFile file: filesToCompact) {
       StoreFile.Reader r = file.getReader();
@@ -116,7 +113,7 @@ class DefaultCompactor extends Compactor {
       .getScannersForStoreFiles(filesToCompact, false, false, true);
 
     // Get some configs
-    int compactionKVMax = getConf().getInt(HConstants.COMPACTION_KV_MAX, 10);
+    int compactionKVMax = this.conf.getInt(HConstants.COMPACTION_KV_MAX, 10);
     Compression.Algorithm compression = store.getFamily().getCompression();
     // Avoid overriding compression setting for major compactions if the user
     // has not specified it separately
@@ -137,7 +134,8 @@ class DefaultCompactor extends Compactor {
           scanner = store
               .getCoprocessorHost()
               .preCompactScannerOpen(store, scanners,
-                  majorCompaction ? ScanType.MAJOR_COMPACT : ScanType.MINOR_COMPACT, earliestPutTs);
+                majorCompaction ? ScanType.MAJOR_COMPACT : ScanType.MINOR_COMPACT, earliestPutTs,
+                request);
         }
         ScanType scanType = majorCompaction? ScanType.MAJOR_COMPACT : ScanType.MINOR_COMPACT;
         if (scanner == null) {
@@ -148,11 +146,11 @@ class DefaultCompactor extends Compactor {
             scanType, smallestReadPoint, earliestPutTs);
         }
         if (store.getCoprocessorHost() != null) {
-          InternalScanner cpScanner =
-            store.getCoprocessorHost().preCompact(store, scanner, scanType);
+          InternalScanner cpScanner = store.getCoprocessorHost().preCompact(store, scanner,
+            scanType, request);
           // NULL scanner returned from coprocessor hooks means skip normal processing
           if (cpScanner == null) {
-            return newFiles;  // an empty list
+            return newFiles; // an empty list
           }
           scanner = cpScanner;
         }
