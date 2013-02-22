@@ -33,10 +33,10 @@ import org.cloudera.htrace.Trace;
 
 /**
  * Abstract base class for all HBase event handlers. Subclasses should
- * implement the {@link #process()} method.  Subclasses should also do all
- * necessary checks up in their constructor if possible -- check table exists,
- * is disabled, etc. -- so they fail fast rather than later when process is
- * running.  Do it this way because process be invoked directly but event
+ * implement the {@link #process()} and {@link #prepare()} methods.  Subclasses
+ * should also do all necessary checks up in their prepare() if possible -- check
+ * table exists, is disabled, etc. -- so they fail fast rather than later when process
+ * is running.  Do it this way because process be invoked directly but event
  * handlers are also
  * run in an executor context -- i.e. asynchronously -- and in this case,
  * exceptions thrown at process time will not be seen by the invoker, not till
@@ -102,7 +102,7 @@ public abstract class EventHandler implements Runnable, Comparable<Runnable> {
    * originated and then where its destined -- e.g. RS2ZK_ prefix means the
    * event came from a regionserver destined for zookeeper -- and then what
    * the even is; e.g. REGION_OPENING.
-   * 
+   *
    * <p>We give the enums indices so we can add types later and keep them
    * grouped together rather than have to add them always to the end as we
    * would have to if we used raw enum ordinals.
@@ -135,6 +135,8 @@ public abstract class EventHandler implements Runnable, Comparable<Runnable> {
     C_M_DELETE_FAMILY         (45, null), // Client asking Master to delete family of table
     C_M_MODIFY_FAMILY         (46, null), // Client asking Master to modify family of table
     C_M_CREATE_TABLE          (47, ExecutorType.MASTER_TABLE_OPERATIONS),   // Client asking Master to create a table
+    C_M_SNAPSHOT_TABLE        (48, ExecutorType.MASTER_TABLE_OPERATIONS),   // Client asking Master to snapshot an offline table
+    C_M_RESTORE_SNAPSHOT      (49, ExecutorType.MASTER_TABLE_OPERATIONS),   // Client asking Master to restore a snapshot
 
     // Updates from master to ZK. This is done by the master and there is
     // nothing to process by either Master or RS
@@ -198,6 +200,19 @@ public abstract class EventHandler implements Runnable, Comparable<Runnable> {
       this.waitingTimeForEvents = server.getConfiguration().
           getInt("hbase.master.event.waiting.time", 1000);
     }
+  }
+
+  /**
+   * Event handlers should do all the necessary checks in this method (rather than
+   * in the constructor, or in process()) so that the caller, which is mostly executed
+   * in the ipc context can fail fast. Process is executed async from the client ipc,
+   * so this method gives a quick chance to do some basic checks.
+   * Should be called after constructing the EventHandler, and before process().
+   * @return the instance of this class
+   * @throws Exception when something goes wrong
+   */
+  public EventHandler prepare() throws Exception {
+    return this;
   }
 
   public void run() {
@@ -280,7 +295,7 @@ public abstract class EventHandler implements Runnable, Comparable<Runnable> {
   public synchronized void setListener(EventHandlerListener listener) {
     this.listener = listener;
   }
-  
+
   @Override
   public String toString() {
     return "Event #" + getSeqid() +

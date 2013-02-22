@@ -104,6 +104,8 @@ public class AssignmentManager extends ZooKeeperListener {
 
   private LoadBalancer balancer;
 
+  private final TableLockManager tableLockManager;
+
   final private KeyLocker<String> locker = new KeyLocker<String>();
 
   /**
@@ -177,7 +179,8 @@ public class AssignmentManager extends ZooKeeperListener {
    */
   public AssignmentManager(Server server, ServerManager serverManager,
       CatalogTracker catalogTracker, final LoadBalancer balancer,
-      final ExecutorService service, MetricsMaster metricsMaster) throws KeeperException, IOException {
+      final ExecutorService service, MetricsMaster metricsMaster,
+      final TableLockManager tableLockManager) throws KeeperException, IOException {
     super(server.getZooKeeper());
     this.server = server;
     this.serverManager = serverManager;
@@ -205,6 +208,7 @@ public class AssignmentManager extends ZooKeeperListener {
     ThreadFactory threadFactory = Threads.newDaemonThreadFactory("hbase-am-zkevent-worker");
     zkEventWorkers = Threads.getBoundedCachedThreadPool(workers, 60L,
             TimeUnit.SECONDS, threadFactory);
+    this.tableLockManager = tableLockManager;
   }
 
   /**
@@ -273,7 +277,7 @@ public class AssignmentManager extends ZooKeeperListener {
   public Pair<Integer, Integer> getReopenStatus(byte[] tableName)
       throws IOException {
     List <HRegionInfo> hris =
-      MetaReader.getTableRegions(this.server.getCatalogTracker(), tableName);
+      MetaReader.getTableRegions(this.server.getCatalogTracker(), tableName, true);
     Integer pending = 0;
     for (HRegionInfo hri : hris) {
       String name = hri.getEncodedName();
@@ -1188,7 +1192,7 @@ public class AssignmentManager extends ZooKeeperListener {
    */
   public void regionOffline(final HRegionInfo regionInfo) {
     regionStates.regionOffline(regionInfo);
-
+    removeClosedRegion(regionInfo);
     // remove the region plan as well just in case.
     clearRegionPlan(regionInfo);
   }
@@ -2336,8 +2340,8 @@ public class AssignmentManager extends ZooKeeperListener {
         LOG.info("The table " + tableName
             + " is in DISABLING state.  Hence recovering by moving the table"
             + " to DISABLED state.");
-        new DisableTableHandler(this.server, tableName.getBytes(),
-            catalogTracker, this, true).process();
+        new DisableTableHandler(this.server, tableName.getBytes(), catalogTracker,
+            this, tableLockManager, true).prepare().process();
       }
     }
   }
@@ -2362,7 +2366,7 @@ public class AssignmentManager extends ZooKeeperListener {
         // enableTable in sync way during master startup,
         // no need to invoke coprocessor
         new EnableTableHandler(this.server, tableName.getBytes(),
-            catalogTracker, this, true).process();
+            catalogTracker, this, tableLockManager, true).prepare().process();
       }
     }
   }

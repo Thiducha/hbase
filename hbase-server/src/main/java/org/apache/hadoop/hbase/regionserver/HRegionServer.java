@@ -178,6 +178,7 @@ import org.apache.hadoop.hbase.regionserver.handler.CloseRootHandler;
 import org.apache.hadoop.hbase.regionserver.handler.OpenMetaHandler;
 import org.apache.hadoop.hbase.regionserver.handler.OpenRegionHandler;
 import org.apache.hadoop.hbase.regionserver.handler.OpenRootHandler;
+import org.apache.hadoop.hbase.regionserver.snapshot.RegionServerSnapshotManager;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.regionserver.wal.HLogFactory;
 import org.apache.hadoop.hbase.regionserver.wal.HLogUtil;
@@ -424,6 +425,9 @@ public class HRegionServer implements ClientProtocol,
   private final QosFunction qosFunction;
 
   private RegionServerCoprocessorHost rsHost;
+
+  /** Handle all the snapshot requests to this server */
+  RegionServerSnapshotManager snapshotManager;
 
   /**
    * Starts a HRegionServer at the default location
@@ -763,6 +767,13 @@ public class HRegionServer implements ClientProtocol,
     } catch (KeeperException e) {
       this.abort("Failed to retrieve Cluster ID",e);
     }
+
+    // watch for snapshots
+    try {
+      this.snapshotManager = new RegionServerSnapshotManager(this);
+    } catch (KeeperException e) {
+      this.abort("Failed to reach zk cluster when creating snapshot handler.");
+    }
   }
 
   /**
@@ -849,6 +860,9 @@ public class HRegionServer implements ClientProtocol,
         }
       }
 
+      // start the snapshot handler, since the server is ready to run
+      this.snapshotManager.start();
+
       // We registered with the Master.  Go into run mode.
       long lastMsg = 0;
       long oldRequestCount = -1;
@@ -930,6 +944,12 @@ public class HRegionServer implements ClientProtocol,
       this.healthCheckChore.interrupt();
     }
 
+    try {
+      if (snapshotManager != null) snapshotManager.stop(this.abortRequested);
+    } catch (IOException e) {
+      LOG.warn("Failed to close snapshot handler cleanly", e);
+    }
+
     if (this.killed) {
       // Just skip out w/o closing regions.  Used when testing.
     } else if (abortRequested) {
@@ -945,6 +965,13 @@ public class HRegionServer implements ClientProtocol,
     // Interrupt catalog tracker here in case any regions being opened out in
     // handlers are stuck waiting on meta or root.
     if (this.catalogTracker != null) this.catalogTracker.stop();
+
+    // stop the snapshot handler, forcefully killing all running tasks
+    try {
+      if (snapshotManager != null) snapshotManager.stop(this.abortRequested || this.killed);
+    } catch (IOException e) {
+      LOG.warn("Failed to close snapshot handler cleanly", e);
+    }
 
     // Closing the compactSplit thread before closing meta regions
     if (!this.killed && containsMetaTableRegions()) {
@@ -1348,17 +1375,17 @@ public class HRegionServer implements ClientProtocol,
           try {
             if (s.needsCompaction()) {
               // Queue a compaction. Will recognize if major is needed.
-              this.instance.compactSplitThread.requestCompaction(r, s,
-                getName() + " requests compaction");
+              this.instance.compactSplitThread.requestCompaction(r, s, getName()
+                  + " requests compaction", null);
             } else if (s.isMajorCompaction()) {
-              if (majorCompactPriority == DEFAULT_PRIORITY ||
-                  majorCompactPriority > r.getCompactPriority()) {
-                this.instance.compactSplitThread.requestCompaction(r, s,
-                    getName() + " requests major compaction; use default priority");
+              if (majorCompactPriority == DEFAULT_PRIORITY
+                  || majorCompactPriority > r.getCompactPriority()) {
+                this.instance.compactSplitThread.requestCompaction(r, s, getName()
+                    + " requests major compaction; use default priority", null);
               } else {
-               this.instance.compactSplitThread.requestCompaction(r, s,
-                  getName() + " requests major compaction; use configured priority",
-                  this.majorCompactPriority);
+                this.instance.compactSplitThread.requestCompaction(r, s, getName()
+                    + " requests major compaction; use configured priority",
+                  this.majorCompactPriority, null);
               }
             }
           } catch (IOException e) {
@@ -1665,7 +1692,7 @@ public class HRegionServer implements ClientProtocol,
     // Do checks to see if we need to compact (references or too many files)
     for (Store s : r.getStores().values()) {
       if (s.hasReferences() || s.needsCompaction()) {
-        getCompactionRequester().requestCompaction(r, s, "Opening Region");
+        getCompactionRequester().requestCompaction(r, s, "Opening Region", null);
       }
     }
     long openSeqNum = r.getOpenSeqNum();
@@ -2505,7 +2532,6 @@ public class HRegionServer implements ClientProtocol,
       }
       addToMovedRegions(r.getRegionInfo().getEncodedName(), destination, closeSeqNum);
     }
-
     return toReturn != null;
   }
 
@@ -3322,7 +3348,7 @@ public class HRegionServer implements ClientProtocol,
       if (request.getFamilyCount() == 0) {
         columnFamilies = region.getStores().keySet();
       } else {
-        columnFamilies = new HashSet<byte[]>();
+        columnFamilies = new TreeSet<byte[]>(Bytes.BYTES_RAWCOMPARATOR);
         for (ByteString cf: request.getFamilyList()) {
           columnFamilies.add(cf.toByteArray());
         }
@@ -3452,6 +3478,10 @@ public class HRegionServer implements ClientProtocol,
               region.getRegionNameAsString() + " , which we are already trying to OPEN" +
               " - ignoring this new request for this region.");
         }
+
+        // We are opening this region. If it moves back and forth for whatever reason, we don't
+        // want to keep returning the stale moved record while we are opening/if we close again.
+        removeFromMovedRegions(region.getEncodedName());
 
         if (previous == null) {
           // If there is no action in progress, we can submit a specific handler.
@@ -3630,10 +3660,10 @@ public class HRegionServer implements ClientProtocol,
       String log = "User-triggered " + (major ? "major " : "") + "compaction" + familyLogMsg;
       if(family != null) {
         compactSplitThread.requestCompaction(region, store, log,
-          Store.PRIORITY_USER);
+          Store.PRIORITY_USER, null);
       } else {
         compactSplitThread.requestCompaction(region, log,
-          Store.PRIORITY_USER);
+          Store.PRIORITY_USER, null);
       }
       return CompactRegionResponse.newBuilder().build();
     } catch (IOException ie) {
@@ -3745,7 +3775,8 @@ public class HRegionServer implements ClientProtocol,
    *
    * @param region
    * @param mutate
-   * @return the Result
+   * @return result to return to client if default operation should be
+   * bypassed as indicated by RegionObserver, null otherwise
    * @throws IOException
    */
   protected Result append(final HRegion region,
@@ -3939,9 +3970,11 @@ public class HRegionServer implements ClientProtocol,
     LOG.info("Adding moved region record: " + encodedName + " to "
         + destination.getServerName() + ":" + destination.getPort()
         + " as of " + closeSeqNum);
-    movedRegions.put(
-        encodedName,
-        new MovedRegionInfo(destination, closeSeqNum));
+    movedRegions.put(encodedName, new MovedRegionInfo(destination, closeSeqNum));
+  }
+
+  private void removeFromMovedRegions(String encodedName) {
+    movedRegions.remove(encodedName);
   }
 
   private MovedRegionInfo getMovedRegion(final String encodedRegionName) {
@@ -3962,7 +3995,7 @@ public class HRegionServer implements ClientProtocol,
   /**
    * Remove the expired entries from the moved regions list.
    */
-  protected void cleanMovedRegions(){
+  protected void cleanMovedRegions() {
     final long cutOff = System.currentTimeMillis() - TIMEOUT_REGION_MOVED;
     Iterator<Entry<String, MovedRegionInfo>> it = movedRegions.entrySet().iterator();
 
@@ -4033,5 +4066,12 @@ public class HRegionServer implements ClientProtocol,
   private boolean isHealthCheckerConfigured() {
     String healthScriptLocation = this.conf.get(HConstants.HEALTH_SCRIPT_LOC);
     return org.apache.commons.lang.StringUtils.isNotBlank(healthScriptLocation);
+  }
+
+  /**
+   * @return the underlying {@link CompactSplitThread} for the servers
+   */
+  public CompactSplitThread getCompactSplitThread() {
+    return this.compactSplitThread;
   }
 }
