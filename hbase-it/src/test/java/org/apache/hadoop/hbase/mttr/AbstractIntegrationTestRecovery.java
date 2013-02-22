@@ -24,6 +24,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.ClusterManager;
 import org.apache.hadoop.hbase.DistributedHBaseCluster;
+import org.apache.hadoop.hbase.HBaseCluster;
 import org.apache.hadoop.hbase.HBaseClusterManager;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HRegionInfo;
@@ -37,8 +38,6 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 
 /**
  * An integration test to measure the time needed to recover when we lose a regionserver.
@@ -61,21 +60,19 @@ import java.net.Socket;
  * - measure time.
  * <p></p>
  * The cluster must be already deployed, i.e. the right packages must have been copied, the ssh must be
- *  working between the different boxes, ...
+ * working between the different boxes, ...
  * <p></p>
- *
+ * <p/>
  * The following env variable must be defined:
- *  HBASE_HOME
- *  HADOOP_HOME
- *  HADOOP_CONF_DIR
- *  <p></p>
+ * HBASE_HOME
+ * HADOOP_HOME
+ * HADOOP_CONF_DIR
+ * <p></p>
  * The boxes are defined with the following env variables:
- *  HBASE_IT_MAIN_BOX
- *  HBASE_IT_WILLDIE_BOX
- *  HBASE_IT_WILLSURVIVE_BOX
- *  HBASE_IT_LATE_BOX
- *
- *
+ * HBASE_IT_MAIN_BOX
+ * HBASE_IT_WILLDIE_BOX
+ * HBASE_IT_WILLSURVIVE_BOX
+ * HBASE_IT_LATE_BOX
  */
 
 public abstract class AbstractIntegrationTestRecovery {
@@ -85,22 +82,22 @@ public abstract class AbstractIntegrationTestRecovery {
   protected String lateBox = ClusterManager.getEnvNotNull("HBASE_IT_LATE_BOX");
 
   protected static final Log LOG
-      = LogFactory.getLog(AbstractIntegrationTestRecovery.class);
-  protected final String TABLE_NAME = this.getClass().getName();
+    = LogFactory.getLog(AbstractIntegrationTestRecovery.class);
+  protected final String tableName = this.getClass().getName();
   protected static final String COLUMN_NAME = "f";
-  protected final int REGION_COUNT;
+  protected final int regionCount;
 
 
   protected static IntegrationTestingUtility util;
-  protected DistributedHBaseCluster dhc;
+  protected HBaseCluster dhc;
   protected HBaseClusterManager hcm;
 
   AbstractIntegrationTestRecovery() {
-    REGION_COUNT = 10;
+    regionCount = 10;
   }
 
   AbstractIntegrationTestRecovery(int regCount) {
-    REGION_COUNT = regCount;
+    regionCount = regCount;
   }
 
 
@@ -116,17 +113,17 @@ public abstract class AbstractIntegrationTestRecovery {
 
   private void createTable() throws Exception {
     long startTime, endTime;
-    HTableDescriptor desc = new HTableDescriptor(TABLE_NAME);
+    HTableDescriptor desc = new HTableDescriptor(tableName);
     desc.addFamily(new HColumnDescriptor(COLUMN_NAME));
     RegionSplitter.SplitAlgorithm algo = new RegionSplitter.HexStringSplit();
-    byte[][] splits = algo.split(REGION_COUNT);
+    byte[][] splits = algo.split(regionCount);
 
-    LOG.info(String.format("Creating table %s with %d splits.", TABLE_NAME, REGION_COUNT));
+    LOG.info(String.format("Creating table %s with %d splits.", tableName, regionCount));
     startTime = System.currentTimeMillis();
     HBaseAdmin admin = util.getHBaseAdmin();
     admin.createTable(desc, splits);
 
-    while (util.getHBaseAdmin().getClusterStatus().getRegionsCount() != REGION_COUNT + 2) {
+    while (util.getHBaseAdmin().getClusterStatus().getRegionsCount() != regionCount + 2) {
       Thread.sleep(1000);
     }
     waitForNoTransition();
@@ -147,8 +144,8 @@ public abstract class AbstractIntegrationTestRecovery {
   protected void genericStart() throws Exception {
     // Initialize an empty cluster. We will start all services where we want to start them.
     util.initializeCluster(0);
-    dhc = (DistributedHBaseCluster) util.getHBaseClusterInterface();
-    hcm = (HBaseClusterManager) dhc.getClusterManager();
+    dhc =  util.getHBaseClusterInterface();
+    hcm = new HBaseClusterManager();
 
     // In case we stopped the previous test while is was not connected
     hcm.replug(willDieBox);
@@ -190,7 +187,7 @@ public abstract class AbstractIntegrationTestRecovery {
     // We want meta & root on the main server, so we start only one RS at the beginning
 
     while (!dhc.waitForActiveAndReadyMaster() ||
-        util.getHBaseAdmin().getClusterStatus().getRegionsCount() != 2) {
+      util.getHBaseAdmin().getClusterStatus().getRegionsCount() != 2) {
       Thread.sleep(200);
     }
 
@@ -223,7 +220,7 @@ public abstract class AbstractIntegrationTestRecovery {
   }
 
 
-  protected void moveToSecondRSSync(String tableName) throws Exception {
+  protected void moveToSecondRSSync() throws Exception {
     HBaseAdmin admin = util.getHBaseAdmin();
     ServerName mainSN = dhc.getServerHoldingMeta();
 
@@ -257,7 +254,7 @@ public abstract class AbstractIntegrationTestRecovery {
     createTable();
 
     // now moving all the regions on the regionserver we're gonna kil
-    moveToSecondRSSync(TABLE_NAME);
+    moveToSecondRSSync();
 
     beforeKill();
 
@@ -267,21 +264,12 @@ public abstract class AbstractIntegrationTestRecovery {
     final long failureFixedTime;
 
     kill(willDieBox);
-
-    // Check that the RS is really killed. We do that by trying to connect to the server with
-    //  a minimum connect timeout. If it succeeds, it means it's still there...
     try {
-      Socket socket = new Socket();
-      InetSocketAddress dest = new InetSocketAddress(
-          willDieBox, util.getConfiguration().getInt("hbase.regionserver.port", 60020));
-      boolean stillThere = true;
-      while (stillThere) {
-        try {
-          Thread.sleep(100);
-          socket.connect(dest, 400);
-        } catch (IOException ignored) {
-          stillThere = false;
-        }
+      // Check that the RS is really killed. We do that by trying to connect to the server with
+      //  a minimum connect timeout. If it succeeds, it means it's still there...
+      int rsport = util.getConfiguration().getInt("hbase.regionserver.port", 60020);
+      while (ClusterManager.isReachablePort(willDieBox, rsport)) {
+        Thread.sleep(400);
       }
 
       startTime = System.currentTimeMillis();
@@ -302,13 +290,13 @@ public abstract class AbstractIntegrationTestRecovery {
       do {
         waitForNoTransition();
         ok = true;
-        for (HRegionInfo hri : admin.getTableRegions(TABLE_NAME.getBytes())) {
+        for (HRegionInfo hri : admin.getTableRegions(tableName.getBytes())) {
           try {
             if (!dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
               ok = false;
               break;
             }
-          } catch (IOException e) {
+          } catch (IOException ignored) {
             // It seems we can receive exceptions if the regionserver is dead...
             ok = false;
           }
@@ -319,14 +307,18 @@ public abstract class AbstractIntegrationTestRecovery {
 
       afterRecovery();
 
-    } finally {
+    } finally
+
+    {
       // If it was an unplug, we replug it now
       hcm.replug(willDieBox);
     }
+
     LOG.info("Detection took: " + (failureDetectedTime - startTime));
     LOG.info(("Failure fix took: " + (failureFixedTime - failureDetectedTime)));
 
     validate(failureDetectedTime, failureFixedTime);
+
   }
 
   /**
@@ -357,10 +349,10 @@ public abstract class AbstractIntegrationTestRecovery {
   /**
    * Kill the RS. It's up to the implementer to choose the mean (kill 15, 9, box unplugged...
    *
-   * @param willDieBox the box to kill
+   * @param hostname the box to kill
    * @throws Exception
    */
-  protected abstract void kill(String willDieBox) throws Exception;
+  protected abstract void kill(String hostname) throws Exception;
 
   /**
    * Called once we detected that the RS is dead (i.e. the ZK node expired)
@@ -378,10 +370,11 @@ public abstract class AbstractIntegrationTestRecovery {
 
   /**
    * Called at the end to validate the results
+   *
    * @param failureDetectedTime the time for detection
-   * @param failureFixedTime the time for fixing the failure
+   * @param failureFixedTime    the time for fixing the failure
    * @throws Exception
    */
-  protected void validate(long failureDetectedTime, long failureFixedTime) throws Exception{
+  protected void validate(long failureDetectedTime, long failureFixedTime) throws Exception {
   }
 }

@@ -83,7 +83,7 @@ public class IntegrationTestRecoveryWALFewRegionsKill15 extends AbstractIntegrat
   protected void beforeKill() throws IOException {
     DataGenerator dataGen = new DataGenerator();
     MultiThreadedWriter writer =
-        new MultiThreadedWriter(dataGen, util.getConfiguration(), Bytes.toBytes(TABLE_NAME));
+        new MultiThreadedWriter(dataGen, util.getConfiguration(), Bytes.toBytes(tableName));
 
     writer.setMultiPut(true);
 

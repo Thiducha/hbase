@@ -31,19 +31,23 @@ import org.eclipse.jdt.internal.core.Assert;
 
 import java.io.IOException;
 
+/**
+ * Test the fix for HBASE-7590: we expect the client to see immediately that the region server
+ *  is dead because of the notification from the master.
+ */
 public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestRecovery {
   private int zkTimeout;
+  private Configuration conf;
+  private HConnection hc;
+  private HTable h;
+  private final byte[] row = "myrow".getBytes();
+
 
   @Override
-  protected void kill(String willDieBox) throws Exception {
-    hcm.unplug(willDieBox);
+  protected void kill(String hostname) throws Exception {
+    hcm.unplug(hostname);
   }
 
-  Configuration conf;
-  HConnection hc;
-  HTable h;
-
-  byte[] row = "myrow".getBytes();
 
 
   @Override
@@ -61,9 +65,9 @@ public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestR
 
     // We create a connection that we will use after the kill. This connection will contain
     //  a socket to the dead server, this way we will have a read timeout and not a connect timeout
-    // (the connect timeout beeing usually much smaller than the read one).
+    // (the connect timeout being usually much smaller than the read one).
     hc = HConnectionManager.getConnection(conf);
-    h = new HTable(conf, TABLE_NAME);
+    h = new HTable(conf, tableName);
 
     Put p = new Put(row);
     p.add(AbstractIntegrationTestRecovery.COLUMN_NAME.getBytes(), row, row);
@@ -71,7 +75,6 @@ public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestR
     h.put(p);
   }
 
-  long endGetTime;
 
   @Override
   protected void afterKill() throws IOException {
@@ -89,7 +92,7 @@ public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestR
     // The server has been unplugged, but we don't know yet.
     // So we will wait until: the get timeout OR the server is marked as dead.
 
-    endGetTime = System.currentTimeMillis();
+    long endGetTime = System.currentTimeMillis();
 
     long getTime = (endGetTime - startGetTime);
 

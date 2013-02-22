@@ -366,6 +366,7 @@ public class HBaseClusterManager extends ClusterManager {
   }
 
 
+  @Override
   public void formatNN(String hostname) throws IOException {
     exec(hostname,
         new HadoopShellCommandProvider().getCommand(ServiceType.HADOOP_NAMENODE, "-format"));
@@ -419,9 +420,10 @@ public class HBaseClusterManager extends ClusterManager {
   }
 
   /**
-   * Kills all the java processus running on a computer
+   * Kills all the java processes with "proc_" running on a computer
    */
   // Not in ClusterManager because it uses 'exec'
+  @Override
   public void killAllServices(String hostname) throws IOException {
     try {
       exec(hostname, "ps -ef | grep java | grep Dproc_ | cut -c 10-15 | xargs kill -9 ");
@@ -436,6 +438,7 @@ public class HBaseClusterManager extends ClusterManager {
    * @param hostname the remote machine
    * @throws IOException
    */
+  @Override
   public void rmDataDir(String hostname) throws IOException {
     String hdfsDataDir = getConf().get("hadoop.tmp.dir");
     if (hdfsDataDir == null) {
@@ -456,6 +459,7 @@ public class HBaseClusterManager extends ClusterManager {
    * @throws IOException          if it can"t connect
    * @throws InterruptedException if interrupted during the wait for the ping
    */
+  @Override
   public void checkAccessible(String hostname) throws IOException, InterruptedException {
     execLocally("ping -c 1 " + hostname, new File("."));
   }

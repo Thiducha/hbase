@@ -18,6 +18,7 @@
 package org.apache.hadoop.hbase;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashMap;
 
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -50,24 +51,23 @@ public class DistributedHBaseCluster extends HBaseCluster {
   private ClusterManager clusterManager;
 
   public DistributedHBaseCluster(Configuration conf, ClusterManager clusterManager)
-      throws IOException {
+    throws IOException {
+    this(conf, clusterManager, true);
+  }
+
+  public DistributedHBaseCluster(Configuration conf, ClusterManager clusterManager,
+                                 boolean connected) throws IOException {
     super(conf);
     this.clusterManager = clusterManager;
-    this.admin = new HBaseAdmin(conf);
-    this.initialClusterStatus = getClusterStatus();
+    if (connected) {
+      this.admin = new HBaseAdmin(conf);
+      this.initialClusterStatus = getClusterStatus();
+    }
   }
 
   public DistributedHBaseCluster(Configuration conf)
       throws IOException {
     super(conf);
-
-  }
-
-  public static DistributedHBaseCluster createUnconnectedDistributedHBaseCluster(
-      Configuration conf, ClusterManager clusterManager) throws IOException {
-    DistributedHBaseCluster d = new DistributedHBaseCluster(conf);
-    d.clusterManager = clusterManager;
-    return d;
   }
 
   public void setClusterManager(ClusterManager clusterManager) {
@@ -102,6 +102,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
 
   public synchronized HBaseAdmin getAdmin() throws IOException {
     if (admin == null) {
+      //noinspection NonPrivateFieldAccessedInSynchronizedContext
       admin = new HBaseAdmin(conf);
     }
     return admin;
@@ -109,12 +110,12 @@ public class DistributedHBaseCluster extends HBaseCluster {
 
   @Override
   public AdminProtocol getAdminProtocol(ServerName serverName) throws IOException {
-    return admin.getConnection().getAdmin(serverName);
+    return getAdmin().getConnection().getAdmin(serverName);
   }
 
   @Override
   public ClientProtocol getClientProtocol(ServerName serverName) throws IOException {
-    return admin.getConnection().getClient(serverName);
+    return getAdmin().getConnection().getClient(serverName);
   }
 
   @Override
@@ -212,7 +213,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
     HRegionLocation regionLoc = connection.locateRegion(regionName);
     if (regionLoc == null) {
       LOG.warn("Cannot find region server holding region " + Bytes.toString(regionName)
-          + " for table " + HRegionInfo.getTableName(regionName) + ", start key [" +
+          + " for table " + new String(HRegionInfo.getTableName(regionName)) + ", start key [" +
           Bytes.toString(HRegionInfo.getStartKey(regionName)) + "]");
       return null;
     }
@@ -222,6 +223,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
     return ProtobufUtil.toServerName(info.getServerName());
   }
 
+  @Override
   public void waitForDatanodesRegistered(int minDatanodes) throws Exception {
     DistributedFileSystem fs = (DistributedFileSystem) FileSystem.get(conf);
     while (fs.getDataNodeStats().length < minDatanodes) {
@@ -229,6 +231,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
     }
   }
 
+  @Override
   public void waitForNamenodeAvailable() throws InterruptedException {
     boolean ok = false;
     do {

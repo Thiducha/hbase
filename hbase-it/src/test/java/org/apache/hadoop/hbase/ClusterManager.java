@@ -19,7 +19,10 @@
 package org.apache.hadoop.hbase;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 
+import com.kenai.jaffl.struct.Struct;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -138,10 +141,30 @@ public abstract class ClusterManager extends Configured {
    * @param envVN
    * @return
    */
+  @SuppressWarnings("CallToSystemGetenv")
   public static String getEnvNotNull(String envVN){
     assert System.getenv(envVN) != null : envVN + " is not defined.";
     return System.getenv(envVN);
   }
+
+  public static boolean isReachablePort(String hostname, int port) {
+    //  a minimum connect timeout. If it succeeds, it means it's still there...
+    Socket socket = new Socket();
+    try {
+      InetSocketAddress dest = new InetSocketAddress(hostname, port);
+      socket.connect(dest, 400);
+      return true;
+    } catch (IOException ignored) {
+      return false;
+    } finally {
+      try {
+        socket.close();
+      } catch (IOException ignored) {
+      }
+    }
+  }
+
+
 
   /* TODO: further API ideas:
    *
