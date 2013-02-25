@@ -837,6 +837,15 @@
     </description>
   </property>
   <property>
+    <name>hbase.table.lock.enable</name>
+    <value>true</value>
+    <description>
+    Set to true to enable locking the table in zookeeper for schema change operations.
+    Table locking from master prevents concurrent schema modifications to corrupt table
+    state.
+    </description>
+  </property>
+  <property>
     <name>dfs.support.append</name>
     <value>true</value>
     <description>Does HDFS allow appends to files?
@@ -949,6 +958,13 @@
         zoo.cfg file for ZooKeeper properties. Switching this to true
         is not recommended, since the functionality of reading ZK
         properties from a zoo.cfg file has been deprecated.
+    </description>
+  </property>
+  <property>
+    <name>hbase.snapshot.enabled</name>
+    <value>true</value>
+    <description>
+        Set to true to allow snapshots to be taken / restored / cloned.
     </description>
   </property>
   <property>
