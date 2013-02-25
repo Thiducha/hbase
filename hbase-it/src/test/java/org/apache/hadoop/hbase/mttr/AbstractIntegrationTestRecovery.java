@@ -316,7 +316,7 @@ public abstract class AbstractIntegrationTestRecovery {
     LOG.info("Detection took: " + (failureDetectedTime - startTime));
     LOG.info(("Failure fix took: " + (failureFixedTime - failureDetectedTime)));
 
-    validate(failureDetectedTime, failureFixedTime);
+    validate((failureDetectedTime - startTime), (failureFixedTime - failureDetectedTime));
 
   }
 

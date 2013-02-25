@@ -193,9 +193,7 @@ public class HBaseClusterManager extends ClusterManager {
     private static String getSSH_OPTS() {
       String cur = System.getenv("HBASE_SSH_OPTS");
       if (cur == null) {
-        cur = "-A";
-      } else if (!cur.contains("-A")) {
-        cur += " -A";
+        cur = "'-A'";
       }
       return cur;
     }
