@@ -43,15 +43,18 @@ mkdir -p $CONF_DIR/conf-hadoop
 
 echo The main box will be $HBASE_IT_MAIN_BOX
 
-sed 's/HBASE_IT_MAIN_BOX/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/core-site.xml > $CONF_DIR/conf-hadoop/core-site.xml
-sed 's/HBASE_IT_MAIN_BOX/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/hdfs-site.xml > $CONF_DIR/conf-hadoop/core-hdfs.xml
+sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/core-site.xml > $CONF_DIR/conf-hadoop/core-site.xml
+sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/hdfs-site.xml > $CONF_DIR/conf-hadoop/core-hdfs.xml
 
-sed 's/HBASE_IT_MAIN_BOX/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/core-site.xml  >  $HBASE_REP/conf/core-site.xml
-sed 's/HBASE_IT_MAIN_BOX/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/hbase-site.xml > $HBASE_REP/conf/hbase-site.xml
+sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/core-site.xml  > $HBASE_REP/conf/core-site.xml
+sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/hbase-site.xml > $HBASE_REP/conf/hbase-site.xml
 
 
 echo "Copying the libs we need locally"
 mkdir -p ~/tmp-recotest/hbase
+
+# We need to rm the previous lib dir in case the dependencies changed
+rm -rf ~/tmp-recotest/hbase/lib
 mkdir -p ~/tmp-recotest/hbase/lib
 
 for LIB in `cat $ORIG_HBASE_DIR/target/cached_classpath.txt | tr ':' '\n' `
@@ -75,10 +78,15 @@ done
 
 echo export
 
-echo "export HBASE_IT_MAIN_BOX=$HBASE_IT_MAIN_BOX" > ~/tmp-recotest/local.env.tosource
-echo "export HBASE_IT_WILLDIE_BOX=$1"        >> ~/tmp-recotest/local.env.tosource
-echo "export HBASE_IT_WILLSURVIVE_BOX=$2"    >> ~/tmp-recotest/local.env.tosource
-echo "export HBASE_IT_LATE_BOX=$3"           >> ~/tmp-recotest/local.env.tosource
+echo "export HBASE_IT_BOX_0=$HBASE_IT_MAIN_BOX" > ~/tmp-recotest/local.env.tosource
+
+nBox=1
+for CBOX in $*; do
+   echo "export HBASE_IT_BOX_$nBox=$CBOX"        >> ~/tmp-recotest/local.env.tosource
+   ((nBox++))
+done
+
+echo ""        >> ~/tmp-recotest/local.env.tosource
 
 echo "export HBASE_HOME=$HOME/tmp-recotest/hbase"   >> ~/tmp-recotest/local.env.tosource
 echo "export HADOOP_HOME=$HOME/tmp-recotest/hadoop-common"   >> ~/tmp-recotest/local.env.tosource

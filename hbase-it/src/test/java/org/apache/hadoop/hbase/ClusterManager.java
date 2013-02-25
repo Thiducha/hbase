@@ -45,6 +45,15 @@ public abstract class ClusterManager extends Configured {
   public ClusterManager() {
   }
 
+  public abstract void formatNameNode(String hostname) throws IOException;
+
+  // Not in ClusterManager because it uses 'exec'
+  public abstract void killAllServices(String hostname) throws IOException;
+
+  public abstract void rmHDFSDataDir(String hostname) throws IOException;
+
+  public abstract void checkAccessible(String hostname) throws IOException, InterruptedException;
+
   /**
    * Type of the service daemon
    */
@@ -148,7 +157,7 @@ public abstract class ClusterManager extends Configured {
   }
 
   public static boolean isReachablePort(String hostname, int port) {
-    //  a minimum connect timeout. If it succeeds, it means it's still there...
+    //  a minimum connect timeout. If it succeeds, it means there is still a process there...
     Socket socket = new Socket();
     try {
       InetSocketAddress dest = new InetSocketAddress(hostname, port);

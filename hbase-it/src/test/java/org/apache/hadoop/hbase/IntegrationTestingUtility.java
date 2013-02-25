@@ -129,12 +129,16 @@ public class IntegrationTestingUtility extends HBaseTestingUtility {
     return isDistributedCluster;
   }
 
-  private void createDistributedHBaseCluster(boolean connected) throws IOException {
+  public ClusterManager createClusterManager(){
     Configuration conf = getConfiguration();
     Class<? extends ClusterManager> clusterManagerClass = conf.getClass(HBASE_CLUSTER_MANAGER_CLASS,
-      DEFAULT_HBASE_CLUSTER_MANAGER_CLASS, ClusterManager.class);
-    ClusterManager clusterManager = ReflectionUtils.newInstance(
-      clusterManagerClass, conf);
+        DEFAULT_HBASE_CLUSTER_MANAGER_CLASS, ClusterManager.class);
+    return  ReflectionUtils.newInstance(clusterManagerClass, conf);
+  }
+
+  private void createDistributedHBaseCluster(boolean connected) throws IOException {
+    Configuration conf = getConfiguration();
+    ClusterManager clusterManager = createClusterManager();
     setHBaseCluster(new DistributedHBaseCluster(conf, clusterManager, connected));
   }
 }

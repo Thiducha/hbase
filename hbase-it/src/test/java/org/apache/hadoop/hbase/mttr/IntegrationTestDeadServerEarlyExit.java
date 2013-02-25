@@ -23,11 +23,10 @@ package org.apache.hadoop.hbase.mttr;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.client.Get;
-import org.apache.hadoop.hbase.client.HConnection;
 import org.apache.hadoop.hbase.client.HConnectionManager;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
-import org.eclipse.jdt.internal.core.Assert;
+import org.junit.Assert;
 
 import java.io.IOException;
 
@@ -38,7 +37,6 @@ import java.io.IOException;
 public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestRecovery {
   private int zkTimeout;
   private Configuration conf;
-  private HConnection hc;
   private HTable h;
   private final byte[] row = "myrow".getBytes();
 
@@ -66,7 +64,7 @@ public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestR
     // We create a connection that we will use after the kill. This connection will contain
     //  a socket to the dead server, this way we will have a read timeout and not a connect timeout
     // (the connect timeout being usually much smaller than the read one).
-    hc = HConnectionManager.getConnection(conf);
+    Assert.assertNotNull(HConnectionManager.getConnection(conf)) ;
     h = new HTable(conf, tableName);
 
     Put p = new Put(row);
@@ -87,7 +85,7 @@ public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestR
 
     Get g = new Get(row);
     Object o = h.get(g);
-    Assert.isNotNull(o);
+    Assert.assertNotNull(o);
 
     // The server has been unplugged, but we don't know yet.
     // So we will wait until: the get timeout OR the server is marked as dead.
@@ -96,6 +94,6 @@ public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestR
 
     long getTime = (endGetTime - startGetTime);
 
-    Assert.isTrue(getTime < zkTimeout + 30000); // i.e. we didn't wait for the socket timeout
+    Assert.assertTrue(getTime < zkTimeout + 30000); // i.e. we didn't wait for the socket timeout
   }
 }

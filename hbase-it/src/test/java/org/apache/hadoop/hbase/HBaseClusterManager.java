@@ -142,6 +142,7 @@ public class HBaseClusterManager extends ClusterManager {
     return getEnvNotNull("JAVA_HOME");
   }
 
+
   /**
    * Create a configuration object from the configuration files in the HBASE_HOME_CONFIG
    */
@@ -186,11 +187,24 @@ public class HBaseClusterManager extends ClusterManager {
       return getHBaseHome() + Path.SEPARATOR + "conf";
     }
 
+    /**
+     * Add '-A' if it's not set already. That's required for ZooKeeper.
+     */
+    private static String getSSH_OPTS() {
+      String cur = System.getenv("HBASE_SSH_OPTS");
+      if (cur == null) {
+        cur = "-A";
+      } else if (!cur.contains("-A")) {
+        cur += " -A";
+      }
+      return cur;
+    }
+
     @Override
     public String getCommand(ServiceType service, Operation op) {
       String cmd = "";
       cmd += "export JAVA_HOME=" + getJavaHome() + ";";
-      cmd += "export HBASE_SSH_OPTS='-A';";
+      cmd += "export HBASE_SSH_OPTS=" + getSSH_OPTS() + ";";
       cmd += "export HBASE_HEAPSIZE=5000;";
       cmd += "export HBASE_CONF_DIR=" + getConfigDir() + ";";
       cmd += "export HBASE_HOME=" + getHBaseHome() + ";";
@@ -247,8 +261,7 @@ public class HBaseClusterManager extends ClusterManager {
         return getHadoopCommonHome();
       } else {
         return getHadoopHome() + Path.SEPARATOR +
-            "hadoop-common/hadoop-hdfs-project/hadoop-hdfs/target/hadoop-hdfs-" +
-            getHadoopVersion();
+            "/hadoop-hdfs-project/hadoop-hdfs/target/hadoop-hdfs-" + getHadoopVersion();
       }
     }
 
@@ -274,11 +287,6 @@ public class HBaseClusterManager extends ClusterManager {
           getHDFSHome(), isHadoopOne() ? "hadoop" : "hdfs",
           getConfigDir(), service, op != null ? op : "");
     }
-  }
-
-
-  public HBaseClusterManager() {
-    super();
   }
 
   protected CommandProvider getCommandProvider(final ServiceType service) {
@@ -367,7 +375,7 @@ public class HBaseClusterManager extends ClusterManager {
 
 
   @Override
-  public void formatNN(String hostname) throws IOException {
+  public void formatNameNode(String hostname) throws IOException {
     exec(hostname,
         new HadoopShellCommandProvider().getCommand(ServiceType.HADOOP_NAMENODE, "-format"));
   }
@@ -435,11 +443,12 @@ public class HBaseClusterManager extends ClusterManager {
 
   /**
    * Delete the root hdfs data dir on the remote machine. Use the hadoop.tmp.dir val.
+   *
    * @param hostname the remote machine
    * @throws IOException
    */
   @Override
-  public void rmDataDir(String hostname) throws IOException {
+  public void rmHDFSDataDir(String hostname) throws IOException {
     String hdfsDataDir = getConf().get("hadoop.tmp.dir");
     if (hdfsDataDir == null) {
       LOG.warn("Can't cleanup the hadoop.tmp.dir, it's not set");

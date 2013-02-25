@@ -6,7 +6,7 @@
     <name>dfs.http.address</name>
     <value>0.0.0.0:11080</value>
     <description>The name of the default file system. Either the
-      literal string "local" or a host:port for NDFS.
+      literal string "local" or a host:port for HDFS.
     </description>
     <final>true</final>
   </property>

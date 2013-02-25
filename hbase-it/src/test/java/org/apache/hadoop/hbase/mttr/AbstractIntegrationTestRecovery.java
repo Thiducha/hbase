@@ -23,7 +23,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.ClusterManager;
-import org.apache.hadoop.hbase.DistributedHBaseCluster;
 import org.apache.hadoop.hbase.HBaseCluster;
 import org.apache.hadoop.hbase.HBaseClusterManager;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -76,10 +75,10 @@ import java.io.IOException;
  */
 
 public abstract class AbstractIntegrationTestRecovery {
-  protected String mainBox = ClusterManager.getEnvNotNull("HBASE_IT_MAIN_BOX");
-  protected String willDieBox = ClusterManager.getEnvNotNull("HBASE_IT_WILLDIE_BOX");
-  protected String willSurviveBox = ClusterManager.getEnvNotNull("HBASE_IT_WILLSURVIVE_BOX");
-  protected String lateBox = ClusterManager.getEnvNotNull("HBASE_IT_LATE_BOX");
+  protected String mainBox = ClusterManager.getEnvNotNull("HBASE_IT_BOX_0");
+  protected String willDieBox = ClusterManager.getEnvNotNull("HBASE_IT_BOX_1");
+  protected String willSurviveBox = ClusterManager.getEnvNotNull("HBASE_IT_BOX_2");
+  protected String lateBox = ClusterManager.getEnvNotNull("HBASE_IT_BOX_3");
 
   protected static final Log LOG
     = LogFactory.getLog(AbstractIntegrationTestRecovery.class);
@@ -90,7 +89,7 @@ public abstract class AbstractIntegrationTestRecovery {
 
   protected static IntegrationTestingUtility util;
   protected HBaseCluster dhc;
-  protected HBaseClusterManager hcm;
+  protected ClusterManager hcm;
 
   AbstractIntegrationTestRecovery() {
     regionCount = 10;
@@ -145,7 +144,7 @@ public abstract class AbstractIntegrationTestRecovery {
     // Initialize an empty cluster. We will start all services where we want to start them.
     util.initializeCluster(0);
     dhc =  util.getHBaseClusterInterface();
-    hcm = new HBaseClusterManager();
+    hcm = util.createClusterManager();
 
     // In case we stopped the previous test while is was not connected
     hcm.replug(willDieBox);
@@ -162,15 +161,15 @@ public abstract class AbstractIntegrationTestRecovery {
     hcm.killAllServices(willSurviveBox);
     hcm.killAllServices(lateBox);
 
-    hcm.rmDataDir(mainBox);
-    hcm.rmDataDir(willDieBox);
-    hcm.rmDataDir(willSurviveBox);
-    hcm.rmDataDir(lateBox);
+    hcm.rmHDFSDataDir(mainBox);
+    hcm.rmHDFSDataDir(willDieBox);
+    hcm.rmHDFSDataDir(willSurviveBox);
+    hcm.rmHDFSDataDir(lateBox);
 
     // Let's start ZK immediately, it will initialize itself while the NN and the DN are starting
     hcm.start(ClusterManager.ServiceType.ZOOKEEPER, mainBox);
 
-    hcm.formatNN(mainBox); // synchronous
+    hcm.formatNameNode(mainBox); // synchronous
 
     hcm.start(ClusterManager.ServiceType.HADOOP_NAMENODE, mainBox);
     dhc.waitForNamenodeAvailable();
@@ -200,7 +199,7 @@ public abstract class AbstractIntegrationTestRecovery {
       Thread.sleep(200);
     }
 
-    // Now we have 2 region servers and 3 datanodes.
+    // Now we have 2 region servers and 4 datanodes.
   }
 
   /**
@@ -213,10 +212,10 @@ public abstract class AbstractIntegrationTestRecovery {
     hcm.killAllServices(willSurviveBox);
     hcm.killAllServices(lateBox);
 
-    hcm.rmDataDir(mainBox);
-    hcm.rmDataDir(willDieBox);
-    hcm.rmDataDir(willSurviveBox);
-    hcm.rmDataDir(lateBox);
+    hcm.rmHDFSDataDir(mainBox);
+    hcm.rmHDFSDataDir(willDieBox);
+    hcm.rmHDFSDataDir(willSurviveBox);
+    hcm.rmHDFSDataDir(lateBox);
   }
 
 
