@@ -23,6 +23,10 @@ import static org.junit.Assert.fail;
 import java.io.IOException;
 import java.util.List;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.RetriesExhaustedWithDetailsException;
 import org.junit.Assert;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
@@ -52,6 +56,8 @@ import org.junit.experimental.categories.Category;
  */
 @Category(MediumTests.class)
 public class TestAssignmentManagerOnCluster {
+  private static final Log LOG = LogFactory.getLog(TestAssignmentManagerOnCluster.class);
+
   private final static byte[] FAMILY = Bytes.toBytes("FAMILY");
   private final static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
   private final static Configuration conf = TEST_UTIL.getConfiguration();
@@ -138,15 +144,17 @@ public class TestAssignmentManagerOnCluster {
     final HRegionServer remainingRS = TEST_UTIL.getHBaseCluster().getRegionServer(2);
     final ServerName remainingSN = remainingRS.getServerName();
 
-    TEST_UTIL.waitFor(20000, 100, new Waiter.Predicate<Exception>() {
+    LOG.info("Waiting for draining");
+
+    TEST_UTIL.waitFor(30000, 100, new Waiter.Predicate<Exception>() {
       @Override
       public boolean evaluate() throws Exception {
         return TEST_UTIL.getHBaseCluster().getMaster().getServerManager().
-            getDrainingServersList().size() == 2;
+          getDrainingServersList().size() == 2;
       }
     });
 
-    byte[] table = "myT".getBytes();
+    byte[] table = "testMoveRegionWithDraining".getBytes();
     HTable ht = TEST_UTIL.createTable(table, table);
     TEST_UTIL.waitTableEnabled(table);
     HRegionLocation hrl = ht.getRegionLocation(table);
@@ -154,26 +162,55 @@ public class TestAssignmentManagerOnCluster {
     Assert.assertTrue(hrl.getServerName().equals(remainingSN));
     Assert.assertTrue(remainingRS.getRegionsInTransitionInRS().isEmpty());
 
+    setDrainingServer(remainingRS);
+    TEST_UTIL.waitFor(30000, 100, new Waiter.Predicate<Exception>() {
+      @Override
+      public boolean evaluate() throws Exception {
+        return TEST_UTIL.getHBaseCluster().getMaster().getServerManager().
+          getDrainingServersList().size() == 3;
+      }
+    });
+
+
+    LOG.info("There is only one server non draining, it's the one the region is on.");
     TEST_UTIL.getHBaseAdmin().move(hri.getEncodedNameAsBytes(), null);
-    TEST_UTIL.waitFor(1000, 1, new Waiter.Predicate<Exception>() {
+    LOG.info("Close.");
+    TEST_UTIL.waitFor(2000, 1, new Waiter.Predicate<Exception>() {
       @Override
       public boolean evaluate() throws Exception {
         return !remainingRS.getRegionsInTransitionInRS().isEmpty();
       }
     });
-
+    LOG.info("Then open");
     TEST_UTIL.waitFor(10000, 1, new Waiter.Predicate<Exception>() {
       @Override
       public boolean evaluate() throws Exception {
         return remainingRS.getRegionsInTransitionInRS().isEmpty();
       }
     });
+    LOG.info("The open is on the same region server, as it's the only one possible");
+    HRegionLocation hrl2 = ht.getRegionLocation(table);
+    Assert.assertTrue(hrl2.getServerName().equals(remainingSN));
 
-    hrl = ht.getRegionLocation(table);
-    Assert.assertTrue(hrl.getServerName().equals(remainingSN));
+    LOG.info("Let try it.");
+    Put p = new Put(table);
+    p.add(table, table, table);
+
+    long start = System.currentTimeMillis();
+    try {
+      ht.put(p);
+    }catch (RetriesExhaustedWithDetailsException ree){
+      long fail = System.currentTimeMillis();
+      if (!ree.getCauses().isEmpty()){
+        LOG.info("Exception: " + ree.getCauses().size()+ "in  " + (fail-start)+" ms" +
+          ree.getExhaustiveDescription(), ree.getCause(0));
+      }
+      throw ree;
+    }
 
     unsetDrainingServer(TEST_UTIL.getHBaseCluster().getRegionServer(0));
     unsetDrainingServer(TEST_UTIL.getHBaseCluster().getRegionServer(1));
+    unsetDrainingServer(TEST_UTIL.getHBaseCluster().getRegionServer(2));
   }
 
   private static HRegionServer setDrainingServer(final HRegionServer hrs)
