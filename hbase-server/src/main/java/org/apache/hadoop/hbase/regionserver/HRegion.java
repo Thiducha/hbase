@@ -71,20 +71,22 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hbase.CompoundConfiguration;
-import org.apache.hadoop.hbase.DoNotRetryIOException;
-import org.apache.hadoop.hbase.DroppedSnapshotException;
-import org.apache.hadoop.hbase.FailedSanityCheckException;
+import org.apache.hadoop.hbase.exceptions.DroppedSnapshotException;
+import org.apache.hadoop.hbase.exceptions.FailedSanityCheckException;
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.KeyValueUtil;
 import org.apache.hadoop.hbase.HConstants.OperationStatusCode;
 import org.apache.hadoop.hbase.HDFSBlocksDistribution;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.NotServingRegionException;
-import org.apache.hadoop.hbase.RegionTooBusyException;
-import org.apache.hadoop.hbase.UnknownScannerException;
+import org.apache.hadoop.hbase.exceptions.NoSuchColumnFamilyException;
+import org.apache.hadoop.hbase.exceptions.NotServingRegionException;
+import org.apache.hadoop.hbase.exceptions.RegionTooBusyException;
+import org.apache.hadoop.hbase.exceptions.UnknownScannerException;
 import org.apache.hadoop.hbase.backup.HFileArchiver;
 import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.client.Delete;
@@ -98,6 +100,7 @@ import org.apache.hadoop.hbase.client.Row;
 import org.apache.hadoop.hbase.client.RowMutations;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.errorhandling.ForeignExceptionSnare;
+import org.apache.hadoop.hbase.exceptions.WrongRegionException;
 import org.apache.hadoop.hbase.filter.ByteArrayComparable;
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp;
 import org.apache.hadoop.hbase.filter.Filter;
@@ -109,7 +112,7 @@ import org.apache.hadoop.hbase.io.hfile.BlockCache;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.ipc.HBaseServer;
 import org.apache.hadoop.hbase.ipc.RpcCallContext;
-import org.apache.hadoop.hbase.ipc.UnknownProtocolException;
+import org.apache.hadoop.hbase.exceptions.UnknownProtocolException;
 import org.apache.hadoop.hbase.monitoring.MonitoredTask;
 import org.apache.hadoop.hbase.monitoring.TaskMonitor;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetRegionInfoResponse.CompactionState;
@@ -1514,6 +1517,10 @@ public class HRegion implements HeapSize { // , Writable{
   protected boolean internalFlushcache(
       final HLog wal, final long myseqid, MonitoredTask status)
   throws IOException {
+    if (this.rsServices != null && this.rsServices.isAborted()) {
+      // Don't flush when server aborting, it's unsafe
+      throw new IOException("Aborting flush because server is abortted...");
+    }
     final long startTime = EnvironmentEdgeManager.currentTimeMillis();
     // Clear flush flag.
     // Record latest flush time
@@ -1821,7 +1828,7 @@ public class HRegion implements HeapSize { // , Writable{
    * @param writeToWAL
    * @throws IOException
    */
-  void delete(Map<byte[], List<KeyValue>> familyMap, UUID clusterId,
+  void delete(NavigableMap<byte[], List<? extends Cell>> familyMap, UUID clusterId,
       boolean writeToWAL) throws IOException {
     Delete delete = new Delete(HConstants.EMPTY_BYTE_ARRAY);
     delete.setFamilyMap(familyMap);
@@ -1837,15 +1844,16 @@ public class HRegion implements HeapSize { // , Writable{
    * @param byteNow
    * @throws IOException
    */
-  void prepareDeleteTimestamps(Map<byte[], List<KeyValue>> familyMap, byte[] byteNow)
+  void prepareDeleteTimestamps(Map<byte[], List<? extends Cell>> familyMap, byte[] byteNow)
       throws IOException {
-    for (Map.Entry<byte[], List<KeyValue>> e : familyMap.entrySet()) {
+    for (Map.Entry<byte[], List<? extends Cell>> e : familyMap.entrySet()) {
 
       byte[] family = e.getKey();
-      List<KeyValue> kvs = e.getValue();
+      List<? extends Cell> cells = e.getValue();
       Map<byte[], Integer> kvCount = new TreeMap<byte[], Integer>(Bytes.BYTES_COMPARATOR);
 
-      for (KeyValue kv: kvs) {
+      for (Cell cell: cells) {
+        KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
         //  Check if time is LATEST, change to time of most recent addition if so
         //  This is expensive.
         if (kv.isLatestTimestamp() && kv.isDeleteType()) {
@@ -2059,7 +2067,7 @@ public class HRegion implements HeapSize { // , Writable{
     /** Keep track of the locks we hold so we can release them in finally clause */
     List<Integer> acquiredLocks = Lists.newArrayListWithCapacity(batchOp.operations.length);
     // reference family maps directly so coprocessors can mutate them if desired
-    Map<byte[],List<KeyValue>>[] familyMaps = new Map[batchOp.operations.length];
+    Map<byte[], List<? extends Cell>>[] familyMaps = new Map[batchOp.operations.length];
     // We try to set up a batch in the range [firstIndex,lastIndexExclusive)
     int firstIndex = batchOp.nextIndexToProcess;
     int lastIndexExclusive = firstIndex;
@@ -2078,7 +2086,7 @@ public class HRegion implements HeapSize { // , Writable{
         boolean isPutMutation = mutation instanceof Put;
         Integer providedLockId = nextPair.getSecond();
 
-        Map<byte[], List<KeyValue>> familyMap = mutation.getFamilyMap();
+        Map<byte[], List<? extends Cell>> familyMap = mutation.getFamilyMap();
         // store the family map reference to allow for mutations
         familyMaps[lastIndexExclusive] = familyMap;
 
@@ -2366,10 +2374,10 @@ public class HRegion implements HeapSize { // , Writable{
     checkResources();
     boolean isPut = w instanceof Put;
     if (!isPut && !(w instanceof Delete))
-      throw new DoNotRetryIOException("Action must be Put or Delete");
+      throw new org.apache.hadoop.hbase.exceptions.DoNotRetryIOException("Action must be Put or Delete");
     Row r = (Row)w;
     if (!Bytes.equals(row, r.getRow())) {
-      throw new DoNotRetryIOException("Action's getRow must match the passed row");
+      throw new org.apache.hadoop.hbase.exceptions.DoNotRetryIOException("Action's getRow must match the passed row");
     }
 
     startRegionOperation();
@@ -2441,7 +2449,7 @@ public class HRegion implements HeapSize { // , Writable{
 
   @SuppressWarnings("unchecked")
   private void doBatchMutate(Mutation mutation, Integer lid) throws IOException,
-      DoNotRetryIOException {
+      org.apache.hadoop.hbase.exceptions.DoNotRetryIOException {
     Pair<Mutation, Integer>[] mutateWithLocks = new Pair[] { new Pair<Mutation, Integer>(mutation, lid) };
     OperationStatus[] batchMutate = this.batchMutate(mutateWithLocks);
     if (batchMutate[0].getOperationStatusCode().equals(OperationStatusCode.SANITY_CHECK_FAILURE)) {
@@ -2515,15 +2523,15 @@ public class HRegion implements HeapSize { // , Writable{
   }
 
   /**
-   * Replaces any KV timestamps set to {@link HConstants#LATEST_TIMESTAMP} with the provided current
-   * timestamp.
+   * Replaces any KV timestamps set to {@link HConstants#LATEST_TIMESTAMP} with the
+   * provided current timestamp.
    */
-  void updateKVTimestamps(
-      final Iterable<List<KeyValue>> keyLists, final byte[] now) {
-    for (List<KeyValue> keys: keyLists) {
-      if (keys == null) continue;
-      for (KeyValue key : keys) {
-        key.updateLatestStamp(now);
+  void updateKVTimestamps(final Iterable<List<? extends Cell>> keyLists, final byte[] now) {
+    for (List<? extends Cell> cells: keyLists) {
+      if (cells == null) continue;
+      for (Cell cell : cells) {
+        KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
+        kv.updateLatestStamp(now);
       }
     }
   }
@@ -2611,10 +2619,10 @@ public class HRegion implements HeapSize { // , Writable{
    * @praram now
    * @throws IOException
    */
-  private void put(final byte [] row, byte [] family, List<KeyValue> edits)
+  private void put(final byte [] row, byte [] family, List<? extends Cell> edits)
   throws IOException {
-    Map<byte[], List<KeyValue>> familyMap;
-    familyMap = new HashMap<byte[], List<KeyValue>>();
+    NavigableMap<byte[], List<? extends Cell>> familyMap;
+    familyMap = new TreeMap<byte[], List<? extends Cell>>(Bytes.BYTES_COMPARATOR);
 
     familyMap.put(family, edits);
     Put p = new Put(row);
@@ -2636,7 +2644,7 @@ public class HRegion implements HeapSize { // , Writable{
    * @return the additional memory usage of the memstore caused by the
    * new entries.
    */
-  private long applyFamilyMapToMemstore(Map<byte[], List<KeyValue>> familyMap,
+  private long applyFamilyMapToMemstore(Map<byte[], List<? extends Cell>> familyMap,
     MultiVersionConsistencyControl.WriteEntry localizedWriteEntry) {
     long size = 0;
     boolean freemvcc = false;
@@ -2647,12 +2655,13 @@ public class HRegion implements HeapSize { // , Writable{
         freemvcc = true;
       }
 
-      for (Map.Entry<byte[], List<KeyValue>> e : familyMap.entrySet()) {
+      for (Map.Entry<byte[], List<? extends Cell>> e : familyMap.entrySet()) {
         byte[] family = e.getKey();
-        List<KeyValue> edits = e.getValue();
+        List<? extends Cell> cells = e.getValue();
 
         Store store = getStore(family);
-        for (KeyValue kv: edits) {
+        for (Cell cell: cells) {
+          KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
           kv.setMemstoreTS(localizedWriteEntry.getWriteNumber());
           size += store.add(kv);
         }
@@ -2672,7 +2681,7 @@ public class HRegion implements HeapSize { // , Writable{
    * the wal. This method is then invoked to rollback the memstore.
    */
   private void rollbackMemstore(BatchOperationInProgress<Pair<Mutation, Integer>> batchOp,
-                                Map<byte[], List<KeyValue>>[] familyMaps,
+                                Map<byte[], List<? extends Cell>>[] familyMaps,
                                 int start, int end) {
     int kvsRolledback = 0;
     for (int i = start; i < end; i++) {
@@ -2683,17 +2692,17 @@ public class HRegion implements HeapSize { // , Writable{
       }
 
       // Rollback all the kvs for this row.
-      Map<byte[], List<KeyValue>> familyMap  = familyMaps[i];
-      for (Map.Entry<byte[], List<KeyValue>> e : familyMap.entrySet()) {
+      Map<byte[], List<? extends Cell>> familyMap  = familyMaps[i];
+      for (Map.Entry<byte[], List<? extends Cell>> e : familyMap.entrySet()) {
         byte[] family = e.getKey();
-        List<KeyValue> edits = e.getValue();
+        List<? extends Cell> cells = e.getValue();
 
         // Remove those keys from the memstore that matches our
         // key's (row, cf, cq, timestamp, memstoreTS). The interesting part is
         // that even the memstoreTS has to match for keys that will be rolleded-back.
         Store store = getStore(family);
-        for (KeyValue kv: edits) {
-          store.rollback(kv);
+        for (Cell cell: cells) {
+          store.rollback(KeyValueUtil.ensureKeyValue(cell));
           kvsRolledback++;
         }
       }
@@ -2713,18 +2722,19 @@ public class HRegion implements HeapSize { // , Writable{
     }
   }
 
-  void checkTimestamps(final Map<byte[], List<KeyValue>> familyMap,
+  void checkTimestamps(final Map<byte[], List<? extends Cell>> familyMap,
       long now) throws FailedSanityCheckException {
     if (timestampSlop == HConstants.LATEST_TIMESTAMP) {
       return;
     }
     long maxTs = now + timestampSlop;
-    for (List<KeyValue> kvs : familyMap.values()) {
-      for (KeyValue kv : kvs) {
+    for (List<? extends Cell> kvs : familyMap.values()) {
+      for (Cell cell : kvs) {
         // see if the user-side TS is out of range. latest = server-side
+        KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
         if (!kv.isLatestTimestamp() && kv.getTimestamp() > maxTs) {
           throw new FailedSanityCheckException("Timestamp for KV out of range "
-              + kv + " (too.new=" + timestampSlop + ")");
+              + cell + " (too.new=" + timestampSlop + ")");
         }
       }
     }
@@ -2736,11 +2746,11 @@ public class HRegion implements HeapSize { // , Writable{
    * @param familyMap map of family->edits
    * @param walEdit the destination entry to append into
    */
-  private void addFamilyMapToWALEdit(Map<byte[], List<KeyValue>> familyMap,
+  private void addFamilyMapToWALEdit(Map<byte[], List<? extends Cell>> familyMap,
       WALEdit walEdit) {
-    for (List<KeyValue> edits : familyMap.values()) {
-      for (KeyValue kv : edits) {
-        walEdit.add(kv);
+    for (List<? extends Cell> edits : familyMap.values()) {
+      for (Cell cell : edits) {
+        walEdit.add(KeyValueUtil.ensureKeyValue(cell));
       }
     }
   }
@@ -3321,7 +3331,7 @@ public class HRegion implements HeapSize { // , Writable{
 
         Store store = getStore(familyName);
         if (store == null) {
-          IOException ioe = new DoNotRetryIOException(
+          IOException ioe = new org.apache.hadoop.hbase.exceptions.DoNotRetryIOException(
               "No such column family " + Bytes.toStringBinary(familyName));
           ioes.add(ioe);
           failures.add(p);
@@ -3445,7 +3455,7 @@ public class HRegion implements HeapSize { // , Writable{
     public HRegionInfo getRegionInfo() {
       return regionInfo;
     }
-    
+
     RegionScannerImpl(Scan scan, List<KeyValueScanner> additionalScanners, HRegion region)
         throws IOException {
       // DebugPrint.println("HRegionScanner.<init>");
@@ -3595,11 +3605,11 @@ public class HRegion implements HeapSize { // , Writable{
       return next(outResults, batch, metric);
     }
 
-    private void populateFromJoinedHeap(List<KeyValue> results, int limit, String metric) 
+    private void populateFromJoinedHeap(List<KeyValue> results, int limit, String metric)
         throws IOException {
       assert joinedContinuationRow != null;
-      KeyValue kv = populateResult(results, this.joinedHeap, limit, 
-          joinedContinuationRow.getBuffer(), joinedContinuationRow.getRowOffset(), 
+      KeyValue kv = populateResult(results, this.joinedHeap, limit,
+          joinedContinuationRow.getBuffer(), joinedContinuationRow.getRowOffset(),
           joinedContinuationRow.getRowLength(), metric);
       if (kv != KV_LIMIT) {
         // We are done with this row, reset the continuation.
@@ -3621,7 +3631,7 @@ public class HRegion implements HeapSize { // , Writable{
      * @param metric Metric key to be passed into KeyValueHeap::next().
      * @return KV_LIMIT if limit reached, next KeyValue otherwise.
      */
-    private KeyValue populateResult(List<KeyValue> results, KeyValueHeap heap, int limit, 
+    private KeyValue populateResult(List<KeyValue> results, KeyValueHeap heap, int limit,
         byte[] currentRow, int offset, short length, String metric) throws IOException {
       KeyValue nextKv;
       do {
@@ -4209,15 +4219,15 @@ public class HRegion implements HeapSize { // , Writable{
     // The row key is the region name
     byte[] row = r.getRegionName();
     final long now = EnvironmentEdgeManager.currentTimeMillis();
-    final List<KeyValue> edits = new ArrayList<KeyValue>(2);
-    edits.add(new KeyValue(row, HConstants.CATALOG_FAMILY,
+    final List<KeyValue> cells = new ArrayList<KeyValue>(2);
+    cells.add(new KeyValue(row, HConstants.CATALOG_FAMILY,
       HConstants.REGIONINFO_QUALIFIER, now,
       r.getRegionInfo().toByteArray()));
     // Set into the root table the version of the meta table.
-    edits.add(new KeyValue(row, HConstants.CATALOG_FAMILY,
+    cells.add(new KeyValue(row, HConstants.CATALOG_FAMILY,
       HConstants.META_VERSION_QUALIFIER, now,
       Bytes.toBytes(HConstants.META_VERSION)));
-    meta.put(row, HConstants.CATALOG_FAMILY, edits);
+    meta.put(row, HConstants.CATALOG_FAMILY, cells);
   }
 
   /**
@@ -4814,15 +4824,15 @@ public class HRegion implements HeapSize { // , Writable{
       try {
         long now = EnvironmentEdgeManager.currentTimeMillis();
         // Process each family
-        for (Map.Entry<byte[], List<KeyValue>> family : append.getFamilyMap()
-            .entrySet()) {
+        for (Map.Entry<byte[], List<? extends Cell>> family : append.getFamilyMap().entrySet()) {
 
           Store store = stores.get(family.getKey());
           List<KeyValue> kvs = new ArrayList<KeyValue>(family.getValue().size());
 
           // Get previous values for all columns in this family
           Get get = new Get(row);
-          for (KeyValue kv : family.getValue()) {
+          for (Cell cell : family.getValue()) {
+            KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
             get.addColumn(family.getKey(), kv.getQualifier());
           }
           List<KeyValue> results = get(get, false);
@@ -4834,7 +4844,8 @@ public class HRegion implements HeapSize { // , Writable{
           // once.
           // Would be nice if KeyValue had scatter/gather logic
           int idx = 0;
-          for (KeyValue kv : family.getValue()) {
+          for (Cell cell : family.getValue()) {
+            KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
             KeyValue newKV;
             if (idx < results.size()
                 && results.get(idx).matchingQualifier(kv.getBuffer(),
@@ -4908,7 +4919,8 @@ public class HRegion implements HeapSize { // , Writable{
             size += store.upsert(entry.getValue(), getSmallestReadPoint());
           } else {
             // otherwise keep older versions around
-            for (KeyValue kv : entry.getValue()) {
+            for (Cell cell: entry.getValue()) {
+              KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
               size += store.add(kv);
             }
           }
@@ -4957,7 +4969,7 @@ public class HRegion implements HeapSize { // , Writable{
     TimeRange tr = increment.getTimeRange();
     boolean flush = false;
     WALEdit walEdits = null;
-    List<KeyValue> allKVs = new ArrayList<KeyValue>(increment.numColumns());
+    List<KeyValue> allKVs = new ArrayList<KeyValue>(increment.size());
     Map<Store, List<KeyValue>> tempMemstore = new HashMap<Store, List<KeyValue>>();
 
     long size = 0;
@@ -4979,16 +4991,17 @@ public class HRegion implements HeapSize { // , Writable{
       try {
         long now = EnvironmentEdgeManager.currentTimeMillis();
         // Process each family
-        for (Map.Entry<byte [], NavigableMap<byte [], Long>> family :
-          increment.getFamilyMap().entrySet()) {
+        for (Map.Entry<byte [], List<? extends Cell>> family:
+            increment.getFamilyMap().entrySet()) {
 
           Store store = stores.get(family.getKey());
           List<KeyValue> kvs = new ArrayList<KeyValue>(family.getValue().size());
 
           // Get previous values for all columns in this family
           Get get = new Get(row);
-          for (Map.Entry<byte [], Long> column : family.getValue().entrySet()) {
-            get.addColumn(family.getKey(), column.getKey());
+          for (Cell cell: family.getValue()) {
+            KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
+            get.addColumn(family.getKey(), kv.getQualifier());
           }
           get.setTimeRange(tr.getMin(), tr.getMax());
           List<KeyValue> results = get(get, false);
@@ -4996,24 +5009,25 @@ public class HRegion implements HeapSize { // , Writable{
           // Iterate the input columns and update existing values if they were
           // found, otherwise add new column initialized to the increment amount
           int idx = 0;
-          for (Map.Entry<byte [], Long> column : family.getValue().entrySet()) {
-            long amount = column.getValue();
-            if (idx < results.size() &&
-                results.get(idx).matchingQualifier(column.getKey())) {
-              KeyValue kv = results.get(idx);
+          for (Cell cell: family.getValue()) {
+            KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
+            long amount = Bytes.toLong(kv.getValue());
+            byte [] qualifier = kv.getQualifier();
+            if (idx < results.size() && results.get(idx).matchingQualifier(qualifier)) {
+              kv = results.get(idx);
               if(kv.getValueLength() == Bytes.SIZEOF_LONG) {
                 amount += Bytes.toLong(kv.getBuffer(), kv.getValueOffset(), Bytes.SIZEOF_LONG);
               } else {
                 // throw DoNotRetryIOException instead of IllegalArgumentException
-                throw new DoNotRetryIOException(
+                throw new org.apache.hadoop.hbase.exceptions.DoNotRetryIOException(
                     "Attempted to increment field that isn't 64 bits wide");
               }
               idx++;
             }
 
             // Append new incremented KeyValue to list
-            KeyValue newKV = new KeyValue(row, family.getKey(), column.getKey(),
-                now, Bytes.toBytes(amount));
+            KeyValue newKV =
+              new KeyValue(row, family.getKey(), qualifier, now, Bytes.toBytes(amount));
             newKV.setMemstoreTS(w.getWriteNumber());
             kvs.add(newKV);
 
@@ -5048,7 +5062,8 @@ public class HRegion implements HeapSize { // , Writable{
             size += store.upsert(entry.getValue(), getSmallestReadPoint());
           } else {
             // otherwise keep older versions around
-            for (KeyValue kv : entry.getValue()) {
+            for (Cell cell : entry.getValue()) {
+              KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
               size += store.add(kv);
             }
           }
@@ -5439,7 +5454,7 @@ public class HRegion implements HeapSize { // , Writable{
    * Update counters for numer of puts without wal and the size of possible data loss.
    * These information are exposed by the region server metrics.
    */
-  private void recordPutWithoutWal(final Map<byte [], List<KeyValue>> familyMap) {
+  private void recordPutWithoutWal(final Map<byte [], List<? extends Cell>> familyMap) {
     numPutsWithoutWAL.increment();
     if (numPutsWithoutWAL.get() <= 1) {
       LOG.info("writing data to region " + this +
@@ -5447,8 +5462,9 @@ public class HRegion implements HeapSize { // , Writable{
     }
 
     long putSize = 0;
-    for (List<KeyValue> edits : familyMap.values()) {
-      for (KeyValue kv : edits) {
+    for (List<? extends Cell> cells: familyMap.values()) {
+      for (Cell cell : cells) {
+        KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
         putSize += kv.getKeyLength() + kv.getValueLength();
       }
     }

@@ -60,6 +60,15 @@
         </dependency>
         <dependency>
             <groupId>org.apache.hbase</groupId>
+            <artifactId>hbase-prefix-tree</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hbase</groupId>
+            <artifactId>hbase-common</artifactId>
+            <type>test-jar</type>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hbase</groupId>
             <artifactId>hbase-protocol</artifactId>
         </dependency>
         <!-- General dependencies -->
@@ -74,6 +83,10 @@
         <dependency>
             <groupId>org.cloudera.htrace</groupId>
             <artifactId>htrace</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty</artifactId>
         </dependency>
     </dependencies>
 

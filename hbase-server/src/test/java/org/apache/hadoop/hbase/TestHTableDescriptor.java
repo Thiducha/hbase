@@ -29,6 +29,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.coprocessor.BaseRegionObserver;
 import org.apache.hadoop.hbase.coprocessor.SampleRegionWALObserver;
+import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -42,7 +43,7 @@ public class TestHTableDescriptor {
 
   @Test
   public void testPb() throws DeserializationException, IOException {
-    HTableDescriptor htd = HTableDescriptor.META_TABLEDESC;
+    HTableDescriptor htd = new HTableDescriptor(HTableDescriptor.META_TABLEDESC);
     final int v = 123;
     htd.setMaxFileSize(v);
     htd.setDeferredLogFlush(true);

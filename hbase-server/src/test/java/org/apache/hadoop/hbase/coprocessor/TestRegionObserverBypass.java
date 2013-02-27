@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.KeyValue;
@@ -206,12 +207,10 @@ public class TestRegionObserverBypass {
     public void prePut(final ObserverContext<RegionCoprocessorEnvironment> e,
         final Put put, final WALEdit edit, final boolean writeToWAL)
         throws IOException {
-      Map<byte[], List<KeyValue>> familyMap = put.getFamilyMap();
+      Map<byte[], List<? extends Cell>> familyMap = put.getFamilyMap();
       if (familyMap.containsKey(test)) {
         e.bypass();
       }
     }
   }
-
 }
-
