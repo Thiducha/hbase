@@ -133,7 +133,11 @@ public abstract class ClusterManager extends Configured {
   /**
    * Simulate an unplug of a remote host. Always calls replug after!
    * Technically, this is implemented by configuring the firewall: all messages from this
-   *  hosts are discarded.
+   *  hosts are discarded locally. So the connection between this machine and the other will
+   *  still be possible. As a consequence, it's not possible to simulate all failure. As well,
+   *  obviously, the services are still running on the remote computer and will need to be stopped
+   *  at the end of the test. Lastly, it's mandatory to replug {@link #replug(String)} at then end
+   *  of the test, if not the machine won't be accessible.
    */
   public abstract void unplug(String hostname) throws Exception;
 

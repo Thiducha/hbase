@@ -38,7 +38,7 @@ public class IntegrationTestRecoveryEmptyTableCleanStopBox
 
   @Override
   protected void validate(long failureDetectedTime, long failureFixedTime ){
-    Assert.assertTrue(failureDetectedTime < 20000);
-    Assert.assertTrue(failureFixedTime < 20000);
+    Assert.assertTrue(failureDetectedTime < getMttrSmallTime());
+    Assert.assertTrue(failureFixedTime < getMttrSmallTime());
   }
 }

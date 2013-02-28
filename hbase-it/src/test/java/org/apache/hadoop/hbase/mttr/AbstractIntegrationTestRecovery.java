@@ -75,6 +75,12 @@ import java.io.IOException;
  */
 
 public abstract class AbstractIntegrationTestRecovery {
+  public static final String MTTR_SMALL_TIME_KEY = "hbase-it.mttr.small.time";
+  public static final long MTTR_SMALL_TIME_DEFAULT = 20000;
+
+  public static final String MTTR_LARGE_TIME_KEY = "hbase-it.mttr.large.time";
+  public static final long MTTR_LARGE_TIME_DEFAULT = 10000000;
+
   protected String mainBox = ClusterManager.getEnvNotNull("HBASE_IT_BOX_0");
   protected String willDieBox = ClusterManager.getEnvNotNull("HBASE_IT_BOX_1");
   protected String willSurviveBox = ClusterManager.getEnvNotNull("HBASE_IT_BOX_2");
@@ -202,11 +208,21 @@ public abstract class AbstractIntegrationTestRecovery {
     // Now we have 2 region servers and 4 datanodes.
   }
 
+
+  public long getMttrSmallTime(){
+    return hcm.getConf().getLong(MTTR_SMALL_TIME_KEY, MTTR_SMALL_TIME_DEFAULT);
+  }
+
+  public long getMttrLargeTime(){
+    return hcm.getConf().getLong(MTTR_LARGE_TIME_KEY, MTTR_LARGE_TIME_DEFAULT);
+  }
+
+
   /**
    * Kills all processes and delete the data dir. It's often better to not do that, as it allows
    * inspecting the cluster manually if something is strange.
    */
-  private void genericStop() throws IOException {
+  protected void genericStop() throws IOException {
     hcm.killAllServices(mainBox);
     hcm.killAllServices(willDieBox);
     hcm.killAllServices(willSurviveBox);
@@ -335,7 +351,6 @@ public abstract class AbstractIntegrationTestRecovery {
    */
   protected void beforeKill() throws Exception {
   }
-
 
   /**
    * Called just after the kill.

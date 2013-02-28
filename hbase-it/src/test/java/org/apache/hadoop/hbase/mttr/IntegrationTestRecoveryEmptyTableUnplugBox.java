@@ -39,6 +39,6 @@ public class IntegrationTestRecoveryEmptyTableUnplugBox
 
   @Override
   protected void validate(long failureDetectedTime, long failureFixedTime ){
-    Assert.assertTrue(failureFixedTime < 20000);
+    Assert.assertTrue(failureFixedTime < getMttrSmallTime());
   }
 }

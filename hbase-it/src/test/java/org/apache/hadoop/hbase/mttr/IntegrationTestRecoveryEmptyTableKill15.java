@@ -39,7 +39,9 @@ public class IntegrationTestRecoveryEmptyTableKill15 extends AbstractIntegration
 
   @Override
   protected void validate(long failureDetectedTime, long failureFixedTime) {
-    Assert.assertTrue("failureDetectedTime=" + failureDetectedTime, failureDetectedTime < 20000);
-    Assert.assertTrue("failureFixedTime=" + failureFixedTime, failureFixedTime < 20000);
+    Assert.assertTrue("failureDetectedTime=" + failureDetectedTime,
+        failureDetectedTime < getMttrSmallTime());
+    Assert.assertTrue("failureFixedTime=" + failureFixedTime,
+        failureFixedTime < getMttrSmallTime());
   }
 }

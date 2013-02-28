@@ -94,6 +94,8 @@ public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestR
 
     long getTime = (endGetTime - startGetTime);
 
-    Assert.assertTrue(getTime < zkTimeout + 30000); // i.e. we didn't wait for the socket timeout
+    // We didn't wait for the socket timeout
+    Assert.assertTrue(getTime < zkTimeout + getMttrSmallTime());
+
   }
 }
