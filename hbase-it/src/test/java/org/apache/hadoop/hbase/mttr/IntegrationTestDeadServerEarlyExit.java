@@ -32,7 +32,7 @@ import java.io.IOException;
 
 /**
  * Test the fix for HBASE-7590: we expect the client to see immediately that the region server
- *  is dead because of the notification from the master.
+ * is dead because of the notification from the master.
  */
 public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestRecovery {
   private int zkTimeout;
@@ -45,7 +45,6 @@ public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestR
   protected void kill(String hostname) throws Exception {
     hcm.unplug(hostname);
   }
-
 
 
   @Override
@@ -64,7 +63,7 @@ public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestR
     // We create a connection that we will use after the kill. This connection will contain
     //  a socket to the dead server, this way we will have a read timeout and not a connect timeout
     // (the connect timeout being usually much smaller than the read one).
-    Assert.assertNotNull(HConnectionManager.getConnection(conf)) ;
+    Assert.assertNotNull(HConnectionManager.getConnection(conf));
     h = new HTable(conf, tableName);
 
     Put p = new Put(row);
@@ -95,7 +94,6 @@ public class IntegrationTestDeadServerEarlyExit extends AbstractIntegrationTestR
     long getTime = (endGetTime - startGetTime);
 
     // We didn't wait for the socket timeout
-    Assert.assertTrue(getTime < zkTimeout + getMttrSmallTime());
-
+    performanceChecker.logAndCheck(getTime, zkTimeout + getMttrSmallTime());
   }
 }

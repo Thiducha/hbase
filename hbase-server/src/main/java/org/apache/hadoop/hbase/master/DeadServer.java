@@ -74,7 +74,7 @@ public class DeadServer {
   }
 
   /**
-   * @param serverName server name.s
+   * @param serverName server name.
    * @return true if this server is on the dead servers list false otherwise
    */
   public synchronized boolean isDeadServer(final ServerName serverName) {

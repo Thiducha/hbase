@@ -21,7 +21,6 @@ package org.apache.hadoop.hbase.mttr;
 
 import org.apache.hadoop.hbase.ClusterManager;
 import org.apache.hadoop.hbase.IntegrationTests;
-import org.junit.Assert;
 import org.junit.experimental.categories.Category;
 
 /**
@@ -37,8 +36,8 @@ public class IntegrationTestRecoveryEmptyTableCleanStopBox
   }
 
   @Override
-  protected void validate(long failureDetectedTime, long failureFixedTime ){
-    Assert.assertTrue(failureDetectedTime < getMttrSmallTime());
-    Assert.assertTrue(failureFixedTime < getMttrSmallTime());
+  protected void validate(long failureDetectedTime, long failureFixedTime) {
+    performanceChecker.logAndCheck(failureDetectedTime, getMttrSmallTime());
+    performanceChecker.logAndCheck(failureFixedTime, getMttrSmallTime());
   }
 }

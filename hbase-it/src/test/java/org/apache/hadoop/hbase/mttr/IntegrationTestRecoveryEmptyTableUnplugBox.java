@@ -19,13 +19,12 @@
 package org.apache.hadoop.hbase.mttr;
 
 import org.apache.hadoop.hbase.IntegrationTests;
-import org.junit.Assert;
 import org.junit.experimental.categories.Category;
 
 /**
  * When we unplug a box, we rely on the ZK timeout. So the recovery time will be roughly the
- *  ZK time + split time + assignment time. Here, the table is empty and there are just a
- *  small number of region, so we expect the recovery time to equals the ZK time.
+ * ZK time + split time + assignment time. Here, the table is empty and there are just a
+ * small number of region, so we expect the recovery time to equals the ZK time.
  */
 @Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableUnplugBox
@@ -38,7 +37,7 @@ public class IntegrationTestRecoveryEmptyTableUnplugBox
   }
 
   @Override
-  protected void validate(long failureDetectedTime, long failureFixedTime ){
-    Assert.assertTrue(failureFixedTime < getMttrSmallTime());
+  protected void validate(long failureDetectedTime, long failureFixedTime) {
+    performanceChecker.logAndCheck(failureFixedTime, getMttrSmallTime());
   }
 }

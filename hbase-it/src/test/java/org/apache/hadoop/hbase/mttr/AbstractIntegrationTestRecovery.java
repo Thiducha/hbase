@@ -31,6 +31,7 @@ import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.IntegrationTestingUtility;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
+import org.apache.hadoop.hbase.util.PerformanceChecker;
 import org.apache.hadoop.hbase.util.RegionSplitter;
 import org.junit.Assert;
 import org.junit.BeforeClass;
@@ -68,10 +69,10 @@ import java.io.IOException;
  * HADOOP_CONF_DIR
  * <p></p>
  * The boxes are defined with the following env variables:
- * HBASE_IT_MAIN_BOX
- * HBASE_IT_WILLDIE_BOX
- * HBASE_IT_WILLSURVIVE_BOX
- * HBASE_IT_LATE_BOX
+ * HBASE_IT_BOX_0
+ * HBASE_IT_BOX_1
+ * HBASE_IT_BOX_2
+ * HBASE_IT_BOX_3
  */
 
 public abstract class AbstractIntegrationTestRecovery {
@@ -87,7 +88,7 @@ public abstract class AbstractIntegrationTestRecovery {
   protected String lateBox = ClusterManager.getEnvNotNull("HBASE_IT_BOX_3");
 
   protected static final Log LOG
-    = LogFactory.getLog(AbstractIntegrationTestRecovery.class);
+      = LogFactory.getLog(AbstractIntegrationTestRecovery.class);
   protected final String tableName = this.getClass().getName();
   protected static final String COLUMN_NAME = "f";
   protected final int regionCount;
@@ -96,6 +97,8 @@ public abstract class AbstractIntegrationTestRecovery {
   protected static IntegrationTestingUtility util;
   protected HBaseCluster dhc;
   protected ClusterManager hcm;
+  protected static PerformanceChecker performanceChecker;
+
 
   AbstractIntegrationTestRecovery() {
     regionCount = 10;
@@ -114,6 +117,8 @@ public abstract class AbstractIntegrationTestRecovery {
 
     IntegrationTestingUtility.setUseDistributedCluster(c);
     util = new IntegrationTestingUtility(c);
+
+    performanceChecker = new PerformanceChecker(c);
   }
 
   private void createTable() throws Exception {
@@ -149,7 +154,7 @@ public abstract class AbstractIntegrationTestRecovery {
   protected void genericStart() throws Exception {
     // Initialize an empty cluster. We will start all services where we want to start them.
     util.initializeCluster(0);
-    dhc =  util.getHBaseClusterInterface();
+    dhc = util.getHBaseClusterInterface();
     hcm = util.createClusterManager();
 
     // In case we stopped the previous test while is was not connected
@@ -160,8 +165,6 @@ public abstract class AbstractIntegrationTestRecovery {
     hcm.checkAccessible(willSurviveBox);
     hcm.checkAccessible(lateBox);
 
-    // locally, you(re suppose to do the work yourself between the tests
-    //  that's because you may have multiple java process on the main box.
     hcm.killAllServices(mainBox);
     hcm.killAllServices(willDieBox);
     hcm.killAllServices(willSurviveBox);
@@ -172,13 +175,13 @@ public abstract class AbstractIntegrationTestRecovery {
     hcm.rmHDFSDataDir(willSurviveBox);
     hcm.rmHDFSDataDir(lateBox);
 
-    // Let's start ZK immediately, it will initialize itself while the NN and the DN are starting
-    hcm.start(ClusterManager.ServiceType.ZOOKEEPER, mainBox);
-
     hcm.formatNameNode(mainBox); // synchronous
 
     hcm.start(ClusterManager.ServiceType.HADOOP_NAMENODE, mainBox);
     dhc.waitForNamenodeAvailable();
+
+    // Let's start ZK immediately, it will initialize itself while the NN and the DN are starting
+    hcm.start(ClusterManager.ServiceType.ZOOKEEPER, mainBox);
 
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willDieBox);
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willSurviveBox);
@@ -192,14 +195,14 @@ public abstract class AbstractIntegrationTestRecovery {
     // We want meta & root on the main server, so we start only one RS at the beginning
 
     while (!dhc.waitForActiveAndReadyMaster() ||
-      util.getHBaseAdmin().getClusterStatus().getRegionsCount() != 2) {
+        util.getHBaseAdmin().getClusterStatus().getRegionsCount() != 2) {
       Thread.sleep(200);
     }
 
     // No balance please
     util.getHBaseAdmin().setBalancerRunning(false, true);
 
-    // We can now start the second master
+    // We can now start the second rs
     hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, willDieBox);
     while (util.getHBaseAdmin().getClusterStatus().getServersSize() != 2) {
       Thread.sleep(200);
@@ -209,11 +212,11 @@ public abstract class AbstractIntegrationTestRecovery {
   }
 
 
-  public long getMttrSmallTime(){
+  public long getMttrSmallTime() {
     return hcm.getConf().getLong(MTTR_SMALL_TIME_KEY, MTTR_SMALL_TIME_DEFAULT);
   }
 
-  public long getMttrLargeTime(){
+  public long getMttrLargeTime() {
     return hcm.getConf().getLong(MTTR_LARGE_TIME_KEY, MTTR_LARGE_TIME_DEFAULT);
   }
 

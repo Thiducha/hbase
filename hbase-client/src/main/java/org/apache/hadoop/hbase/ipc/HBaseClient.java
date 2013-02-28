@@ -1357,10 +1357,10 @@ public class HBaseClient {
             connection.getRemoteAddress().getPort() == port &&
             connection.getRemoteAddress().getHostName().equals(hostname)) {
           LOG.info("The server on " + hostname + ":" + port +
-              " is dead - stopping " + connection.remoteId);
+              " is dead - stopping the connection " + connection.remoteId);
           connection.closeConnection();
-          // We could do a connection.interrupt();, but it's safer not to do it, as the
-          //  interrupted exception behavior is not defined not enforced enough.
+          // We could do a connection.interrupt(), but it's safer not to do it, as the
+          //  interrupted exception behavior is not defined nor enforced enough.
         }
       }
     }

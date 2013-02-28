@@ -42,7 +42,7 @@ public class IntegrationTestRecoveryWALFewRegionsKill15 extends AbstractIntegrat
 
     @Override
     public byte[] getDeterministicUniqueKey(long keyBase) {
-      return new byte[0];  //To change body of implemented methods use File | Settings | File Templates.
+      return new byte[0];
     }
 
     @Override

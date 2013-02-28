@@ -32,6 +32,10 @@ mkdir -p ~/tmp-recotest
 rm -rf ~/tmp-recotest/data
 rm -rf ~/tmp-recotest/hbase/logs/*
 
+# We need to rm the previous lib dir in case the dependencies changed
+rm -rf ~/tmp-recotest/hbase/lib
+
+
 echo "updating the local tmp-recotest with hdfs & hbase dirs content"
 rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude classes --exclude test-classes --exclude 'hbase/hbase-*' --exclude '*.jar' --exclude '.idea'
 rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude classes --exclude test-classes  --exclude '*.html' --exclude '*-sources.jar'  --exclude '.idea'
@@ -52,14 +56,12 @@ sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/hbase-site.xml > $
 
 echo "Copying the libs we need locally"
 mkdir -p ~/tmp-recotest/hbase
-
-# We need to rm the previous lib dir in case the dependencies changed
-rm -rf ~/tmp-recotest/hbase/lib
 mkdir -p ~/tmp-recotest/hbase/lib
 
+
 for LIB in `cat $ORIG_HBASE_DIR/target/cached_classpath.txt | tr ':' '\n' `
- do
- cp $LIB ~/tmp-recotest/hbase/lib
+do
+  cp $LIB ~/tmp-recotest/hbase/lib
 done
 
 

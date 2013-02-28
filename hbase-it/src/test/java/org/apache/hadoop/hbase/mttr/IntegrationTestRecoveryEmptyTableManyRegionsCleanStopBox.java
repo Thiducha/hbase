@@ -28,7 +28,7 @@ import org.junit.experimental.categories.Category;
 public class IntegrationTestRecoveryEmptyTableManyRegionsCleanStopBox
     extends AbstractIntegrationTestRecovery {
 
-  public IntegrationTestRecoveryEmptyTableManyRegionsCleanStopBox(){
+  public IntegrationTestRecoveryEmptyTableManyRegionsCleanStopBox() {
     super(1000);
   }
 
@@ -38,8 +38,8 @@ public class IntegrationTestRecoveryEmptyTableManyRegionsCleanStopBox
   }
 
   @Override
-  protected void validate(long failureDetectedTime, long failureFixedTime ){
-    Assert.assertTrue(failureDetectedTime < getMttrSmallTime());
-    Assert.assertTrue(failureFixedTime <  getMttrLargeTime());
+  protected void validate(long failureDetectedTime, long failureFixedTime) {
+    performanceChecker.logAndCheck(failureDetectedTime, getMttrSmallTime());
+    performanceChecker.logAndCheck(failureFixedTime, getMttrLargeTime());
   }
 }

@@ -235,12 +235,16 @@ public class DistributedHBaseCluster extends HBaseCluster {
 
   @Override
   public void waitForNamenodeAvailable() throws InterruptedException {
+    int nbLoop = 0;
     boolean ok = false;
     do {
       try {
         DistributedFileSystem fs = (DistributedFileSystem) FileSystem.get(conf);
         ok = (fs.getContentSummary(new Path("/")) != null);
-      } catch (IOException ignored) {
+      } catch (IOException e) {
+        if (++nbLoop % 50 == 0){
+          LOG.info("Waiting for the namenode, current message is " + e.getMessage());
+        }
         Thread.sleep(200);
       }
 

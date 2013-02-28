@@ -19,7 +19,6 @@
 package org.apache.hadoop.hbase.mttr;
 
 import org.apache.hadoop.hbase.IntegrationTests;
-import org.junit.Assert;
 import org.junit.experimental.categories.Category;
 
 /**
@@ -29,7 +28,7 @@ import org.junit.experimental.categories.Category;
 public class IntegrationTestRecoveryEmptyTableManyRegionsUnplugBox
     extends AbstractIntegrationTestRecovery {
 
-  public IntegrationTestRecoveryEmptyTableManyRegionsUnplugBox(){
+  public IntegrationTestRecoveryEmptyTableManyRegionsUnplugBox() {
     super(1000);
   }
 
@@ -40,7 +39,7 @@ public class IntegrationTestRecoveryEmptyTableManyRegionsUnplugBox
 
 
   @Override
-  protected void validate(long failureDetectedTime, long failureFixedTime ){
-    Assert.assertTrue(failureFixedTime < getMttrLargeTime());
+  protected void validate(long failureDetectedTime, long failureFixedTime) {
+    performanceChecker.logAndCheck(failureFixedTime, getMttrLargeTime());
   }
 }

@@ -148,7 +148,7 @@ public class HBaseClusterManager extends ClusterManager {
    */
   public static Configuration createHBaseConfiguration() {
     Configuration c = new Configuration(false);
-    c.clear();
+    //c.clear();
 
     c.addResource(HBaseShellCommandProvider.getConfFile("core-site.xml"));
     c.addResource(HBaseShellCommandProvider.getConfFile("hbase-site.xml"));
@@ -162,7 +162,7 @@ public class HBaseClusterManager extends ClusterManager {
   static class HBaseShellCommandProvider extends CommandProvider {
 
     private static URL getConfFile(String file) {
-      File cf = new File(getConfigDir() + File.separator + file);
+      File cf = new File(getConfigDir(), file);
 
       assert cf.exists() : cf.getName() + " does not exist.";
       assert cf.canRead() : cf.getName() + " exists but cannot be read.";
@@ -184,7 +184,7 @@ public class HBaseClusterManager extends ClusterManager {
         return System.getenv("HBASE_CONFIG_HOME");
       }
 
-      return getHBaseHome() + Path.SEPARATOR + "conf";
+      return new File(getHBaseHome(), "conf").getAbsolutePath();
     }
 
     /**
@@ -241,11 +241,11 @@ public class HBaseClusterManager extends ClusterManager {
       }
 
       if (isHadoopOne()) {
-        return getHadoopHome() + Path.SEPARATOR + "build/hadoop-" +
+        return getHadoopHome() + "/build/hadoop-" +
             getHadoopVersion();
       } else {
-        return getHadoopHome() + Path.SEPARATOR +
-            "hadoop-common-project/hadoop-common/target/hadoop-common-" +
+        return getHadoopHome() +
+            "/hadoop-common-project/hadoop-common/target/hadoop-common-" +
             getHadoopVersion();
       }
     }
@@ -258,7 +258,7 @@ public class HBaseClusterManager extends ClusterManager {
       if (isHadoopOne()) {
         return getHadoopCommonHome();
       } else {
-        return getHadoopHome() + Path.SEPARATOR +
+        return getHadoopHome() +
             "/hadoop-hdfs-project/hadoop-hdfs/target/hadoop-hdfs-" + getHadoopVersion();
       }
     }
@@ -271,7 +271,6 @@ public class HBaseClusterManager extends ClusterManager {
     public String getCommand(ServiceType service, String op) {
       String cmd = "";
       cmd += "export JAVA_HOME=" + getJavaHome() + ";";
-      cmd += "export HADOOP_SSH_OPTS='-A';";
       cmd += "export HADOOP_COMMON_HOME=" + getHadoopCommonHome() + ";";
       cmd += "export HADOOP_VERSION=" + getHadoopVersion() + ";";
       cmd += "export HADOOP_HDFS_HOME=" + getHDFSHome() + ";";
@@ -327,7 +326,8 @@ public class HBaseClusterManager extends ClusterManager {
     Thread t = new Thread() {
       public void run() {
         try {
-          exec(hostname, cmd);
+          Pair<Integer, String> res = exec(hostname, cmd);
+          LOG.info("Returning from async command, exit code:" + res.getFirst());
         } catch (IOException e) {
           throw new RuntimeException(e);
         }
@@ -337,7 +337,8 @@ public class HBaseClusterManager extends ClusterManager {
   }
 
   private void exec(String hostname, ServiceType service, Operation op) throws IOException {
-    if (service.getName().equals("namenode") || service.getName().equals("datanode")) {
+    if (service.getName().equalsIgnoreCase("namenode") ||
+        service.getName().equalsIgnoreCase("datanode")) {
       execAsync(hostname, getCommandProvider(service).getCommand(service, op));
     } else {
       exec(hostname, getCommandProvider(service).getCommand(service, op));
