@@ -4,6 +4,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
+import org.apache.hadoop.hbase.client.HConnectionManager;
 import org.apache.hadoop.hbase.util.PerformanceChecker;
 import org.apache.hadoop.hbase.util.RegionSplitter;
 import org.junit.Assert;
@@ -33,14 +34,12 @@ public class IntegrationTestStartStop {
   protected static PerformanceChecker performanceChecker;
   protected final String tableName = this.getClass().getName();
   protected static final String COLUMN_NAME = "f";
-  private int regionCount = 50;
+  private int regionCount;
 
   @BeforeClass
   public static void setUp() throws Exception {
     Configuration c = HBaseClusterManager.createHBaseConfiguration();
-
     Assert.assertTrue(c.getBoolean("hbase.cluster.distributed", false));
-
     IntegrationTestingUtility.setUseDistributedCluster(c);
     util = new IntegrationTestingUtility(c);
     performanceChecker = new PerformanceChecker(util.getConfiguration());
@@ -59,6 +58,8 @@ public class IntegrationTestStartStop {
     admin.createTable(desc, splits);
 
     while (util.getHBaseAdmin().getClusterStatus().getRegionsCount() != regionCount + 2) {
+      LOG.info("Region count = " + util.getHBaseAdmin().getClusterStatus().getRegionsCount() +
+          " on " + regionCount + 2);
       Thread.sleep(1000);
     }
     waitForNoTransition();
@@ -104,6 +105,8 @@ public class IntegrationTestStartStop {
 
     hcm.checkAccessible(mainBox);
     hcm.killAllServices(mainBox);
+    hcm.rmHDFSDataDir(mainBox);
+
     for (String box : boxes) {
       hcm.checkAccessible(box);
       hcm.killAllServices(box);
@@ -139,30 +142,44 @@ public class IntegrationTestStartStop {
     for (String box : boxes) {
       hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, box);
     }
-    while (util.getHBaseAdmin().getClusterStatus().getServersSize() != boxes.size()) {
+    LOG.info("Waiting for the master to be up");
+    dhc.waitForActiveAndReadyMaster();
+
+    LOG.info("Waiting for meta & root regions to be online");
+    while (!dhc.waitForActiveAndReadyMaster() ||
+        util.getHBaseAdmin().getClusterStatus().getRegionsCount() != 2) {
       Thread.sleep(200);
     }
+
+    while (util.getHBaseAdmin().getClusterStatus().getServersSize() != boxes.size()) {
+      LOG.info("Waiting for the region servers, got " +
+          util.getHBaseAdmin().getClusterStatus().getServersSize() + " on " + boxes.size());
+      Thread.sleep(2000);
+    }
+    LOG.info("Got all RS, now waiting for an empty RIT");
     waitForNoTransition();
   }
 
-  private void waitForRegionServerDead() throws InterruptedException {
+  private void waitForHBaseServersDeath() throws Exception {
     long waitTime = 60 * 1000 * 5;
     long startTime = System.currentTimeMillis();
-    int rsport = util.getConfiguration().getInt("hbase.regionserver.port", 60020);
+    HConnectionManager.createConnection(hcm.getConf()).close();
+    HConnectionManager.createConnection(dhc.getConf()).close();
     for (String box : boxes) {
-      while (ClusterManager.isReachablePort(box, rsport)) {
-        performanceChecker.check(System.currentTimeMillis(), startTime + waitTime);
-        Thread.sleep(400);
+      while (hcm.isRunning(ClusterManager.ServiceType.HBASE_REGIONSERVER, box)) {
+        LOG.info("Waiting for rs on " + box + " to die");
+        performanceChecker.check(System.currentTimeMillis() - startTime,  waitTime);
+        Thread.sleep(2000);
       }
     }
 
     int masterPort = util.getConfiguration().getInt("hbase.master.port", 60000);
-    while (ClusterManager.isReachablePort(mainBox, masterPort)) {
-      performanceChecker.check(System.currentTimeMillis(), startTime + waitTime);
-      Thread.sleep(400);
+    while (hcm.isRunning(ClusterManager.ServiceType.HBASE_MASTER, mainBox)) {
+      LOG.info("Waiting for master on " + mainBox + " to die");
+      performanceChecker.check(System.currentTimeMillis() - startTime,  waitTime);
+      Thread.sleep(2000);
     }
   }
-
 
   @Test
   public void testStartStop() throws Exception {
@@ -173,12 +190,18 @@ public class IntegrationTestStartStop {
     startHBase();
     createTable();
     util.getHBaseAdmin().shutdown();
+    waitForHBaseServersDeath();
 
+    // Then the iterations
     for (int i = 0; i < 100; i++) {
+      LOG.info("start stop iteration " + i + " starting hbase");
       startHBase();
-      util.getHBaseAdmin().shutdown();
+      LOG.info("start stop iteration " + i + " hbase started, doing something it");
       doSomething();
-      waitForRegionServerDead();
+      LOG.info("start stop iteration " + i + " hbase started, stopping it");
+      util.getHBaseAdmin().shutdown();
+      LOG.info("start stop iteration " + i + " hbase shutdown done, waiting for servers to stop");
+      waitForHBaseServersDeath();
     }
 
     genericStop();

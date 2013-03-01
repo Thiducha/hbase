@@ -26,7 +26,7 @@ import org.junit.Assert;
 
 /**
  * Logs performance related messages. Offer a configurable assert, allowing to continue even if a
- *  condition is not met.
+ * condition is not met.
  */
 public class PerformanceChecker {
   /**
@@ -34,19 +34,19 @@ public class PerformanceChecker {
    */
   public static final Log LOG = LogFactory.getLog(PerformanceChecker.class);
 
-  private  boolean stopOnError;
+  private boolean stopOnError;
 
-  public void logAndCheck(long expected, long actual){
+  public void logAndCheck(long actual, long expected) {
     logAndCheck(null, expected, actual);
   }
 
-  public PerformanceChecker(Configuration conf){
+  public PerformanceChecker(Configuration conf) {
     stopOnError = conf.getBoolean("hbase-it.stop.on.error", true);
   }
 
-  public void logAndCheck(String msg, long expected, long actual){
+  public void logAndCheck(String msg, long actual, long expected) {
     boolean ok = actual <= expected;
-    String fullMsg = (msg == null ? ""  : msg + ", ") +
+    String fullMsg = (msg == null ? "" : msg + ", ") +
         " expected=" + expected + ", actual=" + actual + ", ok=" + ok;
     LOG.info(fullMsg);
     if (stopOnError) {
@@ -57,9 +57,9 @@ public class PerformanceChecker {
   /**
    * Log only if the condition is not met.
    */
-  public void check(long expected, long actual) {
-    if (expected > actual){
-      logAndCheck(null, expected, actual);
+  public void check(long actual, long expected) {
+    if (actual > expected) {
+      logAndCheck(null, actual, expected);
     }
   }
 }

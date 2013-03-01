@@ -18,20 +18,19 @@
 
 package org.apache.hadoop.hbase;
 
+import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.classification.InterfaceAudience;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HBaseClusterManager.CommandProvider.Operation;
+import org.apache.hadoop.hbase.util.Pair;
+import org.apache.hadoop.util.Shell;
+import org.junit.Assert;
+
 import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Map;
-
-import org.apache.hadoop.conf.Configuration;
-import org.junit.Assert;
-import org.apache.commons.lang.StringUtils;
-import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.HBaseClusterManager.CommandProvider.Operation;
-import org.apache.hadoop.hbase.util.Pair;
-import org.apache.hadoop.util.Shell;
 
 /**
  * A default cluster manager for HBase. Uses SSH, and hbase shell scripts
@@ -147,9 +146,7 @@ public class HBaseClusterManager extends ClusterManager {
    * Create a configuration object from the configuration files in the HBASE_HOME_CONFIG
    */
   public static Configuration createHBaseConfiguration() {
-    Configuration c = new Configuration(false);
-    //c.clear();
-
+    Configuration c = HBaseConfiguration.create();
     c.addResource(HBaseShellCommandProvider.getConfFile("core-site.xml"));
     c.addResource(HBaseShellCommandProvider.getConfFile("hbase-site.xml"));
 

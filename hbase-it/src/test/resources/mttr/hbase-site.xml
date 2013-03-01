@@ -14,8 +14,14 @@
   </property>
 
   <property>
+    <name>hbase.zookeeper.property.clientPort</name>
+    <value>2181</value>
+  </property>
+
+  <property>
     <name>hbase.zookeeper.property.dataDir</name>
-    <value>/tmp/${user.name}/mttr-test-data/zookeeper</value>   <!-- subdir of hdfs data dir to have deleted -->
+    <value>/tmp/${user.name}/mttr-test-data/zookeeper</value>
+    <!-- subdir of hdfs data dir to have deleted -->
   </property>
 
   <property>
@@ -25,7 +31,7 @@
 
   <property>
     <name>hbase.rootdir</name>
-    <value>hdfs://HBASE_IT_BOX_0:9000/hbase</value>
+    <value>hdfs://HBASE_IT_BOX_0/hbase</value>
   </property>
 
   <property>

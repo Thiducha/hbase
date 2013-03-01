@@ -22,7 +22,10 @@ package org.apache.hadoop.hbase.mttr;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.ClusterManager;
+import org.apache.hadoop.hbase.DistributedHBaseCluster;
 import org.apache.hadoop.hbase.HBaseCluster;
 import org.apache.hadoop.hbase.HBaseClusterManager;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -33,6 +36,7 @@ import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.util.PerformanceChecker;
 import org.apache.hadoop.hbase.util.RegionSplitter;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -175,13 +179,12 @@ public abstract class AbstractIntegrationTestRecovery {
     hcm.rmHDFSDataDir(willSurviveBox);
     hcm.rmHDFSDataDir(lateBox);
 
-    hcm.formatNameNode(mainBox); // synchronous
-
-    hcm.start(ClusterManager.ServiceType.HADOOP_NAMENODE, mainBox);
-    dhc.waitForNamenodeAvailable();
-
     // Let's start ZK immediately, it will initialize itself while the NN and the DN are starting
     hcm.start(ClusterManager.ServiceType.ZOOKEEPER, mainBox);
+
+    hcm.formatNameNode(mainBox); // synchronous
+    hcm.start(ClusterManager.ServiceType.HADOOP_NAMENODE, mainBox);
+    dhc.waitForNamenodeAvailable();
 
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willDieBox);
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willSurviveBox);
@@ -189,8 +192,8 @@ public abstract class AbstractIntegrationTestRecovery {
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, lateBox);
     dhc.waitForDatanodesRegistered(4);
 
-
     hcm.start(ClusterManager.ServiceType.HBASE_MASTER, mainBox);
+
     hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, mainBox);
     // We want meta & root on the main server, so we start only one RS at the beginning
 
@@ -271,7 +274,7 @@ public abstract class AbstractIntegrationTestRecovery {
 
     createTable();
 
-    // now moving all the regions on the regionserver we're gonna kil
+    // now moving all the regions on the region server we're going to kill
     moveToSecondRSSync();
 
     beforeKill();

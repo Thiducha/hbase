@@ -22,7 +22,7 @@
   <parent>
     <artifactId>hbase</artifactId>
     <groupId>org.apache.hbase</groupId>
-    <version>${version}</version>
+    <version>0.97-SNAPSHOT</version>
     <relativePath>..</relativePath>
   </parent>
 
@@ -151,6 +151,12 @@
       <artifactId>hbase-server</artifactId>
       <type>test-jar</type>
       <scope>test</scope>
+    </dependency>
+
+
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-client</artifactId>
     </dependency>
     <!-- General dependencies -->
 

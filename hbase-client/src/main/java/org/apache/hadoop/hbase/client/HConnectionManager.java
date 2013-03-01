@@ -788,7 +788,7 @@ public class HConnectionManager {
             // tries at this point is 1 or more; decrement to start from 0.
             long pauseTime = ConnectionUtils.getPauseTime(this.pause, tries - 1);
             LOG.info("getMaster attempt " + tries + " of " + numRetries +
-              " failed; retrying after sleep of " +pauseTime, exceptionCaught);
+              " failed; retrying after sleep of " +pauseTime + ", exception=" + exceptionCaught);
 
             try {
               Thread.sleep(pauseTime);

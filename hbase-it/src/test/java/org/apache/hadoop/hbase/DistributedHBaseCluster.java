@@ -204,7 +204,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
       } catch (ZooKeeperConnectionException e) {
         LOG.warn("Failed to connect to ZK " + e);
       }
-      Threads.sleep(200);
+      Threads.sleep(1000);
     }
     return false;
   }
@@ -242,7 +242,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
         DistributedFileSystem fs = (DistributedFileSystem) FileSystem.get(conf);
         ok = (fs.getContentSummary(new Path("/")) != null);
       } catch (IOException e) {
-        if (++nbLoop % 50 == 0){
+        if (nbLoop++ % 50 == 0){
           LOG.info("Waiting for the namenode, current message is " + e.getMessage());
         }
         Thread.sleep(200);

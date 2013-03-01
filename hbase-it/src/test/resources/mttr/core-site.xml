@@ -4,12 +4,6 @@
 <configuration>
 
   <property>
-    <name>fs.hdfs.impl</name>
-    <value>org.apache.hadoop.hdfs.DistributedFileSystem</value>
-    <description>The FileSystem for hdfs: uris.</description>
-  </property>
-
-  <property>
     <name>hadoop.tmp.dir</name>
     <value>/tmp/${user.name}/mttr-test-data</value>
   </property>
