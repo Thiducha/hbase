@@ -24,7 +24,7 @@
   <parent>
     <artifactId>hbase</artifactId>
     <groupId>org.apache.hbase</groupId>
-    <version>${version}</version>
+    <version>0.97-SNAPSHOT</version>
     <relativePath>..</relativePath>
   </parent>
 
@@ -44,42 +44,42 @@
     <dependency>
       <groupId>org.apache.hbase</groupId>
       <artifactId>hbase-client</artifactId>
-      <version>${version}</version>
+      <version>0.97-SNAPSHOT</version>
     </dependency>
     <dependency>
       <groupId>org.apache.hbase</groupId>
       <artifactId>hbase-common</artifactId>
-      <version>${version}</version>
+      <version>0.97-SNAPSHOT</version>
     </dependency>
     <dependency>
       <groupId>org.apache.hbase</groupId>
       <artifactId>hbase-examples</artifactId>
-      <version>${version}</version>
+      <version>0.97-SNAPSHOT</version>
     </dependency>
     <dependency>
       <groupId>org.apache.hbase</groupId>
       <artifactId>hbase-hadoop-compat</artifactId>
-      <version>${version}</version>
+      <version>0.97-SNAPSHOT</version>
     </dependency>
     <dependency>
       <groupId>org.apache.hbase</groupId>
       <artifactId>hbase-hadoop1-compat</artifactId>
-      <version>${version}</version>
+      <version>0.97-SNAPSHOT</version>
     </dependency>
     <dependency>
       <groupId>org.apache.hbase</groupId>
       <artifactId>hbase-server</artifactId>
-      <version>${version}</version>
+      <version>0.97-SNAPSHOT</version>
     </dependency>
     <dependency>
       <groupId>org.apache.hbase</groupId>
       <artifactId>hbase-protocol</artifactId>
-      <version>${version}</version>
+      <version>0.97-SNAPSHOT</version>
     </dependency>
     <dependency>
       <groupId>org.apache.hbase</groupId>
       <artifactId>hbase-prefix-tree</artifactId>
-      <version>${version}</version>
+      <version>0.97-SNAPSHOT</version>
     </dependency>
 
   </dependencies>
