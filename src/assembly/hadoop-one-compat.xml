@@ -38,15 +38,11 @@
       <!-- This should work with more than 1 source module -->
       <!-- For now, select which projects to include in this module-set. -->
       <includes>
-        <include>org.apache.hbase:hbase-server</include>
         <include>org.apache.hbase:hbase-common</include>
-        <include>org.apache.hbase:hbase-client</include>
+        <include>org.apache.hbase:hbase-hadoop-compat</include>
+        <include>org.apache.hbase:hbase-server</include>
+        <include>org.apache.hbase:hbase-hadoop1-compat</include>
         <include>org.apache.hbase:hbase-examples</include>
-        <include>org.apache.hbase:hbase-compat</include>
-        <include>org.apache.hbase:hbase-compat1</include>
-        <include>org.apache.hbase:hbase-it</include>
-        <include>org.apache.hbase:hbase-prefix-tree</include>
-        <include>org.apache.hbase:hbase-protocol</include>
       </includes>
       <!-- Include all the sources in the top directory -->
       <sources>
