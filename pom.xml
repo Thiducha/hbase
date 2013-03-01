@@ -59,6 +59,7 @@
     <module>hbase-it</module>
     <module>hbase-examples</module>
     <module>hbase-prefix-tree</module>
+    <module>hbase-distribution</module>
   </modules>
   <scm>
     <connection>scm:svn:http://svn.apache.org/repos/asf/hbase/trunk</connection>
@@ -666,20 +667,7 @@
     </pluginManagement>
     <plugins>
       <!-- hbase parent only plugins -->
-      <plugin>
-        <artifactId>maven-assembly-plugin</artifactId>
-        <version>${maven.assembly.version}</version>
-        <inherited>false</inherited>
-        <configuration>
-          <skipAssembly>false</skipAssembly>
-          <attach>false</attach>
-          <tarLongFileMode>gnu</tarLongFileMode>
-          <appendAssemblyId>false</appendAssemblyId>
-          <descriptors>
-            <descriptor>${assembly.file}</descriptor>
-          </descriptors>
-        </configuration>
-      </plugin>
+
        <!--The below plugins are about site generation.
             They are all marked as not to be in herited by child
             modules.  The plugins are meant to run here in the
