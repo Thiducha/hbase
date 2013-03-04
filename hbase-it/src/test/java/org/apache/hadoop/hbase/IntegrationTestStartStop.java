@@ -19,14 +19,11 @@ import java.util.List;
 /**
  * Check that we can stop a HBase cluster. We don't stop HDFS for this one.
  * We launch as many node as we can, then create a table, then loop on:
- * stop cluster
- * start cluster
- * do puts
+ * stop cluster / start cluster.
  */
 @Category(IntegrationTests.class)
 public class IntegrationTestStartStop {
-  protected static final Log LOG
-      = LogFactory.getLog(IntegrationTestStartStop.class);
+  protected static final Log LOG = LogFactory.getLog(IntegrationTestStartStop.class);
 
   protected static IntegrationTestingUtility util;
   protected HBaseCluster dhc;
@@ -35,6 +32,10 @@ public class IntegrationTestStartStop {
   protected final String tableName = this.getClass().getName();
   protected static final String COLUMN_NAME = "f";
   private int regionCount;
+
+
+  private String mainBox;
+  private final List<String> boxes = new ArrayList<String>();
 
   @BeforeClass
   public static void setUp() throws Exception {
@@ -66,7 +67,7 @@ public class IntegrationTestStartStop {
 
     endTime = System.currentTimeMillis();
 
-    LOG.info(String.format("Pre-split table created successfully in %dms.", (endTime - startTime)));
+    LOG.info("Pre-split table created successfully in {}ms" + (endTime - startTime));
   }
 
   private void waitForNoTransition() throws Exception {
@@ -77,8 +78,6 @@ public class IntegrationTestStartStop {
     }
   }
 
-  private String mainBox;
-  private final List<String> boxes = new ArrayList<String>();
 
   protected void setBoxes() {
     mainBox = System.getenv("HBASE_IT_BOX_0");
@@ -168,17 +167,17 @@ public class IntegrationTestStartStop {
     for (String box : boxes) {
       while (hcm.isRunning(ClusterManager.ServiceType.HBASE_REGIONSERVER, box)) {
         LOG.info("Waiting for rs on " + box + " to die");
-        performanceChecker.check(System.currentTimeMillis() - startTime,  waitTime);
+        performanceChecker.check(System.currentTimeMillis() - startTime, waitTime);
         Thread.sleep(2000);
       }
     }
 
-    int masterPort = util.getConfiguration().getInt("hbase.master.port", 60000);
     while (hcm.isRunning(ClusterManager.ServiceType.HBASE_MASTER, mainBox)) {
       LOG.info("Waiting for master on " + mainBox + " to die");
-      performanceChecker.check(System.currentTimeMillis() - startTime,  waitTime);
+      performanceChecker.check(System.currentTimeMillis() - startTime, waitTime);
       Thread.sleep(2000);
     }
+    performanceChecker.logAndCheck(System.currentTimeMillis() - startTime, waitTime);
   }
 
   @Test
@@ -209,7 +208,8 @@ public class IntegrationTestStartStop {
 
 
   /**
-   * Can be sublclassed if we want to create specific condition before stopping the cluster
+   * Can be overridden if we want to create specific conditions (split in progress, ...)
+   * before stopping the cluster
    */
   protected void doSomething() {
   }

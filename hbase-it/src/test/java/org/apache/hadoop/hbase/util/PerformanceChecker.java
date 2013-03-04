@@ -37,7 +37,7 @@ public class PerformanceChecker {
   private boolean stopOnError;
 
   public void logAndCheck(long actual, long expected) {
-    logAndCheck(null, expected, actual);
+    logAndCheck(null, actual, expected);
   }
 
   public PerformanceChecker(Configuration conf) {

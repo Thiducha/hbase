@@ -24,20 +24,30 @@ import org.apache.hadoop.hbase.IntegrationTests;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.MultiThreadedWriter;
 import org.apache.hadoop.hbase.util.test.LoadTestDataGenerator;
+import org.apache.hadoop.hbase.util.test.LoadTestKVGenerator;
 import org.junit.experimental.categories.Category;
 
 import java.io.IOException;
 import java.util.Random;
 import java.util.Set;
 
+/**
+ * Test the data recovery time. We're doing a kill -9, so the regions are not flushed. However, in
+ *  0.96, the failure should be detected immediately. Lastly, there is only 10 regions, so we're
+ *  no testing the assignment here.
+ */
 @Category(IntegrationTests.class)
-public class IntegrationTestRecoveryWALFewRegionsKill15 extends AbstractIntegrationTestRecovery {
+public class IntegrationTestRecoveryWALFewRegionsKill9 extends AbstractIntegrationTestRecovery {
+
+  public IntegrationTestRecoveryWALFewRegionsKill9(){
+    super(20);
+  }
 
   private static class DataGenerator extends LoadTestDataGenerator {
-    Random rd = new Random();
+    final private Random rd = new Random();
 
     public DataGenerator() {
-      super(1, 10000);
+      super(1, 1000);
     }
 
     @Override
@@ -52,14 +62,13 @@ public class IntegrationTestRecoveryWALFewRegionsKill15 extends AbstractIntegrat
 
     @Override
     public byte[][] generateColumnsForCf(byte[] rowKey, byte[] cf) {
-      int nb = rd.nextInt(10);
+      int nb = rd.nextInt(10) + 1;
       byte[][] res = new byte[nb][];
-
 
       for (int i = 0; i < nb; i++) {
         res[i] = (rd.nextDouble() + "").getBytes();
-
       }
+
       return res;
     }
 
@@ -86,14 +95,15 @@ public class IntegrationTestRecoveryWALFewRegionsKill15 extends AbstractIntegrat
         new MultiThreadedWriter(dataGen, util.getConfiguration(), Bytes.toBytes(tableName));
 
     writer.setMultiPut(true);
-
-    writer.start(1, 50000, 5);
+    LOG.info("Starting data insert");
+    writer.start(1, 150000, 5);
     writer.waitForFinish();
+    LOG.info("Data inserted");
   }
 
 
   @Override
   protected void kill(String willDieBox) throws Exception {
-    hcm.signal(ClusterManager.ServiceType.HBASE_REGIONSERVER, "TERM", willDieBox);
+    hcm.signal(ClusterManager.ServiceType.HBASE_REGIONSERVER, "KILL", willDieBox);
   }
 }

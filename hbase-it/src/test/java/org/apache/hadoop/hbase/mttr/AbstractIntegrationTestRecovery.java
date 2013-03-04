@@ -22,21 +22,20 @@ package org.apache.hadoop.hbase.mttr;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.ClusterManager;
-import org.apache.hadoop.hbase.DistributedHBaseCluster;
 import org.apache.hadoop.hbase.HBaseCluster;
 import org.apache.hadoop.hbase.HBaseClusterManager;
 import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.IntegrationTestingUtility;
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
+import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.util.PerformanceChecker;
 import org.apache.hadoop.hbase.util.RegionSplitter;
-import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -81,7 +80,7 @@ import java.io.IOException;
 
 public abstract class AbstractIntegrationTestRecovery {
   public static final String MTTR_SMALL_TIME_KEY = "hbase-it.mttr.small.time";
-  public static final long MTTR_SMALL_TIME_DEFAULT = 20000;
+  public static final long MTTR_SMALL_TIME_DEFAULT = 25000;
 
   public static final String MTTR_LARGE_TIME_KEY = "hbase-it.mttr.large.time";
   public static final long MTTR_LARGE_TIME_DEFAULT = 10000000;
@@ -93,7 +92,11 @@ public abstract class AbstractIntegrationTestRecovery {
 
   protected static final Log LOG
       = LogFactory.getLog(AbstractIntegrationTestRecovery.class);
-  protected final String tableName = this.getClass().getName();
+
+  /**
+   * Table used for the tests.
+   */
+  protected final String tableName = this.getClass().getSimpleName();
   protected static final String COLUMN_NAME = "f";
   protected final int regionCount;
 
@@ -104,11 +107,15 @@ public abstract class AbstractIntegrationTestRecovery {
   protected static PerformanceChecker performanceChecker;
 
 
-  AbstractIntegrationTestRecovery() {
-    regionCount = 10;
+  protected AbstractIntegrationTestRecovery() {
+    this(10);
   }
 
-  AbstractIntegrationTestRecovery(int regCount) {
+  /**
+   *
+   * @param regCount the number of regions of the table created.
+   */
+  protected AbstractIntegrationTestRecovery(int regCount) {
     regionCount = regCount;
   }
 
@@ -186,11 +193,10 @@ public abstract class AbstractIntegrationTestRecovery {
     hcm.start(ClusterManager.ServiceType.HADOOP_NAMENODE, mainBox);
     dhc.waitForNamenodeAvailable();
 
-    hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willDieBox);
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willSurviveBox);
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, mainBox);
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, lateBox);
-    dhc.waitForDatanodesRegistered(4);
+    dhc.waitForDatanodesRegistered(3);
 
     hcm.start(ClusterManager.ServiceType.HBASE_MASTER, mainBox);
 
@@ -211,7 +217,7 @@ public abstract class AbstractIntegrationTestRecovery {
       Thread.sleep(200);
     }
 
-    // Now we have 2 region servers and 4 datanodes.
+    // Now we have 2 region servers and 3 datanodes.
   }
 
 
@@ -269,10 +275,13 @@ public abstract class AbstractIntegrationTestRecovery {
   public void testKillRS() throws Exception {
     beforeStart();
     genericStart();
+    Configuration localConf = new Configuration(util.getConfiguration());
 
     HBaseAdmin admin = util.getHBaseAdmin();
 
     createTable();
+    localConf.setInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER, 1);
+    HTable htable = new HTable(localConf, tableName);
 
     // now moving all the regions on the region server we're going to kill
     moveToSecondRSSync();
@@ -302,44 +311,35 @@ public abstract class AbstractIntegrationTestRecovery {
         Thread.sleep(200);
       }
       failureDetectedTime = System.currentTimeMillis();
-
+      LOG.info("Detection took: " + (failureDetectedTime - startTime));
       afterDetection();
 
       // Now, how long does it take to recover?
-      boolean ok;
-      ServerName mainSN = dhc.getServerHoldingMeta();
+      boolean ok = false;
       do {
         waitForNoTransition();
-        ok = true;
-        for (HRegionInfo hri : admin.getTableRegions(tableName.getBytes())) {
-          try {
-            if (!dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
-              ok = false;
-              break;
-            }
-          } catch (IOException ignored) {
-            // It seems we can receive exceptions if the regionserver is dead...
-            ok = false;
-          }
+        LOG.info("Nothing in transition");
+        Get get = new Get("nothing".getBytes());
+        try {
+          htable.get(get);
+          ok = true;
+        } catch (Throwable ignored){
         }
       } while (!ok);
 
       failureFixedTime = System.currentTimeMillis();
+      LOG.info(("Failure fix took: " + (failureFixedTime - failureDetectedTime)));
 
       afterRecovery();
 
-    } finally
-
-    {
+    } finally {
       // If it was an unplug, we replug it now
+      htable.close();
       hcm.replug(willDieBox);
     }
 
-    LOG.info("Detection took: " + (failureDetectedTime - startTime));
-    LOG.info(("Failure fix took: " + (failureFixedTime - failureDetectedTime)));
 
     validate((failureDetectedTime - startTime), (failureFixedTime - failureDetectedTime));
-
   }
 
   /**

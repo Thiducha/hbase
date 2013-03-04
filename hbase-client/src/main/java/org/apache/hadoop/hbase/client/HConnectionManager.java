@@ -1279,8 +1279,7 @@ public class HConnectionManager {
       if ((rl != null) && LOG.isDebugEnabled()) {
         LOG.debug("Removed " + rl.getHostname() + ":" + rl.getPort()
           + " as a location of " + rl.getRegionInfo().getRegionNameAsString() +
-          " for tableName=" + Bytes.toString(tableName) +
-          " from cache to make sure we don't use cache for " + Bytes.toStringBinary(row));
+          " for tableName=" + Bytes.toString(tableName) + " from cache");
       }
     }
 

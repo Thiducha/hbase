@@ -24,6 +24,11 @@ import org.apache.hadoop.hbase.IntegrationTests;
 import org.junit.Assert;
 import org.junit.experimental.categories.Category;
 
+/**
+ * test the recovery time when we have a lot of empty regions. This shows the time spent in
+ *  assignment: the detection time is zero, as we're doing a clean stop, and the data recory time
+ *  is minimal as well as the table is empty.
+ */
 @Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableManyRegionsCleanStopBox
     extends AbstractIntegrationTestRecovery {
