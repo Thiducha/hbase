@@ -29,6 +29,7 @@ import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.protobuf.generated.ClusterStatusProtos;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Pair;
+import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.util.VersionInfo;
 import org.jboss.netty.bootstrap.ConnectionlessBootstrap;
 import org.jboss.netty.channel.Channels;
@@ -96,7 +97,9 @@ public class ClusterStatusPublisher extends Chore {
         HConstants.DEFAULT_STATUS_MULTICAST_PORT);
 
     // Can't be NiO with Netty today => not implemented in Netty.
-    DatagramChannelFactory f = new OioDatagramChannelFactory(Executors.newSingleThreadExecutor());
+
+    DatagramChannelFactory f = new OioDatagramChannelFactory(
+        Executors.newSingleThreadExecutor(Threads.newDaemonThreadFactory("hbase-clusterStatus")));
 
     ConnectionlessBootstrap b = new ConnectionlessBootstrap(f);
     b.setPipeline(Channels.pipeline(new ProtobufEncoder()));

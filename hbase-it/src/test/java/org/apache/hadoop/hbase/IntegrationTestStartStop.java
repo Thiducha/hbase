@@ -67,7 +67,7 @@ public class IntegrationTestStartStop {
 
     endTime = System.currentTimeMillis();
 
-    LOG.info("Pre-split table created successfully in {}ms" + (endTime - startTime));
+    LOG.info("Pre-split table created successfully in " + (endTime - startTime) +" ms");
   }
 
   private void waitForNoTransition() throws Exception {
@@ -188,6 +188,7 @@ public class IntegrationTestStartStop {
     // First start: we create the tables only
     startHBase();
     createTable();
+    for(int i=1;i<10; i++){ Thread.sleep(1000000L); }
     util.getHBaseAdmin().shutdown();
     waitForHBaseServersDeath();
 

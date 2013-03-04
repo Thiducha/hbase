@@ -151,7 +151,7 @@ public abstract class AbstractIntegrationTestRecovery {
 
     endTime = System.currentTimeMillis();
 
-    LOG.info(String.format("Pre-split table created successfully in %dms.", (endTime - startTime)));
+    LOG.info("Pre-split table created successfully in " + (endTime - startTime) + "ms");
   }
 
   private void waitForNoTransition() throws Exception {
