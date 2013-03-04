@@ -857,8 +857,6 @@
      </plugins>
   </build>
   <properties>
-    <!--Set version.  Shared by parent and sub modules-->
-    <version>0.97-SNAPSHOT</version>
     <tar.name>${project.build.finalName}.tar.gz</tar.name>
     <maven.build.timestamp.format>
       yyyy-MM-dd'T'HH:mm
