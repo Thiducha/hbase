@@ -819,6 +819,13 @@ public final class HConstants {
       "hbase.node.health.failure.threshold";
   public static final int DEFAULT_HEALTH_FAILURE_THRESHOLD = 3;
 
+
+  /**
+   * If we activate or not the timeout management. This feature is deprecated since 0.96
+   * and will be removed. Unactivated by default.
+   */
+  public static String ASSIGNMENT_TIMEOUT_MANAGEMENT = "hbase.assignment.timeout.management";
+
   private HConstants() {
     // Can't be instantiated with this ctor.
   }

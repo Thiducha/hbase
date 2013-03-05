@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.Server;
@@ -235,6 +236,8 @@ public class OpenRegionHandler extends EventHandler {
     PostOpenDeployTasksThread t = new PostOpenDeployTasksThread(r,
       this.server, this.rsServices, signaller);
     t.start();
+    boolean tomActivated = this.server.getConfiguration().
+        getBoolean(HConstants.ASSIGNMENT_TIMEOUT_MANAGEMENT, false);
     int assignmentTimeout = this.server.getConfiguration().
       getInt("hbase.master.assignment.timeoutmonitor.period", 10000);
     // Total timeout for meta edit.  If we fail adding the edit then close out
@@ -249,11 +252,13 @@ public class OpenRegionHandler extends EventHandler {
     boolean tickleOpening = true;
     while (!signaller.get() && t.isAlive() && !this.server.isStopped() &&
         !this.rsServices.isStopping() && (endTime > now)) {
-      long elapsed = now - lastUpdate;
-      if (elapsed > period) {
-        // Only tickle OPENING if postOpenDeployTasks is taking some time.
-        lastUpdate = now;
-        tickleOpening = tickleOpening("post_open_deploy");
+      if (tomActivated) {
+        long elapsed = now - lastUpdate;
+        if (elapsed > period) {
+          // Only tickle OPENING if postOpenDeployTasks is taking some time.
+          lastUpdate = now;
+          tickleOpening = tickleOpening("post_open_deploy");
+        }
       }
       synchronized (signaller) {
         try {
