@@ -245,9 +245,10 @@ public class AssignmentManager extends ZooKeeperListener {
   }
 
   void startTimeOutMonitor() {
-    assert tomActivated;
-    Threads.setDaemonThreadRunning(timeoutMonitor.getThread(), server.getServerName()
-        + ".timeoutMonitor");
+    if (tomActivated) {
+      Threads.setDaemonThreadRunning(timeoutMonitor.getThread(), server.getServerName()
+          + ".timeoutMonitor");
+    }
   }
 
   /**
