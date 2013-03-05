@@ -1227,8 +1227,9 @@ public class AssignmentManager extends ZooKeeperListener {
    * @param sn
    */
   private void addToServersInUpdatingTimer(final ServerName sn) {
-    assert tomActivated;
-    this.serversInUpdatingTimer.add(sn);
+    if (tomActivated){
+      this.serversInUpdatingTimer.add(sn);
+    }
   }
 
   /**
