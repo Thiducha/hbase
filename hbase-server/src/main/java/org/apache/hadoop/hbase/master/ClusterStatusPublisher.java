@@ -48,6 +48,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -59,6 +60,8 @@ public class ClusterStatusPublisher extends Chore {
   private final int messagePeriod; // time between two message
   private final ConcurrentMap<ServerName, Integer> lastSent =
       new ConcurrentHashMap<ServerName, Integer>();
+  private final ExecutorService service = Executors.newSingleThreadExecutor(
+      Threads.newDaemonThreadFactory("hbase-master-clusterStatus-worker"));
 
   /**
    * We want to limit the size of the protobuf message sent, do fit into a single packet.
@@ -97,9 +100,7 @@ public class ClusterStatusPublisher extends Chore {
         HConstants.DEFAULT_STATUS_MULTICAST_PORT);
 
     // Can't be NiO with Netty today => not implemented in Netty.
-
-    DatagramChannelFactory f = new OioDatagramChannelFactory(
-        Executors.newSingleThreadExecutor(Threads.newDaemonThreadFactory("hbase-clusterStatus")));
+    DatagramChannelFactory f = new OioDatagramChannelFactory(service);
 
     ConnectionlessBootstrap b = new ConnectionlessBootstrap(f);
     b.setPipeline(Channels.pipeline(new ProtobufEncoder()));
@@ -160,6 +161,7 @@ public class ClusterStatusPublisher extends Chore {
       channel.close();
     }
     connected.set(false);
+    service.shutdown();
   }
 
   /**

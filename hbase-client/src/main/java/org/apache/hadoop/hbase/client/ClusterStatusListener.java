@@ -29,6 +29,7 @@ import org.apache.hadoop.hbase.ClusterStatus;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.protobuf.generated.ClusterStatusProtos;
+import org.apache.hadoop.hbase.util.Threads;
 import org.jboss.netty.bootstrap.ConnectionlessBootstrap;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.Channels;
@@ -46,6 +47,8 @@ import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 
@@ -97,6 +100,8 @@ abstract public class ClusterStatusListener implements Closeable {
     private DatagramChannel channel;
     private final List<ServerName> deadServers = new ArrayList<ServerName>();
     private final DeadServerHandler deadServerHandler;
+    private final ExecutorService service = Executors.newSingleThreadExecutor(
+        Threads.newDaemonThreadFactory("hbase-client-clusterStatus"));
 
     /**
      * Check if we know if a server is dead.
@@ -129,8 +134,8 @@ abstract public class ClusterStatusListener implements Closeable {
 
 
     public void connect(Configuration conf) throws InterruptedException, UnknownHostException {
-      DatagramChannelFactory f =
-          new OioDatagramChannelFactory(Executors.newSingleThreadExecutor());
+      // Can't be NiO with Netty today => not implemented in Netty.
+      DatagramChannelFactory f = new OioDatagramChannelFactory(service);
 
       ConnectionlessBootstrap b = new ConnectionlessBootstrap(f);
       b.setPipeline(Channels.pipeline(
@@ -154,6 +159,7 @@ abstract public class ClusterStatusListener implements Closeable {
       if (channel != null) {
         channel.close();
       }
+      service.shutdown();
     }
 
 
