@@ -237,7 +237,7 @@ public class OpenRegionHandler extends EventHandler {
       this.server, this.rsServices, signaller);
     t.start();
     boolean tomActivated = this.server.getConfiguration().
-        getBoolean(HConstants.ASSIGNMENT_TIMEOUT_MANAGEMENT, false);
+        getBoolean("hbase.assignment.timeout.management", false);
     int assignmentTimeout = this.server.getConfiguration().
       getInt("hbase.master.assignment.timeoutmonitor.period", 10000);
     // Total timeout for meta edit.  If we fail adding the edit then close out

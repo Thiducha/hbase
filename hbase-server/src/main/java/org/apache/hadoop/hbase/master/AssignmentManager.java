@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import com.google.common.base.Preconditions;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -206,7 +207,7 @@ public class AssignmentManager extends ZooKeeperListener {
     this.regionsToReopen = Collections.synchronizedMap
                            (new HashMap<String, HRegionInfo> ());
     Configuration conf = server.getConfiguration();
-    this.tomActivated = conf.getBoolean(HConstants.ASSIGNMENT_TIMEOUT_MANAGEMENT, false);
+    this.tomActivated = conf.getBoolean("hbase.assignment.timeout.management", false);
     if (tomActivated){
       this.serversInUpdatingTimer =  new ConcurrentSkipListSet<ServerName>();
       this.timeoutMonitor = new TimeoutMonitor(
@@ -1246,7 +1247,7 @@ public class AssignmentManager extends ZooKeeperListener {
    * @param sn
    */
   private void updateTimers(final ServerName sn) {
-    assert tomActivated;
+    Preconditions.checkState(tomActivated);
     if (sn == null) return;
 
     // This loop could be expensive.
@@ -2576,7 +2577,7 @@ public class AssignmentManager extends ZooKeeperListener {
 
     @Override
     protected void chore() {
-      assert tomActivated;
+      Preconditions.checkState(tomActivated);
       ServerName serverToUpdateTimer = null;
       while (!serversInUpdatingTimer.isEmpty() && !stopper.isStopped()) {
         if (serverToUpdateTimer == null) {
@@ -2626,7 +2627,7 @@ public class AssignmentManager extends ZooKeeperListener {
 
     @Override
     protected void chore() {
-      assert tomActivated;
+      Preconditions.checkState(tomActivated);
       boolean noRSAvailable = this.serverManager.createDestinationServersList().isEmpty();
 
       // Iterate all regions in transition checking for time outs
