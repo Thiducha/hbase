@@ -1159,23 +1159,27 @@ public class HRegionServer implements ClientProtocol,
   }
 
   private void closeWAL(final boolean delete) {
-    try {
-      if (this.hlogForMeta != null) {
-        //All hlogs (meta and non-meta) are in the same directory. Don't call 
-        //closeAndDelete here since that would delete all hlogs not just the 
-        //meta ones. We will just 'close' the hlog for meta here, and leave
-        //the directory cleanup to the follow-on closeAndDelete call.
+    if (this.hlogForMeta != null) {
+      // All hlogs (meta and non-meta) are in the same directory. Don't call
+      // closeAndDelete here since that would delete all hlogs not just the
+      // meta ones. We will just 'close' the hlog for meta here, and leave
+      // the directory cleanup to the follow-on closeAndDelete call.
+      try {
         this.hlogForMeta.close();
+      } catch (Throwable e) {
+        LOG.error("Metalog close and delete failed", RemoteExceptionHandler.checkThrowable(e));
       }
-      if (this.hlog != null) {
+    }
+    if (this.hlog != null) {
+      try {
         if (delete) {
           hlog.closeAndDelete();
         } else {
           hlog.close();
         }
+      } catch (Throwable e) {
+        LOG.error("Close and delete failed", RemoteExceptionHandler.checkThrowable(e));
       }
-    } catch (Throwable e) {
-      LOG.error("Close and delete failed", RemoteExceptionHandler.checkThrowable(e));
     }
   }
 
@@ -1235,10 +1239,10 @@ public class HRegionServer implements ClientProtocol,
       // to match the filesystem on hbase.rootdir else underlying hadoop hdfs
       // accessors will be going against wrong filesystem (unless all is set
       // to defaults).
-      this.conf.set("fs.defaultFS", this.conf.get("hbase.rootdir"));
+      FSUtils.setFsDefault(this.conf, FSUtils.getRootDir(this.conf));
       // Get fs instance used by this RS
       this.fs = new HFileSystem(this.conf, this.useHBaseChecksum);
-      this.rootDir = new Path(this.conf.get(HConstants.HBASE_DIR));
+      this.rootDir = FSUtils.getRootDir(this.conf);
       this.tableDescriptors = new FSTableDescriptors(this.fs, this.rootDir, true);
       this.hlog = setupWALAndReplication();
       // Init in here rather than in constructor after thread name has been set
