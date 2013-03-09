@@ -18,6 +18,7 @@
 package org.apache.hadoop.hbase.snapshot;
 
 import java.io.IOException;
+import java.util.Collections;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -75,24 +76,14 @@ public class SnapshotDescriptionUtils {
   /**
    * Filter that only accepts completed snapshot directories
    */
-  public static class CompletedSnaphotDirectoriesFilter extends FSUtils.DirFilter {
+  public static class CompletedSnaphotDirectoriesFilter extends FSUtils.BlackListDirFilter {
 
     /**
      * @param fs
      */
     public CompletedSnaphotDirectoriesFilter(FileSystem fs) {
-      super(fs);
+      super(fs, Collections.singletonList(SNAPSHOT_TMP_DIR_NAME));
     }
-
-    @Override
-    public boolean accept(Path path) {
-      // only accept directories that aren't the tmp directory
-      if (super.accept(path)) {
-        return !path.getName().equals(SNAPSHOT_TMP_DIR_NAME);
-      }
-      return false;
-    }
-
   }
 
   private static final Log LOG = LogFactory.getLog(SnapshotDescriptionUtils.class);
@@ -206,7 +197,7 @@ public class SnapshotDescriptionUtils {
    * Get the directory to store the snapshot instance
    * @param snapshotsDir hbase-global directory for storing all snapshots
    * @param snapshotName name of the snapshot to take
-   * @return
+   * @return the final directory for the completed snapshot
    */
   private static final Path getCompletedSnapshotDir(final Path snapshotsDir, String snapshotName) {
     return new Path(snapshotsDir, snapshotName);

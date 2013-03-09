@@ -633,7 +633,7 @@ public class HRegion implements HeapSize { // , Writable{
         status.setStatus("Instantiating store for column family " + family);
         completionService.submit(new Callable<HStore>() {
           public HStore call() throws IOException {
-            return instantiateHStore(getTableDir(), family);
+            return instantiateHStore(family);
           }
         });
       }
@@ -706,32 +706,23 @@ public class HRegion implements HeapSize { // , Writable{
    * This is a helper function to compute HDFS block distribution on demand
    * @param conf configuration
    * @param tableDescriptor HTableDescriptor of the table
-   * @param regionEncodedName encoded name of the region
+   * @param regionInfo encoded name of the region
    * @return The HDFS blocks distribution for the given region.
- * @throws IOException
+   * @throws IOException
    */
-  static public HDFSBlocksDistribution computeHDFSBlocksDistribution(
-    Configuration conf, HTableDescriptor tableDescriptor,
-    String regionEncodedName) throws IOException {
-    HDFSBlocksDistribution hdfsBlocksDistribution =
-      new HDFSBlocksDistribution();
-    Path tablePath = FSUtils.getTablePath(FSUtils.getRootDir(conf),
-      tableDescriptor.getName());
+  public static HDFSBlocksDistribution computeHDFSBlocksDistribution(final Configuration conf,
+      final HTableDescriptor tableDescriptor, final HRegionInfo regionInfo) throws IOException {
+    HDFSBlocksDistribution hdfsBlocksDistribution = new HDFSBlocksDistribution();
+    Path tablePath = FSUtils.getTablePath(FSUtils.getRootDir(conf), tableDescriptor.getName());
     FileSystem fs = tablePath.getFileSystem(conf);
 
+    HRegionFileSystem regionFs = new HRegionFileSystem(conf, fs, tablePath, regionInfo);
     for (HColumnDescriptor family: tableDescriptor.getFamilies()) {
-      Path storeHomeDir = HStore.getStoreHomedir(tablePath, regionEncodedName,
-      family.getName());
-      if (!fs.exists(storeHomeDir))continue;
+      Collection<StoreFileInfo> storeFiles = regionFs.getStoreFiles(family.getNameAsString());
+      if (storeFiles == null) continue;
 
-      FileStatus[] hfilesStatus = null;
-      hfilesStatus = fs.listStatus(storeHomeDir);
-
-      for (FileStatus hfileStatus : hfilesStatus) {
-        HDFSBlocksDistribution storeFileBlocksDistribution =
-          FSUtils.computeHDFSBlocksDistribution(fs, hfileStatus, 0,
-          hfileStatus.getLen());
-        hdfsBlocksDistribution.add(storeFileBlocksDistribution);
+      for (StoreFileInfo storeFileInfo : storeFiles) {
+        hdfsBlocksDistribution.add(storeFileInfo.computeHDFSBlocksDistribution(fs));
       }
     }
     return hdfsBlocksDistribution;
@@ -1119,14 +1110,6 @@ public class HRegion implements HeapSize { // , Writable{
    * @throws IOException
    */
   void doRegionCompactionPrep() throws IOException {
-  }
-
-  /**
-   * Get the temporary directory for this region. This directory
-   * will have its contents removed when the region is reopened.
-   */
-  Path getTmpDir() {
-    return fs.getTempDir();
   }
 
   void triggerMajorCompaction() {
@@ -2377,8 +2360,7 @@ public class HRegion implements HeapSize { // , Writable{
     // files/batch, far more than the number of store files under a single column family.
     for (Store store : stores.values()) {
       // 2.1. build the snapshot reference directory for the store
-      Path dstStoreDir = TakeSnapshotUtils.getStoreSnapshotDirectory(
-        snapshotRegionFs.getRegionDir(), Bytes.toString(store.getFamily().getName()));
+      Path dstStoreDir = snapshotRegionFs.getStoreDir(store.getFamily().getNameAsString());
       List<StoreFile> storeFiles = new ArrayList<StoreFile>(store.getStorefiles());
       if (LOG.isDebugEnabled()) {
         LOG.debug("Adding snapshot references for " + storeFiles  + " hfiles");
@@ -2965,9 +2947,8 @@ public class HRegion implements HeapSize { // , Writable{
     return true;
   }
 
-  protected HStore instantiateHStore(Path tableDir, HColumnDescriptor c)
-      throws IOException {
-    return new HStore(tableDir, this, c, this.getFilesystem(), this.conf);
+  protected HStore instantiateHStore(final HColumnDescriptor family) throws IOException {
+    return new HStore(this, family, this.conf);
   }
 
   /**
@@ -4097,13 +4078,14 @@ public class HRegion implements HeapSize { // , Writable{
   /**
    * Inserts a new region's meta information into the passed
    * <code>meta</code> region. Used by the HMaster bootstrap code adding
-   * new table to ROOT table.
+   * new table to META table.
    *
    * @param meta META HRegion to be updated
    * @param r HRegion to add to <code>meta</code>
    *
    * @throws IOException
    */
+  // TODO remove since only test and merge use this
   public static void addRegionToMETA(HRegion meta, HRegion r)
   throws IOException {
     meta.checkResources();
@@ -4171,13 +4153,13 @@ public class HRegion implements HeapSize { // , Writable{
    * @param colFamily the column family
    * @throws IOException
    */
-  public static void makeColumnFamilyDirs(FileSystem fs, Path tabledir,
-    final HRegionInfo hri, byte [] colFamily)
-  throws IOException {
-    Path dir = HStore.getStoreHomedir(tabledir, hri.getEncodedName(), colFamily);
+  private static Path makeColumnFamilyDirs(FileSystem fs, Path tabledir,
+    final HRegionInfo hri, byte [] colFamily) throws IOException {
+    Path dir = HStore.getStoreHomedir(tabledir, hri, colFamily);
     if (!fs.mkdirs(dir)) {
       LOG.warn("Failed to create " + dir);
     }
+    return dir;
   }
 
   /**
@@ -4299,14 +4281,12 @@ public class HRegion implements HeapSize { // , Writable{
     byFamily = filesByFamily(byFamily, b.close());
     for (Map.Entry<byte [], List<StoreFile>> es : byFamily.entrySet()) {
       byte [] colFamily = es.getKey();
-      makeColumnFamilyDirs(fs, tableDir, newRegionInfo, colFamily);
+      Path storeDir = makeColumnFamilyDirs(fs, tableDir, newRegionInfo, colFamily);
       // Because we compacted the source regions we should have no more than two
       // HStoreFiles per family and there will be no reference store
       List<StoreFile> srcFiles = es.getValue();
       for (StoreFile hsf: srcFiles) {
-        StoreFile.rename(fs, hsf.getPath(),
-          StoreFile.getUniqueFile(fs, HStore.getStoreHomedir(tableDir,
-            newRegionInfo.getEncodedName(), colFamily)));
+        StoreFile.rename(fs, hsf.getPath(), StoreFile.getUniqueFile(fs, storeDir));
       }
     }
     if (LOG.isDebugEnabled()) {
@@ -5134,13 +5114,9 @@ public class HRegion implements HeapSize { // , Writable{
       final boolean majorCompact)
   throws IOException {
     HRegion region = null;
-    String rootStr = Bytes.toString(HConstants.ROOT_TABLE_NAME);
     String metaStr = Bytes.toString(HConstants.META_TABLE_NAME);
     // Currently expects tables have one region only.
-    if (p.getName().startsWith(rootStr)) {
-      region = HRegion.newHRegion(p, log, fs, c, HRegionInfo.ROOT_REGIONINFO,
-        HTableDescriptor.ROOT_TABLEDESC, null);
-    } else if (p.getName().startsWith(metaStr)) {
+    if (p.getName().startsWith(metaStr)) {
       region = HRegion.newHRegion(p, log, fs, c,
         HRegionInfo.FIRST_META_REGIONINFO, HTableDescriptor.META_TABLEDESC, null);
     } else {
@@ -5207,10 +5183,10 @@ public class HRegion implements HeapSize { // , Writable{
    * is based on the size of the store.
    */
   public byte[] checkSplit() {
-    // Can't split ROOT/META
+    // Can't split META
     if (this.getRegionInfo().isMetaTable()) {
       if (shouldForceSplit()) {
-        LOG.warn("Cannot split root/meta regions in HBase 0.20 and above");
+        LOG.warn("Cannot split meta region in HBase 0.20 and above");
       }
       return null;
     }
