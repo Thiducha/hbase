@@ -20,15 +20,16 @@ package org.apache.hadoop.hbase.master;
 
 import java.io.IOException;
 
-import com.google.protobuf.Service;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.Server;
 import org.apache.hadoop.hbase.TableDescriptors;
-import org.apache.hadoop.hbase.TableNotDisabledException;
-import org.apache.hadoop.hbase.TableNotFoundException;
+import org.apache.hadoop.hbase.exceptions.TableNotDisabledException;
+import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
 import org.apache.hadoop.hbase.executor.ExecutorService;
+
+import com.google.protobuf.Service;
 
 /**
  * Services Master supplies
@@ -54,6 +55,16 @@ public interface MasterServices extends Server {
    * @return Master's instance of {@link ExecutorService}
    */
   public ExecutorService getExecutorService();
+
+  /**
+   * @return Master's instance of {@link TableLockManager}
+   */
+  public TableLockManager getTableLockManager();
+
+  /**
+   * @return Master's instance of {@link MasterCoprocessorHost}
+   */
+  public MasterCoprocessorHost getCoprocessorHost();
 
   /**
    * Check table is modifiable; i.e. exists and is offline.

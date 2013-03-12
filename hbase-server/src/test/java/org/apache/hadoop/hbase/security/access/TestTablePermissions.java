@@ -38,7 +38,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Abortable;
-import org.apache.hadoop.hbase.DeserializationException;
+import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
@@ -93,7 +93,7 @@ public class TestTablePermissions {
     UTIL.startMiniCluster();
 
     // Wait for the ACL table to become available
-    UTIL.waitTableAvailable(AccessControlLists.ACL_TABLE_NAME, 5000);
+    UTIL.waitTableEnabled(AccessControlLists.ACL_TABLE_NAME);
 
     ZKW = new ZooKeeperWatcher(UTIL.getConfiguration(),
       "TestTablePermissions", ABORTABLE);

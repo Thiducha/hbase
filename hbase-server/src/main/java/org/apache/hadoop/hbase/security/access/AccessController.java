@@ -20,6 +20,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -32,11 +33,13 @@ import com.google.protobuf.Service;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CoprocessorEnvironment;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.KeyValueUtil;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.client.Delete;
@@ -46,6 +49,7 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.coprocessor.*;
+import org.apache.hadoop.hbase.exceptions.CoprocessorException;
 import org.apache.hadoop.hbase.filter.CompareFilter;
 import org.apache.hadoop.hbase.filter.FilterList;
 import org.apache.hadoop.hbase.filter.ByteArrayComparable;
@@ -54,14 +58,15 @@ import org.apache.hadoop.hbase.master.RegionPlan;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.ResponseConverter;
 import org.apache.hadoop.hbase.protobuf.generated.AccessControlProtos;
+import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.SnapshotDescription;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.InternalScanner;
 import org.apache.hadoop.hbase.regionserver.RegionScanner;
-import org.apache.hadoop.hbase.regionserver.HStore;
+import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.regionserver.ScanType;
 import org.apache.hadoop.hbase.regionserver.StoreFile;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
-import org.apache.hadoop.hbase.security.AccessDeniedException;
+import org.apache.hadoop.hbase.exceptions.AccessDeniedException;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.security.access.Permission.Action;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -152,11 +157,12 @@ public class AccessController extends BaseRegionObserver
    * table updates.
    */
   void updateACL(RegionCoprocessorEnvironment e,
-      final Map<byte[], List<KeyValue>> familyMap) {
+      final Map<byte[], List<? extends Cell>> familyMap) {
     Set<byte[]> tableSet = new TreeSet<byte[]>(Bytes.BYTES_COMPARATOR);
-    for (Map.Entry<byte[], List<KeyValue>> f : familyMap.entrySet()) {
-      List<KeyValue> kvs = f.getValue();
-      for (KeyValue kv: kvs) {
+    for (Map.Entry<byte[], List<? extends Cell>> f : familyMap.entrySet()) {
+      List<? extends Cell> cells = f.getValue();
+      for (Cell cell: cells) {
+        KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
         if (Bytes.equals(kv.getBuffer(), kv.getFamilyOffset(),
             kv.getFamilyLength(), AccessControlLists.ACL_LIST_FAMILY, 0,
             AccessControlLists.ACL_LIST_FAMILY.length)) {
@@ -199,9 +205,9 @@ public class AccessController extends BaseRegionObserver
     HRegionInfo hri = e.getRegion().getRegionInfo();
     byte[] tableName = hri.getTableName();
 
-    // 1. All users need read access to .META. and -ROOT- tables.
+    // 1. All users need read access to .META. table.
     // this is a very common operation, so deal with it quickly.
-    if (hri.isRootRegion() || hri.isMetaRegion()) {
+    if (hri.isMetaRegion()) {
       if (permRequest == Permission.Action.READ) {
         return AuthResult.allow(request, "All users allowed", user,
           permRequest, tableName, families);
@@ -219,7 +225,7 @@ public class AccessController extends BaseRegionObserver
     // e.g. When a table is removed an entry is removed from .META. and _acl_
     // and the user need to be allowed to write on both tables.
     if (permRequest == Permission.Action.WRITE &&
-       (hri.isRootRegion() || hri.isMetaRegion() ||
+       (hri.isMetaRegion() ||
         Bytes.equals(tableName, AccessControlLists.ACL_GLOBAL_NAME)) &&
        (authManager.authorize(user, Permission.Action.CREATE) ||
         authManager.authorize(user, Permission.Action.ADMIN)))
@@ -708,6 +714,55 @@ public class AccessController extends BaseRegionObserver
     AccessControlLists.init(ctx.getEnvironment().getMasterServices());
   }
 
+  @Override
+  public void preSnapshot(final ObserverContext<MasterCoprocessorEnvironment> ctx,
+      final SnapshotDescription snapshot, final HTableDescriptor hTableDescriptor)
+      throws IOException {
+    requirePermission("snapshot", Permission.Action.ADMIN);
+  }
+
+  @Override
+  public void postSnapshot(final ObserverContext<MasterCoprocessorEnvironment> ctx,
+      final SnapshotDescription snapshot, final HTableDescriptor hTableDescriptor)
+      throws IOException {
+  }
+
+  @Override
+  public void preCloneSnapshot(final ObserverContext<MasterCoprocessorEnvironment> ctx,
+      final SnapshotDescription snapshot, final HTableDescriptor hTableDescriptor)
+      throws IOException {
+    requirePermission("clone", Permission.Action.ADMIN);
+  }
+
+  @Override
+  public void postCloneSnapshot(final ObserverContext<MasterCoprocessorEnvironment> ctx,
+      final SnapshotDescription snapshot, final HTableDescriptor hTableDescriptor)
+      throws IOException {
+  }
+
+  @Override
+  public void preRestoreSnapshot(final ObserverContext<MasterCoprocessorEnvironment> ctx,
+      final SnapshotDescription snapshot, final HTableDescriptor hTableDescriptor)
+      throws IOException {
+    requirePermission("restore", Permission.Action.ADMIN);
+  }
+
+  @Override
+  public void postRestoreSnapshot(final ObserverContext<MasterCoprocessorEnvironment> ctx,
+      final SnapshotDescription snapshot, final HTableDescriptor hTableDescriptor)
+      throws IOException {
+  }
+
+  @Override
+  public void preDeleteSnapshot(final ObserverContext<MasterCoprocessorEnvironment> ctx,
+      final SnapshotDescription snapshot) throws IOException {
+    requirePermission("deleteSnapshot", Permission.Action.ADMIN);
+  }
+
+  @Override
+  public void postDeleteSnapshot(final ObserverContext<MasterCoprocessorEnvironment> ctx,
+      final SnapshotDescription snapshot) throws IOException {
+  }
 
   /* ---- RegionObserver implementation ---- */
 
@@ -766,7 +821,7 @@ public class AccessController extends BaseRegionObserver
 
   @Override
   public InternalScanner preCompact(ObserverContext<RegionCoprocessorEnvironment> e,
-      final HStore store, final InternalScanner scanner, final ScanType scanType)
+      final Store store, final InternalScanner scanner, final ScanType scanType)
           throws IOException {
     requirePermission("compact", getTableName(e.getEnvironment()), null, null, Action.ADMIN);
     return scanner;
@@ -774,7 +829,7 @@ public class AccessController extends BaseRegionObserver
 
   @Override
   public void preCompactSelection(final ObserverContext<RegionCoprocessorEnvironment> e,
-      final HStore store, final List<StoreFile> candidates) throws IOException {
+      final Store store, final List<StoreFile> candidates) throws IOException {
     requirePermission("compact", getTableName(e.getEnvironment()), null, null, Action.ADMIN);
   }
 
@@ -913,9 +968,15 @@ public class AccessController extends BaseRegionObserver
   public Result preIncrement(final ObserverContext<RegionCoprocessorEnvironment> c,
       final Increment increment)
       throws IOException {
+    // Create a map of family to qualifiers.
     Map<byte[], Set<byte[]>> familyMap = Maps.newHashMap();
-    for (Map.Entry<byte[], ? extends Map<byte[], Long>> entry : increment.getFamilyMap().entrySet()) {
-      familyMap.put(entry.getKey(), entry.getValue().keySet());
+    for (Map.Entry<byte [], List<? extends Cell>> entry: increment.getFamilyMap().entrySet()) {
+      Set<byte []> qualifiers = new HashSet<byte []>(entry.getValue().size());
+      for (Cell cell: entry.getValue()) {
+        KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
+        qualifiers.add(kv.getQualifier());
+      }
+      familyMap.put(entry.getKey(), qualifiers);
     }
     requirePermission("increment", Permission.Action.WRITE, c.getEnvironment(), familyMap);
     return null;

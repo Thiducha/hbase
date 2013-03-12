@@ -41,17 +41,21 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.catalog.CatalogTracker;
+import org.apache.hadoop.hbase.exceptions.InvalidFamilyOperationException;
+import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
+import org.apache.hadoop.hbase.exceptions.NotServingRegionException;
+import org.apache.hadoop.hbase.exceptions.TableExistsException;
+import org.apache.hadoop.hbase.exceptions.TableNotDisabledException;
+import org.apache.hadoop.hbase.exceptions.TableNotEnabledException;
+import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
+import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.executor.EventHandler;
-import org.apache.hadoop.hbase.executor.EventHandler.EventType;
-import org.apache.hadoop.hbase.executor.ExecutorService;
 import org.apache.hadoop.hbase.master.AssignmentManager;
 import org.apache.hadoop.hbase.master.HMaster;
-import org.apache.hadoop.hbase.master.MasterServices;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.regionserver.wal.HLogUtilsForTests;
-import org.apache.hadoop.hbase.InvalidFamilyOperationException;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.zookeeper.ZKTableReadOnly;
@@ -244,7 +248,7 @@ public class TestAdmin {
     boolean ok = false;
     try {
       ht.get(get);
-    } catch (DoNotRetryIOException e) {
+    } catch (org.apache.hadoop.hbase.exceptions.DoNotRetryIOException e) {
       ok = true;
     }
     assertTrue(ok);
@@ -290,7 +294,7 @@ public class TestAdmin {
     try {
       ht1.get(get);
       ht2.get(get);
-    } catch (DoNotRetryIOException e) {
+    } catch (org.apache.hadoop.hbase.exceptions.DoNotRetryIOException e) {
       ok = true;
     }
 
@@ -999,7 +1003,7 @@ public class TestAdmin {
     this.admin.disableTable(tableName);
     try {
       new HTable(TEST_UTIL.getConfiguration(), tableName);
-    } catch (DoNotRetryIOException e) {
+    } catch (org.apache.hadoop.hbase.exceptions.DoNotRetryIOException e) {
       //expected
     }
 
@@ -1617,18 +1621,4 @@ public class TestAdmin {
       ct.stop();
     }
   }
-  
-  @Test
-  public void testRootTableSplit() throws Exception {
-    ServerName serverName = TEST_UTIL.getMiniHBaseCluster().getServerHoldingRoot();
-    Scan s = new Scan();
-    HTable rootTable = new HTable(TEST_UTIL.getConfiguration(), HConstants.ROOT_TABLE_NAME);
-    ResultScanner scanner = rootTable.getScanner(s);
-    Result metaEntry = scanner.next();
-    this.admin.split(HConstants.ROOT_TABLE_NAME, metaEntry.getRow());
-    Thread.sleep(1000);
-    List<HRegionInfo> onlineRegions = this.admin.getOnlineRegions(serverName);
-    assertTrue(onlineRegions != null && onlineRegions.contains(HRegionInfo.ROOT_REGIONINFO));
-  }
-
 }

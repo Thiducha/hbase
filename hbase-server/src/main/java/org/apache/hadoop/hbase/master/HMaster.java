@@ -27,7 +27,6 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,7 +48,7 @@ import org.apache.hadoop.hbase.Abortable;
 import org.apache.hadoop.hbase.Chore;
 import org.apache.hadoop.hbase.ClusterId;
 import org.apache.hadoop.hbase.ClusterStatus;
-import org.apache.hadoop.hbase.DeserializationException;
+import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
@@ -57,18 +56,17 @@ import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.HealthCheckChore;
 import org.apache.hadoop.hbase.MasterAdminProtocol;
 import org.apache.hadoop.hbase.MasterMonitorProtocol;
-import org.apache.hadoop.hbase.MasterNotRunningException;
-import org.apache.hadoop.hbase.NotAllMetaRegionsOnlineException;
-import org.apache.hadoop.hbase.PleaseHoldException;
+import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
+import org.apache.hadoop.hbase.exceptions.NotAllMetaRegionsOnlineException;
+import org.apache.hadoop.hbase.exceptions.PleaseHoldException;
 import org.apache.hadoop.hbase.RegionServerStatusProtocol;
 import org.apache.hadoop.hbase.Server;
 import org.apache.hadoop.hbase.ServerLoad;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.TableDescriptors;
-import org.apache.hadoop.hbase.TableNotDisabledException;
-import org.apache.hadoop.hbase.TableNotFoundException;
-import org.apache.hadoop.hbase.UnknownRegionException;
-import org.apache.hadoop.hbase.ZooKeeperConnectionException;
+import org.apache.hadoop.hbase.exceptions.TableNotDisabledException;
+import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
+import org.apache.hadoop.hbase.exceptions.UnknownRegionException;
 import org.apache.hadoop.hbase.catalog.CatalogTracker;
 import org.apache.hadoop.hbase.catalog.MetaReader;
 import org.apache.hadoop.hbase.client.HConnectionManager;
@@ -78,12 +76,12 @@ import org.apache.hadoop.hbase.client.MetaScanner.MetaScannerVisitorBase;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.coprocessor.CoprocessorHost;
 import org.apache.hadoop.hbase.executor.ExecutorService;
-import org.apache.hadoop.hbase.executor.ExecutorService.ExecutorType;
+import org.apache.hadoop.hbase.executor.ExecutorType;
 import org.apache.hadoop.hbase.ipc.HBaseServer;
 import org.apache.hadoop.hbase.ipc.HBaseServerRPC;
 import org.apache.hadoop.hbase.ipc.RpcServer;
 import org.apache.hadoop.hbase.ipc.ServerRpcController;
-import org.apache.hadoop.hbase.ipc.UnknownProtocolException;
+import org.apache.hadoop.hbase.exceptions.UnknownProtocolException;
 import org.apache.hadoop.hbase.master.balancer.BalancerChore;
 import org.apache.hadoop.hbase.master.balancer.ClusterStatusChore;
 import org.apache.hadoop.hbase.master.balancer.LoadBalancerFactory;
@@ -97,8 +95,8 @@ import org.apache.hadoop.hbase.master.handler.ModifyTableHandler;
 import org.apache.hadoop.hbase.master.handler.ServerShutdownHandler;
 import org.apache.hadoop.hbase.master.handler.TableAddFamilyHandler;
 import org.apache.hadoop.hbase.master.handler.TableDeleteFamilyHandler;
-import org.apache.hadoop.hbase.master.handler.TableEventHandler;
 import org.apache.hadoop.hbase.master.handler.TableModifyFamilyHandler;
+import org.apache.hadoop.hbase.master.snapshot.SnapshotManager;
 import org.apache.hadoop.hbase.monitoring.MemoryBoundedLogMessageBuffer;
 import org.apache.hadoop.hbase.monitoring.MonitoredTask;
 import org.apache.hadoop.hbase.monitoring.TaskMonitor;
@@ -109,6 +107,7 @@ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.NameStringPair;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionSpecifier.RegionSpecifierType;
+import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.SnapshotDescription;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.AddColumnRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.AddColumnResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.AssignRegionRequest;
@@ -121,6 +120,8 @@ import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.CreateTableR
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.CreateTableResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DeleteColumnRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DeleteColumnResponse;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DeleteSnapshotRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DeleteSnapshotResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DeleteTableRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DeleteTableResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DisableTableRequest;
@@ -131,6 +132,12 @@ import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.EnableTableR
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.EnableTableResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.IsCatalogJanitorEnabledRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.IsCatalogJanitorEnabledResponse;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.IsRestoreSnapshotDoneRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.IsRestoreSnapshotDoneResponse;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.IsSnapshotDoneRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.IsSnapshotDoneResponse;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.ListSnapshotRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.ListSnapshotResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.ModifyColumnRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.ModifyColumnResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.ModifyTableRequest;
@@ -139,12 +146,16 @@ import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.MoveRegionRe
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.MoveRegionResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.OfflineRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.OfflineRegionResponse;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.RestoreSnapshotRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.RestoreSnapshotResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.SetBalancerRunningRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.SetBalancerRunningResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.ShutdownRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.ShutdownResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.StopMasterRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.StopMasterResponse;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.TakeSnapshotRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.TakeSnapshotResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.UnassignRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.UnassignRegionResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetClusterStatusRequest;
@@ -165,6 +176,8 @@ import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.Repor
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorResponse;
 import org.apache.hadoop.hbase.replication.regionserver.Replication;
 import org.apache.hadoop.hbase.security.User;
+import org.apache.hadoop.hbase.snapshot.ClientSnapshotDescriptionUtils;
+import org.apache.hadoop.hbase.snapshot.SnapshotDescriptionUtils;
 import org.apache.hadoop.hbase.trace.SpanReceiverHost;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.CompressionTest;
@@ -283,7 +296,7 @@ Server {
   private volatile boolean isActiveMaster = false;
   // flag set after we complete initialization once active (used for testing)
   private volatile boolean initialized = false;
-  // flag set after we complete assignRootAndMeta.
+  // flag set after we complete assignMeta.
   private volatile boolean serverShutdownHandlerEnabled = false;
 
   // Instance of the hbase executor service.
@@ -303,6 +316,9 @@ Server {
 
   private TableDescriptors tableDescriptors;
 
+  // Table level lock manager for schema changes
+  private TableLockManager tableLockManager;
+
   // Time stamps for when a hmaster was started and when it became active
   private long masterStartTime;
   private long masterActiveTime;
@@ -321,8 +337,12 @@ Server {
 
   private Map<String, Service> coprocessorServiceHandlers = Maps.newHashMap();
 
+  // monitor for snapshot of hbase tables
+  private SnapshotManager snapshotManager;
+
   /** The health check chore. */
   private HealthCheckChore healthCheckChore;
+
 
   /**
    * Initializes the HMaster. The steps are as follows:
@@ -509,6 +529,7 @@ Server {
       if (this.serverManager != null) this.serverManager.stop();
       if (this.assignmentManager != null) this.assignmentManager.stop();
       if (this.fileSystemManager != null) this.fileSystemManager.stop();
+      if (this.snapshotManager != null) this.snapshotManager.stop("server shutting down.");
       this.zooKeeper.close();
     }
     LOG.info("HMaster main thread exiting");
@@ -552,7 +573,8 @@ Server {
     this.loadBalancerTracker = new LoadBalancerTracker(zooKeeper, this);
     this.loadBalancerTracker.start();
     this.assignmentManager = new AssignmentManager(this, serverManager,
-      this.catalogTracker, this.balancer, this.executorService, this.metricsMaster);
+      this.catalogTracker, this.balancer, this.executorService, this.metricsMaster,
+      this.tableLockManager);
     zooKeeper.registerListenerFirst(assignmentManager);
 
     this.regionServerTracker = new RegionServerTracker(zooKeeper, this,
@@ -572,6 +594,9 @@ Server {
         ", sessionid=0x" +
         Long.toHexString(this.zooKeeper.getRecoverableZooKeeper().getSessionId()) +
         ", cluster-up flag was=" + wasUp);
+
+    // create the snapshot manager
+    this.snapshotManager = new SnapshotManager(this);
   }
 
   /**
@@ -631,7 +656,7 @@ Server {
    * <li>Set cluster as UP in ZooKeeper</li>
    * <li>Wait for RegionServers to check-in</li>
    * <li>Split logs and perform data recovery, if necessary</li>
-   * <li>Ensure assignment of root and meta regions<li>
+   * <li>Ensure assignment of meta regions<li>
    * <li>Handle either fresh cluster start or master failover</li>
    * </ol>
    *
@@ -686,6 +711,13 @@ Server {
       startServiceThreads();
     }
 
+    //Initialize table lock manager, and ensure that all write locks held previously
+    //are invalidated
+    this.tableLockManager = TableLockManager.createTableLockManager(conf, zooKeeper, serverName);
+    if (!masterRecovery) {
+      this.tableLockManager.reapAllTableWriteLocks();
+    }
+
     // Wait for region servers to report in.
     this.serverManager.waitForRegionServers(status);
     // Check zk for region servers that are up but didn't register
@@ -706,8 +738,8 @@ Server {
     status.setStatus("Splitting logs after master startup");
     splitLogAfterStartup(this.fileSystemManager);
 
-    // Make sure root and meta assigned before proceeding.
-    if (!assignRootAndMeta(status)) return;
+    // Make sure meta assigned before proceeding.
+    if (!assignMeta(status)) return;
     enableServerShutdownHandler();
 
     // Update meta with new PB serialization if required. i.e migrate all HRI
@@ -723,10 +755,6 @@ Server {
     this.assignmentManager.joinCluster();
 
     this.balancer.setClusterStatus(getClusterStatus());
-
-    // Fixing up missing daughters if any
-    status.setStatus("Fixing up missing daughters");
-    fixupDaughters(status);
 
     if (!masterRecovery) {
       // Start balancer and meta catalog janitor after meta and regions have
@@ -779,7 +807,7 @@ Server {
    * @param master
    * @param services
    * @return An instance of {@link ServerManager}
-   * @throws ZooKeeperConnectionException
+   * @throws org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException
    * @throws IOException
    */
   ServerManager createServerManager(final Server master,
@@ -802,76 +830,43 @@ Server {
   }
 
   /**
-   * Check <code>-ROOT-</code> and <code>.META.</code> are assigned.  If not,
+   * Check <code>.META.</code> are assigned.  If not,
    * assign them.
    * @throws InterruptedException
    * @throws IOException
    * @throws KeeperException
-   * @return True if root and meta are healthy, assigned
+   * @return True if meta is healthy, assigned
    */
-  boolean assignRootAndMeta(MonitoredTask status)
+  boolean assignMeta(MonitoredTask status)
   throws InterruptedException, IOException, KeeperException {
     int assigned = 0;
     long timeout = this.conf.getLong("hbase.catalog.verification.timeout", 1000);
 
-    // Work on ROOT region.  Is it in zk in transition?
-    status.setStatus("Assigning ROOT region");
-    assignmentManager.getRegionStates().createRegionState(
-      HRegionInfo.ROOT_REGIONINFO);
-    boolean rit = this.assignmentManager.
-      processRegionInTransitionAndBlockUntilAssigned(HRegionInfo.ROOT_REGIONINFO);
-    ServerName currentRootServer = null;
-    boolean rootRegionLocation = catalogTracker.verifyRootRegionLocation(timeout);
-    if (!rit && !rootRegionLocation) {
-      currentRootServer = this.catalogTracker.getRootLocation();
-      splitLogAndExpireIfOnline(currentRootServer);
-      this.assignmentManager.assignRoot();
-      // Make sure a -ROOT- location is set.
-      if (!isRootLocation()) return false;
-      // This guarantees that the transition assigning -ROOT- has completed
-      this.assignmentManager.waitForAssignment(HRegionInfo.ROOT_REGIONINFO);
-      assigned++;
-    } else if (rit && !rootRegionLocation) {
-      // Make sure a -ROOT- location is set.
-      if (!isRootLocation()) return false;
-      // This guarantees that the transition assigning -ROOT- has completed
-      this.assignmentManager.waitForAssignment(HRegionInfo.ROOT_REGIONINFO);
-      assigned++;
-    } else if (rootRegionLocation) {
-      // Region already assigned.  We didn't assign it.  Add to in-memory state.
-      this.assignmentManager.regionOnline(HRegionInfo.ROOT_REGIONINFO,
-        this.catalogTracker.getRootLocation());
-    }
-    // Enable the ROOT table if on process fail over the RS containing ROOT
-    // was active.
-    enableCatalogTables(Bytes.toString(HConstants.ROOT_TABLE_NAME));
-    // Check for stopped, just in case
-    if (this.stopped) return false;
-    LOG.info("-ROOT- assigned=" + assigned + ", rit=" + rit +
-      ", location=" + catalogTracker.getRootLocation());
-
-    // Work on meta region
+    // Work on .META. region.  Is it in zk in transition?
     status.setStatus("Assigning META region");
     assignmentManager.getRegionStates().createRegionState(
       HRegionInfo.FIRST_META_REGIONINFO);
-    rit = this.assignmentManager.
+    boolean rit = this.assignmentManager.
       processRegionInTransitionAndBlockUntilAssigned(HRegionInfo.FIRST_META_REGIONINFO);
-    boolean metaRegionLocation = this.catalogTracker.verifyMetaRegionLocation(timeout);
+    ServerName currentMetaServer = null;
+    boolean metaRegionLocation = catalogTracker.verifyMetaRegionLocation(timeout);
     if (!rit && !metaRegionLocation) {
-      ServerName currentMetaServer =
-        this.catalogTracker.getMetaLocationOrReadLocationFromRoot();
-      if (currentMetaServer != null
-          && !currentMetaServer.equals(currentRootServer)) {
-        splitLogAndExpireIfOnline(currentMetaServer);
-      }
-      assignmentManager.assignMeta();
+      currentMetaServer = this.catalogTracker.getMetaLocation();
+      splitLogAndExpireIfOnline(currentMetaServer);
+      this.assignmentManager.assignMeta();
       enableSSHandWaitForMeta();
+      // Make sure a .META. location is set.
+      if (!isMetaLocation()) return false;
+      // This guarantees that the transition assigning .META. has completed
+      this.assignmentManager.waitForAssignment(HRegionInfo.FIRST_META_REGIONINFO);
       assigned++;
     } else if (rit && !metaRegionLocation) {
-      // Wait until META region added to region server onlineRegions. See HBASE-5875.
-      enableSSHandWaitForMeta();
+      // Make sure a .META. location is set.
+      if (!isMetaLocation()) return false;
+      // This guarantees that the transition assigning .META. has completed
+      this.assignmentManager.waitForAssignment(HRegionInfo.FIRST_META_REGIONINFO);
       assigned++;
-    } else {
+    } else if (metaRegionLocation) {
       // Region already assigned.  We didn't assign it.  Add to in-memory state.
       this.assignmentManager.regionOnline(HRegionInfo.FIRST_META_REGIONINFO,
         this.catalogTracker.getMetaLocation());
@@ -879,7 +874,7 @@ Server {
     enableCatalogTables(Bytes.toString(HConstants.META_TABLE_NAME));
     LOG.info(".META. assigned=" + assigned + ", rit=" + rit +
       ", location=" + catalogTracker.getMetaLocation());
-    status.setStatus("META and ROOT assigned.");
+    status.setStatus("META assigned.");
     return true;
   }
 
@@ -892,17 +887,17 @@ Server {
   }
 
   /**
-   * @return True if there a root available
+   * @return True if there a meta available
    * @throws InterruptedException
    */
-  private boolean isRootLocation() throws InterruptedException {
+  private boolean isMetaLocation() throws InterruptedException {
     // Cycle up here in master rather than down in catalogtracker so we can
     // check the master stopped flag every so often.
     while (!this.stopped) {
       try {
-        if (this.catalogTracker.waitForRoot(100) != null) break;
+        if (this.catalogTracker.waitForMeta(100) != null) break;
       } catch (NotAllMetaRegionsOnlineException e) {
-        // Ignore.  I know -ROOT- is not online yet.
+        // Ignore.  I know .META. is not online yet.
       }
     }
     // We got here because we came of above loop.
@@ -912,41 +907,6 @@ Server {
   private void enableCatalogTables(String catalogTableName) {
     if (!this.assignmentManager.getZKTable().isEnabledTable(catalogTableName)) {
       this.assignmentManager.setEnabledTable(catalogTableName);
-    }
-  }
-
-  void fixupDaughters(final MonitoredTask status) throws IOException {
-    final Map<HRegionInfo, Result> offlineSplitParents =
-      new HashMap<HRegionInfo, Result>();
-    // This visitor collects offline split parents in the .META. table
-    MetaReader.Visitor visitor = new MetaReader.Visitor() {
-      @Override
-      public boolean visit(Result r) throws IOException {
-        if (r == null || r.isEmpty()) return true;
-        HRegionInfo info =
-          HRegionInfo.getHRegionInfo(r);
-        if (info == null) return true; // Keep scanning
-        if (info.isOffline() && info.isSplit()) {
-          offlineSplitParents.put(info, r);
-        }
-        // Returning true means "keep scanning"
-        return true;
-      }
-    };
-    // Run full scan of .META. catalog table passing in our custom visitor
-    MetaReader.fullScan(this.catalogTracker, visitor);
-    // Now work on our list of found parents. See if any we can clean up.
-    int fixups = 0;
-    for (Map.Entry<HRegionInfo, Result> e : offlineSplitParents.entrySet()) {
-      ServerName sn = HRegionInfo.getServerName(e.getValue());
-      if (!serverManager.isServerDead(sn)) { // Otherwise, let SSH take care of it
-        fixups += ServerShutdownHandler.fixupDaughters(
-          e.getValue(), assignmentManager, catalogTracker);
-      }
-    }
-    if (fixups != 0) {
-      LOG.info("Scanned the catalog and fixed up " + fixups +
-        " missing daughter region(s)");
     }
   }
 
@@ -1411,7 +1371,7 @@ Server {
    * @param b If false, the catalog janitor won't do anything.
    */
   public void setCatalogJanitorEnabled(final boolean b) {
-    ((CatalogJanitor)this.catalogJanitorChore).setEnabled(b);
+    this.catalogJanitorChore.setEnabled(b);
   }
 
   @Override
@@ -1491,7 +1451,7 @@ Server {
 
     this.executorService.submit(new CreateTableHandler(this,
       this.fileSystemManager, hTableDescriptor, conf,
-      newRegions, catalogTracker, assignmentManager));
+      newRegions, this).prepare());
     if (cpHost != null) {
       cpHost.postCreateTable(hTableDescriptor, newRegions);
     }
@@ -1548,8 +1508,7 @@ Server {
   }
 
   private static boolean isCatalogTable(final byte [] tableName) {
-    return Bytes.equals(tableName, HConstants.ROOT_TABLE_NAME) ||
-           Bytes.equals(tableName, HConstants.META_TABLE_NAME);
+    return Bytes.equals(tableName, HConstants.META_TABLE_NAME);
   }
 
   @Override
@@ -1558,7 +1517,7 @@ Server {
     if (cpHost != null) {
       cpHost.preDeleteTable(tableName);
     }
-    this.executorService.submit(new DeleteTableHandler(tableName, this, this));
+    this.executorService.submit(new DeleteTableHandler(tableName, this, this).prepare());
     if (cpHost != null) {
       cpHost.postDeleteTable(tableName);
     }
@@ -1612,7 +1571,9 @@ Server {
         return;
       }
     }
-    new TableAddFamilyHandler(tableName, column, this, this).process();
+    //TODO: we should process this (and some others) in an executor
+    new TableAddFamilyHandler(tableName, column, this, this)
+      .prepare().process();
     if (cpHost != null) {
       cpHost.postAddColumn(tableName, column);
     }
@@ -1640,7 +1601,8 @@ Server {
         return;
       }
     }
-    new TableModifyFamilyHandler(tableName, descriptor, this, this).process();
+    new TableModifyFamilyHandler(tableName, descriptor, this, this)
+      .prepare().process();
     if (cpHost != null) {
       cpHost.postModifyColumn(tableName, descriptor);
     }
@@ -1667,7 +1629,7 @@ Server {
         return;
       }
     }
-    new TableDeleteFamilyHandler(tableName, columnName, this, this).process();
+    new TableDeleteFamilyHandler(tableName, columnName, this, this).prepare().process();
     if (cpHost != null) {
       cpHost.postDeleteColumn(tableName, columnName);
     }
@@ -1691,7 +1653,7 @@ Server {
       cpHost.preEnableTable(tableName);
     }
     this.executorService.submit(new EnableTableHandler(this, tableName,
-      catalogTracker, assignmentManager, false));
+      catalogTracker, assignmentManager, tableLockManager, false).prepare());
     if (cpHost != null) {
       cpHost.postEnableTable(tableName);
    }
@@ -1715,7 +1677,7 @@ Server {
       cpHost.preDisableTable(tableName);
     }
     this.executorService.submit(new DisableTableHandler(this, tableName,
-      catalogTracker, assignmentManager, false));
+      catalogTracker, assignmentManager, tableLockManager, false).prepare());
     if (cpHost != null) {
       cpHost.postDisableTable(tableName);
     }
@@ -1775,8 +1737,7 @@ Server {
     if (cpHost != null) {
       cpHost.preModifyTable(tableName, descriptor);
     }
-    new ModifyTableHandler(tableName, descriptor, this, this).process();
-
+    new ModifyTableHandler(tableName, descriptor, this, this).prepare().process();
     if (cpHost != null) {
       cpHost.postModifyTable(tableName, descriptor);
     }
@@ -1911,7 +1872,7 @@ Server {
   public String[] getCoprocessors() {
     Set<String> masterCoprocessors =
         getCoprocessorHost().getCoprocessors();
-    return masterCoprocessors.toArray(new String[0]);
+    return masterCoprocessors.toArray(new String[masterCoprocessors.size()]);
   }
 
   @Override
@@ -1937,7 +1898,7 @@ Server {
    * 1. Create a new ZK session. (since our current one is expired)
    * 2. Try to become a primary master again
    * 3. Initialize all ZK based system trackers.
-   * 4. Assign root and meta. (they are already assigned, but we need to update our
+   * 4. Assign meta. (they are already assigned, but we need to update our
    * internal memory state to reflect it)
    * 5. Process any RIT if any during the process of our recovery.
    *
@@ -2019,6 +1980,7 @@ Server {
     return zooKeeper;
   }
 
+  @Override
   public MasterCoprocessorHost getCoprocessorHost() {
     return cpHost;
   }
@@ -2038,12 +2000,17 @@ Server {
     return this.assignmentManager;
   }
 
+  @Override
+  public TableLockManager getTableLockManager() {
+    return this.tableLockManager;
+  }
+
   public MemoryBoundedLogMessageBuffer getRegionServerFatalLogBuffer() {
     return rsFatals;
   }
 
   public void shutdown() throws IOException {
-    if (spanReceiverHost != null) { 
+    if (spanReceiverHost != null) {
       spanReceiverHost.closeReceivers();
     }
     if (cpHost != null) {
@@ -2149,8 +2116,8 @@ Server {
 
   /**
    * ServerShutdownHandlerEnabled is set false before completing
-   * assignRootAndMeta to prevent processing of ServerShutdownHandler.
-   * @return true if assignRootAndMeta has completed;
+   * assignMeta to prevent processing of ServerShutdownHandler.
+   * @return true if assignMeta has completed;
    */
   public boolean isServerShutdownHandlerEnabled() {
     return this.serverShutdownHandlerEnabled;
@@ -2421,6 +2388,165 @@ Server {
 
   public HFileCleaner getHFileCleaner() {
     return this.hfileCleaner;
+  }
+
+  /**
+   * Exposed for TESTING!
+   * @return the underlying snapshot manager
+   */
+  public SnapshotManager getSnapshotManagerForTesting() {
+    return this.snapshotManager;
+  }
+
+  /**
+   * Triggers an asynchronous attempt to take a snapshot.
+   * {@inheritDoc}
+   */
+  @Override
+  public TakeSnapshotResponse snapshot(RpcController controller, TakeSnapshotRequest request)
+      throws ServiceException {
+    try {
+      this.snapshotManager.checkSnapshotSupport();
+    } catch (UnsupportedOperationException e) {
+      throw new ServiceException(e);
+    }
+
+    LOG.debug("Submitting snapshot request for:" +
+        ClientSnapshotDescriptionUtils.toString(request.getSnapshot()));
+    // get the snapshot information
+    SnapshotDescription snapshot = SnapshotDescriptionUtils.validate(request.getSnapshot(),
+      this.conf);
+    try {
+      snapshotManager.takeSnapshot(snapshot);
+    } catch (IOException e) {
+      throw new ServiceException(e);
+    }
+
+    // send back the max amount of time the client should wait for the snapshot to complete
+    long waitTime = SnapshotDescriptionUtils.getMaxMasterTimeout(conf, snapshot.getType(),
+      SnapshotDescriptionUtils.DEFAULT_MAX_WAIT_TIME);
+    return TakeSnapshotResponse.newBuilder().setExpectedTimeout(waitTime).build();
+  }
+
+  /**
+   * List the currently available/stored snapshots. Any in-progress snapshots are ignored
+   */
+  @Override
+  public ListSnapshotResponse getCompletedSnapshots(RpcController controller,
+      ListSnapshotRequest request) throws ServiceException {
+    try {
+      ListSnapshotResponse.Builder builder = ListSnapshotResponse.newBuilder();
+      List<SnapshotDescription> snapshots = snapshotManager.getCompletedSnapshots();
+
+      // convert to protobuf
+      for (SnapshotDescription snapshot : snapshots) {
+        builder.addSnapshots(snapshot);
+      }
+      return builder.build();
+    } catch (IOException e) {
+      throw new ServiceException(e);
+    }
+  }
+
+  /**
+   * Execute Delete Snapshot operation.
+   * @return DeleteSnapshotResponse (a protobuf wrapped void) if the snapshot existed and was
+   *    deleted properly.
+   * @throws ServiceException wrapping SnapshotDoesNotExistException if specified snapshot did not
+   *    exist.
+   */
+  @Override
+  public DeleteSnapshotResponse deleteSnapshot(RpcController controller,
+      DeleteSnapshotRequest request) throws ServiceException {
+    try {
+      this.snapshotManager.checkSnapshotSupport();
+    } catch (UnsupportedOperationException e) {
+      throw new ServiceException(e);
+    }
+
+    try {
+      snapshotManager.deleteSnapshot(request.getSnapshot());
+      return DeleteSnapshotResponse.newBuilder().build();
+    } catch (IOException e) {
+      throw new ServiceException(e);
+    }
+  }
+
+  /**
+   * Checks if the specified snapshot is done.
+   * @return true if the snapshot is in file system ready to use,
+   *   false if the snapshot is in the process of completing
+   * @throws ServiceException wrapping UnknownSnapshotException if invalid snapshot, or
+   *  a wrapped HBaseSnapshotException with progress failure reason.
+   */
+  @Override
+  public IsSnapshotDoneResponse isSnapshotDone(RpcController controller,
+      IsSnapshotDoneRequest request) throws ServiceException {
+    LOG.debug("Checking to see if snapshot from request:" +
+        ClientSnapshotDescriptionUtils.toString(request.getSnapshot()) + " is done");
+    try {
+      IsSnapshotDoneResponse.Builder builder = IsSnapshotDoneResponse.newBuilder();
+      boolean done = snapshotManager.isSnapshotDone(request.getSnapshot());
+      builder.setDone(done);
+      return builder.build();
+    } catch (IOException e) {
+      throw new ServiceException(e);
+    }
+  }
+
+  /**
+   * Execute Restore/Clone snapshot operation.
+   *
+   * <p>If the specified table exists a "Restore" is executed, replacing the table
+   * schema and directory data with the content of the snapshot.
+   * The table must be disabled, or a UnsupportedOperationException will be thrown.
+   *
+   * <p>If the table doesn't exist a "Clone" is executed, a new table is created
+   * using the schema at the time of the snapshot, and the content of the snapshot.
+   *
+   * <p>The restore/clone operation does not require copying HFiles. Since HFiles
+   * are immutable the table can point to and use the same files as the original one.
+   */
+  @Override
+  public RestoreSnapshotResponse restoreSnapshot(RpcController controller,
+      RestoreSnapshotRequest request) throws ServiceException {
+    try {
+      this.snapshotManager.checkSnapshotSupport();
+    } catch (UnsupportedOperationException e) {
+      throw new ServiceException(e);
+    }
+
+    try {
+      SnapshotDescription reqSnapshot = request.getSnapshot();
+      snapshotManager.restoreSnapshot(reqSnapshot);
+      return RestoreSnapshotResponse.newBuilder().build();
+    } catch (IOException e) {
+      throw new ServiceException(e);
+    }
+  }
+
+  /**
+   * Returns the status of the requested snapshot restore/clone operation.
+   * This method is not exposed to the user, it is just used internally by HBaseAdmin
+   * to verify if the restore is completed.
+   *
+   * No exceptions are thrown if the restore is not running, the result will be "done".
+   *
+   * @return done <tt>true</tt> if the restore/clone operation is completed.
+   * @throws RestoreSnapshotExcepton if the operation failed.
+   */
+  @Override
+  public IsRestoreSnapshotDoneResponse isRestoreSnapshotDone(RpcController controller,
+      IsRestoreSnapshotDoneRequest request) throws ServiceException {
+    try {
+      SnapshotDescription snapshot = request.getSnapshot();
+      IsRestoreSnapshotDoneResponse.Builder builder = IsRestoreSnapshotDoneResponse.newBuilder();
+      boolean isRestoring = snapshotManager.isRestoringTable(snapshot);
+      builder.setDone(!isRestoring);
+      return builder.build();
+    } catch (IOException e) {
+      throw new ServiceException(e);
+    }
   }
 
   private boolean isHealthCheckerConfigured() {

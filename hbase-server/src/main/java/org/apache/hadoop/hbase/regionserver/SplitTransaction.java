@@ -42,7 +42,7 @@ import org.apache.hadoop.hbase.RegionTransition;
 import org.apache.hadoop.hbase.Server;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.catalog.MetaEditor;
-import org.apache.hadoop.hbase.executor.EventHandler.EventType;
+import org.apache.hadoop.hbase.executor.EventType;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.CancelableProgressable;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
@@ -83,7 +83,6 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 @InterfaceAudience.Private
 public class SplitTransaction {
   private static final Log LOG = LogFactory.getLog(SplitTransaction.class);
-  private static final String SPLITDIR = ".splits";
 
   /*
    * Region to split
@@ -223,7 +222,7 @@ public class SplitTransaction {
     if (this.parent.getCoprocessorHost() != null) {
       this.parent.getCoprocessorHost().preSplit();
     }
-    
+
     // Coprocessor callback
     if (this.parent.getCoprocessorHost() != null) {
       this.parent.getCoprocessorHost().preSplit(this.splitrow);
@@ -289,7 +288,7 @@ public class SplitTransaction {
       throw new IOException(exceptionToThrow);
     }
 
-        
+
     if (hstoreFilesToSplit.size() == 0) {
       String errorMsg = "No store files to split for the region "+this.parent.getRegionInfo();
       LOG.error(errorMsg);
@@ -336,10 +335,14 @@ public class SplitTransaction {
     // HBase-4562).
     this.journal.add(JournalEntry.PONR);
 
-    // Edit parent in meta.  Offlines parent region and adds splita and splitb.
+    // Edit parent in meta.  Offlines parent region and adds splita and splitb
+    // as an atomic update. See HBASE-7721. This update to META makes the region
+    // will determine whether the region is split or not in case of failures.
+    // If it is successful, master will roll-forward, if not, master will rollback
+    // and assign the parent region.
     if (!testing) {
-      MetaEditor.offlineParentInMeta(server.getCatalogTracker(),
-        this.parent.getRegionInfo(), a.getRegionInfo(), b.getRegionInfo());
+      MetaEditor.splitRegion(server.getCatalogTracker(), parent.getRegionInfo(),
+          a.getRegionInfo(), b.getRegionInfo(), server.getServerName());
     }
     return new PairOfSameType<HRegion>(a, b);
   }
@@ -389,10 +392,10 @@ public class SplitTransaction {
       if (services != null) {
         try {
           // add 2nd daughter first (see HBASE-4335)
-          services.postOpenDeployTasks(b, server.getCatalogTracker(), true);
+          services.postOpenDeployTasks(b, server.getCatalogTracker());
           // Should add it to OnlineRegions
           services.addToOnlineRegions(b);
-          services.postOpenDeployTasks(a, server.getCatalogTracker(), true);
+          services.postOpenDeployTasks(a, server.getCatalogTracker());
           services.addToOnlineRegions(a);
         } catch (KeeperException ke) {
           throw new IOException(ke);
@@ -547,7 +550,7 @@ public class SplitTransaction {
   }
 
   private static Path getSplitDir(final HRegion r) {
-    return new Path(r.getRegionDir(), SPLITDIR);
+    return new Path(r.getRegionDir(), HRegionFileSystem.REGION_SPLITS_DIR);
   }
 
   /**
@@ -656,11 +659,9 @@ public class SplitTransaction {
   throws IOException {
     FileSystem fs = this.parent.getFilesystem();
     byte [] family = sf.getFamily();
-    String encoded = this.hri_a.getEncodedName();
-    Path storedir = HStore.getStoreHomedir(splitdir, encoded, family);
+    Path storedir = HStore.getStoreHomedir(splitdir, this.hri_a, family);
     StoreFile.split(fs, storedir, sf, this.splitrow, false);
-    encoded = this.hri_b.getEncodedName();
-    storedir = HStore.getStoreHomedir(splitdir, encoded, family);
+    storedir = HStore.getStoreHomedir(splitdir, this.hri_b, family);
     StoreFile.split(fs, storedir, sf, this.splitrow, true);
   }
 
@@ -736,7 +737,7 @@ public class SplitTransaction {
     if (this.parent.getCoprocessorHost() != null) {
       this.parent.getCoprocessorHost().preRollBackSplit();
     }
-    
+
     boolean result = true;
     FileSystem fs = this.parent.getFilesystem();
     ListIterator<JournalEntry> iterator =

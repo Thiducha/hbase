@@ -37,6 +37,7 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.ServerCallable;
+import org.apache.hadoop.hbase.exceptions.TableExistsException;
 import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.io.hfile.HFile;
@@ -165,8 +166,7 @@ public class TestHRegionServerBulkLoad {
           public Void call() throws Exception {
             LOG.debug("compacting " + location + " for row "
                 + Bytes.toStringBinary(row));
-            AdminProtocol server = connection.getAdmin(
-              location.getHostname(), location.getPort());
+            AdminProtocol server = connection.getAdmin(location.getServerName());
             CompactRegionRequest request =
               RequestConverter.buildCompactRegionRequest(
                 location.getRegionInfo().getRegionName(), true, null);

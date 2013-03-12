@@ -23,9 +23,9 @@ import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,14 +38,15 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.CompatibilitySingletonFactory;
-import org.apache.hadoop.hbase.DoNotRetryIOException;
-import org.apache.hadoop.hbase.FailedSanityCheckException;
+import org.apache.hadoop.hbase.exceptions.FailedSanityCheckException;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HBaseTestCase;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HConstants.OperationStatusCode;
+import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.CellComparator;
 import org.apache.hadoop.hbase.HDFSBlocksDistribution;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
@@ -64,6 +65,9 @@ import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.exceptions.NoSuchColumnFamilyException;
+import org.apache.hadoop.hbase.exceptions.NotServingRegionException;
+import org.apache.hadoop.hbase.exceptions.WrongRegionException;
 import org.apache.hadoop.hbase.filter.BinaryComparator;
 import org.apache.hadoop.hbase.filter.ColumnCountGetFilter;
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp;
@@ -91,7 +95,6 @@ import org.apache.hadoop.hbase.util.IncrementingEnvironmentEdge;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.PairOfSameType;
 import org.apache.hadoop.hbase.util.Threads;
-import org.apache.hbase.cell.CellComparator;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -225,7 +228,7 @@ public class TestHRegion extends HBaseTestCase {
     RegionScanner scanner1 = region.getScanner(scan);
 
     System.out.println("Smallest read point:" + region.getSmallestReadPoint());
-    
+
     region.compactStores(true);
 
     scanner1.reseek(Bytes.toBytes("r2"));
@@ -254,7 +257,7 @@ public class TestHRegion extends HBaseTestCase {
       for (long i = minSeqId; i <= maxSeqId; i += 10) {
         Path recoveredEdits = new Path(recoveredEditsDir, String.format("%019d", i));
         fs.create(recoveredEdits);
-        HLog.Writer writer = HLogFactory.createWriter(fs, 
+        HLog.Writer writer = HLogFactory.createWriter(fs,
             recoveredEdits, conf);
 
         long time = System.nanoTime();
@@ -306,7 +309,7 @@ public class TestHRegion extends HBaseTestCase {
       for (long i = minSeqId; i <= maxSeqId; i += 10) {
         Path recoveredEdits = new Path(recoveredEditsDir, String.format("%019d", i));
         fs.create(recoveredEdits);
-        HLog.Writer writer = HLogFactory.createWriter(fs, 
+        HLog.Writer writer = HLogFactory.createWriter(fs,
             recoveredEdits, conf);
 
         long time = System.nanoTime();
@@ -367,7 +370,7 @@ public class TestHRegion extends HBaseTestCase {
           recoveredEditsDir, String.format("%019d", minSeqId-1));
       FSDataOutputStream dos=  fs.create(recoveredEdits);
       dos.close();
-      
+
       Map<byte[], Long> maxSeqIdInStores = new TreeMap<byte[], Long>(
         Bytes.BYTES_COMPARATOR);
       for (Store store : region.getStores().values()) {
@@ -525,7 +528,7 @@ public class TestHRegion extends HBaseTestCase {
     this.region = initHRegion(TABLE, getName(), conf, true, Bytes.toBytes("somefamily"));
     boolean exceptionCaught = false;
     Append append = new Append(Bytes.toBytes("somerow"));
-    append.add(Bytes.toBytes("somefamily"), Bytes.toBytes("somequalifier"), 
+    append.add(Bytes.toBytes("somefamily"), Bytes.toBytes("somequalifier"),
         Bytes.toBytes("somevalue"));
     try {
       region.append(append, false);
@@ -541,7 +544,7 @@ public class TestHRegion extends HBaseTestCase {
   public void testIncrWithReadOnlyTable() throws Exception {
     byte[] TABLE = Bytes.toBytes("readOnlyTable");
     this.region = initHRegion(TABLE, getName(), conf, true, Bytes.toBytes("somefamily"));
-    boolean exceptionCaught = false;    
+    boolean exceptionCaught = false;
     Increment inc = new Increment(Bytes.toBytes("somerow"));
     inc.addColumn(Bytes.toBytes("somefamily"), Bytes.toBytes("somequalifier"), 1L);
     try {
@@ -710,7 +713,7 @@ public class TestHRegion extends HBaseTestCase {
       LOG.info("...starting put thread while holding lock");
       ctx.addThread(putter);
       ctx.startThreads();
-  
+
       LOG.info("...waiting for put thread to sync first time");
       long startWait = System.currentTimeMillis();
       while (metricsAssertHelper.getCounter("syncTimeNumOps", source) == syncs +2 ) {
@@ -730,7 +733,7 @@ public class TestHRegion extends HBaseTestCase {
         assertEquals((i == 5) ? OperationStatusCode.BAD_FAMILY :
           OperationStatusCode.SUCCESS, codes[i].getOperationStatusCode());
       }
-  
+
       LOG.info("Nexta, a batch put which uses an already-held lock");
       lockedRow = region.obtainRowLock(Bytes.toBytes("row_2"));
       LOG.info("...obtained row lock");
@@ -740,7 +743,7 @@ public class TestHRegion extends HBaseTestCase {
         if (i == 2) pair.setSecond(lockedRow);
         putsAndLocks.add(pair);
       }
-  
+
       codes = region.batchMutate(putsAndLocks.toArray(new Pair[0]));
       LOG.info("...performed put");
       for (int i = 0; i < 10; i++) {
@@ -749,7 +752,7 @@ public class TestHRegion extends HBaseTestCase {
       }
       // Make sure we didn't do an extra batch
       metricsAssertHelper.assertCounter("syncTimeNumOps", syncs + 5, source);
-  
+
       // Make sure we still hold lock
       assertTrue(region.isRowLocked(lockedRow));
       LOG.info("...releasing lock");
@@ -1002,7 +1005,7 @@ public class TestHRegion extends HBaseTestCase {
         boolean res = region.checkAndMutate(row, fam1, qual1, CompareOp.EQUAL,
             new BinaryComparator(value2), put, false);
         fail();
-      } catch (DoNotRetryIOException expected) {
+      } catch (org.apache.hadoop.hbase.exceptions.DoNotRetryIOException expected) {
         // expected exception.
       }
     } finally {
@@ -1142,7 +1145,8 @@ public class TestHRegion extends HBaseTestCase {
       //testing existing family
       byte [] family = fam2;
       try {
-        Map<byte[], List<KeyValue>> deleteMap = new HashMap<byte[], List<KeyValue>>();
+        NavigableMap<byte[], List<? extends Cell>> deleteMap =
+          new TreeMap<byte[], List<? extends Cell>>(Bytes.BYTES_COMPARATOR);
         deleteMap.put(family, kvs);
         region.delete(deleteMap, HConstants.DEFAULT_CLUSTER_ID, true);
       } catch (Exception e) {
@@ -1153,7 +1157,8 @@ public class TestHRegion extends HBaseTestCase {
       boolean ok = false;
       family = fam4;
       try {
-        Map<byte[], List<KeyValue>> deleteMap = new HashMap<byte[], List<KeyValue>>();
+        NavigableMap<byte[], List<? extends Cell>> deleteMap =
+          new TreeMap<byte[], List<? extends Cell>>(Bytes.BYTES_COMPARATOR);
         deleteMap.put(family, kvs);
         region.delete(deleteMap, HConstants.DEFAULT_CLUSTER_ID, true);
       } catch (Exception e) {
@@ -1480,7 +1485,8 @@ public class TestHRegion extends HBaseTestCase {
       kvs.add(new KeyValue(row1, fam1, col2, null));
       kvs.add(new KeyValue(row1, fam1, col3, null));
 
-      Map<byte[], List<KeyValue>> deleteMap = new HashMap<byte[], List<KeyValue>>();
+      NavigableMap<byte[], List<? extends Cell>> deleteMap =
+        new TreeMap<byte[], List<? extends Cell>>(Bytes.BYTES_COMPARATOR);
       deleteMap.put(fam1, kvs);
       region.delete(deleteMap, HConstants.DEFAULT_CLUSTER_ID, true);
 
@@ -1520,7 +1526,7 @@ public class TestHRegion extends HBaseTestCase {
       //Test
       try {
         region.get(get);
-      } catch (DoNotRetryIOException e) {
+      } catch (org.apache.hadoop.hbase.exceptions.DoNotRetryIOException e) {
         assertFalse(false);
         return;
       }
@@ -1867,7 +1873,7 @@ public class TestHRegion extends HBaseTestCase {
 
   /**
    * This method tests https://issues.apache.org/jira/browse/HBASE-2516.
-   * @throws IOException 
+   * @throws IOException
    */
   public void testGetScanner_WithRegionClosed() throws IOException {
     byte[] tableName = Bytes.toBytes("testtable");
@@ -1889,7 +1895,7 @@ public class TestHRegion extends HBaseTestCase {
       try {
         region.getScanner(null);
         fail("Expected to get an exception during getScanner on a region that is closed");
-      } catch (org.apache.hadoop.hbase.NotServingRegionException e) {
+      } catch (NotServingRegionException e) {
         //this is the correct exception that is expected
       } catch (IOException e) {
         fail("Got wrong type of exception - should be a NotServingRegionException, but was an IOException: "
@@ -3420,8 +3426,7 @@ public class TestHRegion extends HBaseTestCase {
       // static method is used by load balancer or other components
       HDFSBlocksDistribution blocksDistribution2 =
         HRegion.computeHDFSBlocksDistribution(htu.getConfiguration(),
-        firstRegion.getTableDesc(),
-        firstRegion.getRegionInfo().getEncodedName());
+        firstRegion.getTableDesc(), firstRegion.getRegionInfo());
       long uniqueBlocksWeight2 =
         blocksDistribution2.getUniqueBlocksTotalWeight();
 
@@ -3434,11 +3439,11 @@ public class TestHRegion extends HBaseTestCase {
         }
       }
   }
-  
+
   /**
    * Testcase to check state of region initialization task set to ABORTED or not if any exceptions
    * during initialization
-   * 
+   *
    * @throws Exception
    */
   @Test
@@ -3490,10 +3495,10 @@ public class TestHRegion extends HBaseTestCase {
     FileSystem fs = region.getFilesystem();
     HRegion.closeHRegion(region);
 
-    Path regionInfoFile = new Path(regionDir, HRegion.REGIONINFO_FILE);
+    Path regionInfoFile = new Path(regionDir, HRegionFileSystem.REGION_INFO_FILE);
 
     // Verify that the .regioninfo file is present
-    assertTrue(HRegion.REGIONINFO_FILE + " should be present in the region dir",
+    assertTrue(HRegionFileSystem.REGION_INFO_FILE + " should be present in the region dir",
       fs.exists(regionInfoFile));
 
     // Try to open the region
@@ -3502,12 +3507,12 @@ public class TestHRegion extends HBaseTestCase {
     HRegion.closeHRegion(region);
 
     // Verify that the .regioninfo file is still there
-    assertTrue(HRegion.REGIONINFO_FILE + " should be present in the region dir",
+    assertTrue(HRegionFileSystem.REGION_INFO_FILE + " should be present in the region dir",
       fs.exists(regionInfoFile));
 
     // Remove the .regioninfo file and verify is recreated on region open
     fs.delete(regionInfoFile);
-    assertFalse(HRegion.REGIONINFO_FILE + " should be removed from the region dir",
+    assertFalse(HRegionFileSystem.REGION_INFO_FILE + " should be removed from the region dir",
       fs.exists(regionInfoFile));
 
     region = HRegion.openHRegion(rootDir, hri, htd, null, conf);
@@ -3515,8 +3520,8 @@ public class TestHRegion extends HBaseTestCase {
     HRegion.closeHRegion(region);
 
     // Verify that the .regioninfo file is still there
-    assertTrue(HRegion.REGIONINFO_FILE + " should be present in the region dir",
-      fs.exists(new Path(regionDir, HRegion.REGIONINFO_FILE)));
+    assertTrue(HRegionFileSystem.REGION_INFO_FILE + " should be present in the region dir",
+      fs.exists(new Path(regionDir, HRegionFileSystem.REGION_INFO_FILE)));
   }
 
   /**
@@ -3602,7 +3607,7 @@ public class TestHRegion extends HBaseTestCase {
     Result res = this.region.get(get);
     List<KeyValue> kvs = res.getColumn(Incrementer.family,
         Incrementer.qualifier);
-    
+
     //we just got the latest version
     assertEquals(kvs.size(), 1);
     KeyValue kv = kvs.get(0);
@@ -3696,7 +3701,7 @@ public class TestHRegion extends HBaseTestCase {
     Result res = this.region.get(get);
     List<KeyValue> kvs = res.getColumn(Appender.family,
         Appender.qualifier);
-    
+
     //we just got the latest version
     assertEquals(kvs.size(), 1);
     KeyValue kv = kvs.get(0);
@@ -3765,7 +3770,7 @@ public class TestHRegion extends HBaseTestCase {
     assertEquals(1, kvs.size());
     assertEquals(Bytes.toBytes("value1"), kvs.get(0).getValue());
   }
-  
+
   private void putData(int startRow, int numRows, byte [] qf,
       byte [] ...families)
   throws IOException {

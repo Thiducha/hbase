@@ -19,7 +19,10 @@ package org.apache.hadoop.hbase.util;
 // this is deliberately not in the o.a.h.h.regionserver package
 // in order to make sure all required classes/method are available
 
+import static org.junit.Assert.assertEquals;
+
 import java.io.IOException;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -29,11 +32,13 @@ import java.util.NavigableSet;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.KeyValueUtil;
 import org.apache.hadoop.hbase.MediumTests;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTable;
@@ -47,7 +52,8 @@ import org.apache.hadoop.hbase.coprocessor.RegionCoprocessorEnvironment;
 import org.apache.hadoop.hbase.regionserver.InternalScanner;
 import org.apache.hadoop.hbase.regionserver.KeyValueScanner;
 import org.apache.hadoop.hbase.regionserver.ScanType;
-import org.apache.hadoop.hbase.regionserver.HStore;
+import org.apache.hadoop.hbase.regionserver.Store;
+import org.apache.hadoop.hbase.regionserver.ScanInfo;
 import org.apache.hadoop.hbase.regionserver.StoreScanner;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -56,16 +62,18 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import static org.junit.Assert.*;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameters;
 
 @Category(MediumTests.class)
+@RunWith(Parameterized.class)
 public class TestCoprocessorScanPolicy {
   final Log LOG = LogFactory.getLog(getClass());
   protected final static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
   private static final byte[] F = Bytes.toBytes("fam");
   private static final byte[] Q = Bytes.toBytes("qual");
   private static final byte[] R = Bytes.toBytes("row");
-
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
@@ -80,9 +88,22 @@ public class TestCoprocessorScanPolicy {
     TEST_UTIL.shutdownMiniCluster();
   }
 
+  @Parameters
+  public static Collection<Object[]> parameters() {
+    return HBaseTestingUtility.BOOLEAN_PARAMETERIZED;
+  }
+
+  public TestCoprocessorScanPolicy(boolean parallelSeekEnable) {
+    TEST_UTIL.getMiniHBaseCluster().getConf()
+        .setBoolean(StoreScanner.STORESCANNER_PARALLEL_SEEK_ENABLE, parallelSeekEnable);
+  }
+
   @Test
   public void testBaseCases() throws Exception {
     byte[] tableName = Bytes.toBytes("baseCases");
+    if (TEST_UTIL.getHBaseAdmin().tableExists(tableName)) {
+      TEST_UTIL.deleteTable(tableName);
+    }
     HTable t = TEST_UTIL.createTable(tableName, F, 1);
     // set the version override to 2
     Put p = new Put(R);
@@ -129,6 +150,9 @@ public class TestCoprocessorScanPolicy {
   @Test
   public void testTTL() throws Exception {
     byte[] tableName = Bytes.toBytes("testTTL");
+    if (TEST_UTIL.getHBaseAdmin().tableExists(tableName)) {
+      TEST_UTIL.deleteTable(tableName);
+    }
     HTableDescriptor desc = new HTableDescriptor(tableName);
     HColumnDescriptor hcd = new HColumnDescriptor(F)
     .setMaxVersions(10)
@@ -193,64 +217,68 @@ public class TestCoprocessorScanPolicy {
     public void prePut(final ObserverContext<RegionCoprocessorEnvironment> c, final Put put,
         final WALEdit edit, final boolean writeToWAL) throws IOException {
       if (put.getAttribute("ttl") != null) {
-        KeyValue kv = put.getFamilyMap().values().iterator().next().get(0);
+        Cell cell = put.getFamilyMap().values().iterator().next().get(0);
+        KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
         ttls.put(Bytes.toString(kv.getQualifier()), Bytes.toLong(kv.getValue()));
         c.bypass();
       } else if (put.getAttribute("versions") != null) {
-        KeyValue kv = put.getFamilyMap().values().iterator().next().get(0);
+        Cell cell = put.getFamilyMap().values().iterator().next().get(0);
+        KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
         versions.put(Bytes.toString(kv.getQualifier()), Bytes.toInt(kv.getValue()));
         c.bypass();
       }
     }
 
     @Override
-    public InternalScanner preFlushScannerOpen(final ObserverContext<RegionCoprocessorEnvironment> c,
-        HStore store, KeyValueScanner memstoreScanner, InternalScanner s) throws IOException {
+    public InternalScanner preFlushScannerOpen(
+        final ObserverContext<RegionCoprocessorEnvironment> c,
+        Store store, KeyValueScanner memstoreScanner, InternalScanner s) throws IOException {
       Long newTtl = ttls.get(store.getTableName());
       if (newTtl != null) {
         System.out.println("PreFlush:" + newTtl);
       }
       Integer newVersions = versions.get(store.getTableName());
-      HStore.ScanInfo oldSI = store.getScanInfo();
+      ScanInfo oldSI = store.getScanInfo();
       HColumnDescriptor family = store.getFamily();
-      HStore.ScanInfo scanInfo = new HStore.ScanInfo(family.getName(), family.getMinVersions(),
+      ScanInfo scanInfo = new ScanInfo(family.getName(), family.getMinVersions(),
           newVersions == null ? family.getMaxVersions() : newVersions,
           newTtl == null ? oldSI.getTtl() : newTtl, family.getKeepDeletedCells(),
           oldSI.getTimeToPurgeDeletes(), oldSI.getComparator());
       Scan scan = new Scan();
       scan.setMaxVersions(newVersions == null ? oldSI.getMaxVersions() : newVersions);
       return new StoreScanner(store, scanInfo, scan, Collections.singletonList(memstoreScanner),
-          ScanType.MINOR_COMPACT, store.getHRegion().getSmallestReadPoint(),
+          ScanType.COMPACT_RETAIN_DELETES, store.getSmallestReadPoint(),
           HConstants.OLDEST_TIMESTAMP);
     }
 
     @Override
-    public InternalScanner preCompactScannerOpen(final ObserverContext<RegionCoprocessorEnvironment> c,
-        HStore store, List<? extends KeyValueScanner> scanners, ScanType scanType,
+    public InternalScanner preCompactScannerOpen(
+        final ObserverContext<RegionCoprocessorEnvironment> c,
+        Store store, List<? extends KeyValueScanner> scanners, ScanType scanType,
         long earliestPutTs, InternalScanner s) throws IOException {
       Long newTtl = ttls.get(store.getTableName());
       Integer newVersions = versions.get(store.getTableName());
-      HStore.ScanInfo oldSI = store.getScanInfo();
+      ScanInfo oldSI = store.getScanInfo();
       HColumnDescriptor family = store.getFamily();
-      HStore.ScanInfo scanInfo = new HStore.ScanInfo(family.getName(), family.getMinVersions(),
+      ScanInfo scanInfo = new ScanInfo(family.getName(), family.getMinVersions(),
           newVersions == null ? family.getMaxVersions() : newVersions,
           newTtl == null ? oldSI.getTtl() : newTtl, family.getKeepDeletedCells(),
           oldSI.getTimeToPurgeDeletes(), oldSI.getComparator());
       Scan scan = new Scan();
       scan.setMaxVersions(newVersions == null ? oldSI.getMaxVersions() : newVersions);
-      return new StoreScanner(store, scanInfo, scan, scanners, scanType, store.getHRegion()
-          .getSmallestReadPoint(), earliestPutTs);
+      return new StoreScanner(store, scanInfo, scan, scanners, scanType,
+          store.getSmallestReadPoint(), earliestPutTs);
     }
 
     @Override
     public KeyValueScanner preStoreScannerOpen(
-        final ObserverContext<RegionCoprocessorEnvironment> c, HStore store, final Scan scan,
+        final ObserverContext<RegionCoprocessorEnvironment> c, Store store, final Scan scan,
         final NavigableSet<byte[]> targetCols, KeyValueScanner s) throws IOException {
       Long newTtl = ttls.get(store.getTableName());
       Integer newVersions = versions.get(store.getTableName());
-      HStore.ScanInfo oldSI = store.getScanInfo();
+      ScanInfo oldSI = store.getScanInfo();
       HColumnDescriptor family = store.getFamily();
-      HStore.ScanInfo scanInfo = new HStore.ScanInfo(family.getName(), family.getMinVersions(),
+      ScanInfo scanInfo = new ScanInfo(family.getName(), family.getMinVersions(),
           newVersions == null ? family.getMaxVersions() : newVersions,
           newTtl == null ? oldSI.getTtl() : newTtl, family.getKeepDeletedCells(),
           oldSI.getTimeToPurgeDeletes(), oldSI.getComparator());

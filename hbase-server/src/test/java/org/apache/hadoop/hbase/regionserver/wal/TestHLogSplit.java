@@ -40,6 +40,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.commons.logging.impl.Log4JLogger;
+import org.apache.hadoop.hbase.exceptions.OrphanHLogAfterSplitException;
 import org.apache.log4j.Level;
 import org.apache.hadoop.hdfs.server.datanode.DataNode;
 import org.apache.hadoop.hdfs.server.namenode.FSNamesystem;
@@ -64,6 +65,7 @@ import org.apache.hadoop.hbase.regionserver.wal.HLog.Entry;
 import org.apache.hadoop.hbase.regionserver.wal.HLog.Reader;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.FSUtils;
 import org.apache.hadoop.hbase.util.CancelableProgressable;
 import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hdfs.DFSTestUtil;
@@ -132,7 +134,7 @@ public class TestHLogSplit {
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
-    TEST_UTIL.getConfiguration().setStrings("hbase.rootdir", HBASEDIR.toString());
+    FSUtils.setRootDir(TEST_UTIL.getConfiguration(), HBASEDIR);
     TEST_UTIL.getConfiguration().setClass("hbase.regionserver.hlog.writer.impl",
       InstrumentedSequenceFileLogWriter.class, HLog.Writer.class);
     // This is how you turn off shortcircuit read currently.  TODO: Fix.  Should read config.
@@ -357,7 +359,7 @@ public class TestHLogSplit {
             HConstants.META_TABLE_NAME, 1, now, HConstants.DEFAULT_CLUSTER_ID),
       new WALEdit());
     Path parent = HLogUtil.getRegionDirRecoveredEditsDir(regiondir);
-    assertEquals(parent.getName(), HLog.RECOVERED_EDITS_DIR);
+    assertEquals(parent.getName(), HConstants.RECOVERED_EDITS_DIR);
     fs.createNewFile(parent); // create a recovered.edits file
 
     Path p = HLogSplitter.getRegionSplitEditsPath(fs, entry, HBASEDIR, true);
@@ -1076,7 +1078,7 @@ public class TestHLogSplit {
       }
       Path tableDir = new Path(HBASEDIR, new String(TABLE_NAME));
       Path regionDir = new Path(tableDir, REGIONS.get(0));
-      Path recoveredEdits = new Path(regionDir, HLog.RECOVERED_EDITS_DIR);
+      Path recoveredEdits = new Path(regionDir, HConstants.RECOVERED_EDITS_DIR);
       String region = "juliet";
       Path julietLog = new Path(HLOGDIR, HLOG_FILE_PREFIX + ".juliet");
       try {
@@ -1208,7 +1210,7 @@ public class TestHLogSplit {
     HLogSplitter.finishSplitLogFile(HBASEDIR, OLDLOGDIR, logfile.getPath()
         .toString(), conf);
 
-    final Path corruptDir = new Path(conf.get(HConstants.HBASE_DIR), conf.get(
+    final Path corruptDir = new Path(FSUtils.getRootDir(conf), conf.get(
         "hbase.regionserver.hlog.splitlog.corrupt.dir", ".corrupt"));
     assertEquals(1, fs.listStatus(corruptDir).length);
   }

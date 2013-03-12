@@ -71,7 +71,7 @@ import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.RegionCoprocessorHost;
 import org.apache.hadoop.hbase.regionserver.RegionServerCoprocessorHost;
 import org.apache.hadoop.hbase.regionserver.ScanType;
-import org.apache.hadoop.hbase.security.AccessDeniedException;
+import org.apache.hadoop.hbase.exceptions.AccessDeniedException;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.security.access.Permission.Action;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -121,6 +121,11 @@ public class TestAccessController {
   public static void setupBeforeClass() throws Exception {
     // setup configuration
     conf = TEST_UTIL.getConfiguration();
+    conf.set("hbase.master.hfilecleaner.plugins",
+      "org.apache.hadoop.hbase.master.cleaner.HFileLinkCleaner," +
+      "org.apache.hadoop.hbase.master.snapshot.SnapshotHFileCleaner");
+    conf.set("hbase.master.logcleaner.plugins",
+      "org.apache.hadoop.hbase.master.snapshot.SnapshotLogCleaner");
     SecureTestUtil.enableSecurity(conf);
 
     TEST_UTIL.startMiniCluster();
@@ -135,7 +140,7 @@ public class TestAccessController {
       Coprocessor.PRIORITY_HIGHEST, 1, conf);
 
     // Wait for the ACL table to become available
-    TEST_UTIL.waitTableAvailable(AccessControlLists.ACL_TABLE_NAME, 5000);
+    TEST_UTIL.waitTableEnabled(AccessControlLists.ACL_TABLE_NAME);
 
     // create a set of test users
     SUPERUSER = User.createUserForTesting(conf, "admin", new String[] { "supergroup" });
@@ -569,7 +574,7 @@ public class TestAccessController {
     PrivilegedExceptionAction action = new PrivilegedExceptionAction() {
       public Object run() throws Exception {
         ACCESS_CONTROLLER.preCompact(ObserverContext.createAndPrepare(RCP_ENV, null), null, null,
-          ScanType.MINOR_COMPACT);
+          ScanType.COMPACT_RETAIN_DELETES);
         return null;
       }
     };
@@ -819,7 +824,7 @@ public class TestAccessController {
 
       HTable table = new HTable(conf, tableName);
       try {
-        TEST_UTIL.waitTableAvailable(tableName, 30000);
+        TEST_UTIL.waitTableEnabled(tableName);
         LoadIncrementalHFiles loader = new LoadIncrementalHFiles(conf);
         loader.doBulkLoad(loadPath, table);
       } finally {
@@ -1796,4 +1801,50 @@ public class TestAccessController {
     verifyDenied(action, USER_CREATE, USER_RW, USER_RO, USER_NONE, USER_OWNER);
   }
 
+  @Test
+  public void testSnapshot() throws Exception {
+    PrivilegedExceptionAction snapshotAction = new PrivilegedExceptionAction() {
+      public Object run() throws Exception {
+        ACCESS_CONTROLLER.preSnapshot(ObserverContext.createAndPrepare(CP_ENV, null),
+          null, null);
+        return null;
+      }
+    };
+
+    PrivilegedExceptionAction deleteAction = new PrivilegedExceptionAction() {
+      public Object run() throws Exception {
+        ACCESS_CONTROLLER.preDeleteSnapshot(ObserverContext.createAndPrepare(CP_ENV, null),
+          null);
+        return null;
+      }
+    };
+
+    PrivilegedExceptionAction restoreAction = new PrivilegedExceptionAction() {
+      public Object run() throws Exception {
+        ACCESS_CONTROLLER.preRestoreSnapshot(ObserverContext.createAndPrepare(CP_ENV, null),
+          null, null);
+        return null;
+      }
+    };
+
+    PrivilegedExceptionAction cloneAction = new PrivilegedExceptionAction() {
+      public Object run() throws Exception {
+        ACCESS_CONTROLLER.preCloneSnapshot(ObserverContext.createAndPrepare(CP_ENV, null),
+          null, null);
+        return null;
+      }
+    };
+
+    verifyAllowed(snapshotAction, SUPERUSER, USER_ADMIN);
+    verifyDenied(snapshotAction, USER_CREATE, USER_RW, USER_RO, USER_NONE, USER_OWNER);
+
+    verifyAllowed(cloneAction, SUPERUSER, USER_ADMIN);
+    verifyDenied(deleteAction, USER_CREATE, USER_RW, USER_RO, USER_NONE, USER_OWNER);
+
+    verifyAllowed(restoreAction, SUPERUSER, USER_ADMIN);
+    verifyDenied(restoreAction, USER_CREATE, USER_RW, USER_RO, USER_NONE, USER_OWNER);
+
+    verifyAllowed(deleteAction, SUPERUSER, USER_ADMIN);
+    verifyDenied(cloneAction, USER_CREATE, USER_RW, USER_RO, USER_NONE, USER_OWNER);
+  }
 }

@@ -136,7 +136,7 @@ public class ScanQueryMatcher {
    * @param oldestUnexpiredTS the oldest timestamp we are interested in,
    *  based on TTL
    */
-  public ScanQueryMatcher(Scan scan, HStore.ScanInfo scanInfo,
+  public ScanQueryMatcher(Scan scan, ScanInfo scanInfo,
       NavigableSet<byte[]> columns, ScanType scanType,
       long readPointToUse, long earliestPutTs, long oldestUnexpiredTS) {
     this.tr = scan.getTimeRange();
@@ -155,7 +155,7 @@ public class ScanQueryMatcher {
     // keep deleted cells: if compaction or raw scan
     this.keepDeletedCells = (scanInfo.getKeepDeletedCells() && !isUserScan) || scan.isRaw();
     // retain deletes: if minor compaction or raw scan
-    this.retainDeletesInOutput = scanType == ScanType.MINOR_COMPACT || scan.isRaw();
+    this.retainDeletesInOutput = scanType == ScanType.COMPACT_RETAIN_DELETES || scan.isRaw();
     // seePastDeleteMarker: user initiated scans
     this.seePastDeleteMarkers = scanInfo.getKeepDeletedCells() && isUserScan;
 
@@ -182,7 +182,7 @@ public class ScanQueryMatcher {
   /*
    * Constructor for tests
    */
-  ScanQueryMatcher(Scan scan, HStore.ScanInfo scanInfo,
+  ScanQueryMatcher(Scan scan, ScanInfo scanInfo,
       NavigableSet<byte[]> columns, long oldestUnexpiredTS) {
     this(scan, scanInfo, columns, ScanType.USER_SCAN,
           Long.MAX_VALUE, /* max Readpoint to track versions */

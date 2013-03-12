@@ -37,12 +37,13 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HRegionLocation;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.TableExistsException;
+import org.apache.hadoop.hbase.exceptions.TableExistsException;
 import org.apache.hadoop.hbase.client.ClientProtocol;
 import org.apache.hadoop.hbase.client.HConnection;
 import org.apache.hadoop.hbase.client.HTable;
@@ -270,7 +271,7 @@ public class TestLoadIncrementalHFilesSplitRecovery {
     Mockito.doNothing().when(c).close();
     // Make it so we return a particular location when asked.
     final HRegionLocation loc = new HRegionLocation(HRegionInfo.FIRST_META_REGIONINFO,
-        new ServerName("example.org", 1234, 0));
+        new ServerName("example.org", 1234, 0), HConstants.NO_SEQNUM);
     Mockito.when(c.getRegionLocation((byte[]) Mockito.any(),
         (byte[]) Mockito.any(), Mockito.anyBoolean())).
       thenReturn(loc);
@@ -279,7 +280,7 @@ public class TestLoadIncrementalHFilesSplitRecovery {
     ClientProtocol hri = Mockito.mock(ClientProtocol.class);
     Mockito.when(hri.bulkLoadHFile((RpcController)Mockito.any(), (BulkLoadHFileRequest)Mockito.any())).
       thenThrow(new ServiceException(new IOException("injecting bulk load error")));
-    Mockito.when(c.getClient(Mockito.anyString(), Mockito.anyInt())).
+    Mockito.when(c.getClient(Mockito.any(ServerName.class))).
       thenReturn(hri);
     return c;
   }

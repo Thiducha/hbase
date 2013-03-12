@@ -34,12 +34,12 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.hbase.ClusterId;
-import org.apache.hadoop.hbase.DeserializationException;
+import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.InvalidFamilyOperationException;
+import org.apache.hadoop.hbase.exceptions.InvalidFamilyOperationException;
 import org.apache.hadoop.hbase.RemoteExceptionHandler;
 import org.apache.hadoop.hbase.Server;
 import org.apache.hadoop.hbase.ServerName;
@@ -49,7 +49,7 @@ import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.regionserver.wal.HLogSplitter;
 import org.apache.hadoop.hbase.regionserver.wal.HLogUtil;
-import org.apache.hadoop.hbase.regionserver.wal.OrphanHLogAfterSplitException;
+import org.apache.hadoop.hbase.exceptions.OrphanHLogAfterSplitException;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.FSTableDescriptors;
@@ -79,6 +79,8 @@ public class MasterFileSystem {
   private final Path oldLogDir;
   // root hbase directory on the FS
   private final Path rootdir;
+  // hbase temp directory used for table construction and deletion
+  private final Path tempdir;
   // create the split log lock
   final Lock splitLogLock = new ReentrantLock();
   final boolean distributedLogSplitting;
@@ -109,12 +111,11 @@ public class MasterFileSystem {
     // default localfs.  Presumption is that rootdir is fully-qualified before
     // we get to here with appropriate fs scheme.
     this.rootdir = FSUtils.getRootDir(conf);
+    this.tempdir = new Path(this.rootdir, HConstants.HBASE_TEMP_DIRECTORY);
     // Cover both bases, the old way of setting default fs and the new.
     // We're supposed to run on 0.20 and 0.21 anyways.
     this.fs = this.rootdir.getFileSystem(conf);
-    String fsUri = this.fs.getUri().toString();
-    conf.set("fs.default.name", fsUri);
-    conf.set("fs.defaultFS", fsUri);
+    FSUtils.setFsDefault(conf, new Path(this.fs.getUri()));
     // make sure the fs has the same conf
     fs.setConf(conf);
     this.distributedLogSplitting =
@@ -135,8 +136,8 @@ public class MasterFileSystem {
   /**
    * Create initial layout in filesystem.
    * <ol>
-   * <li>Check if the root region exists and is readable, if not create it.
-   * Create hbase.version and the -ROOT- directory if not one.
+   * <li>Check if the meta region exists and is readable, if not create it.
+   * Create hbase.version and the .META. directory if not one.
    * </li>
    * <li>Create a log archive directory for RS to put archived logs</li>
    * </ol>
@@ -145,6 +146,9 @@ public class MasterFileSystem {
   private Path createInitialFileSystemLayout() throws IOException {
     // check if the root directory exists
     checkRootDir(this.rootdir, conf, this.fs);
+
+    // check if temp directory exists and clean it
+    checkTempDir(this.tempdir, conf, this.fs);
 
     Path oldLogDir = new Path(this.rootdir, HConstants.HREGION_OLDLOGDIR_NAME);
 
@@ -191,6 +195,13 @@ public class MasterFileSystem {
    */
   public Path getRootDir() {
     return this.rootdir;
+  }
+
+  /**
+   * @return HBase temp dir.
+   */
+  public Path getTempDir() {
+    return this.tempdir;
   }
 
   /**
@@ -427,57 +438,61 @@ public class MasterFileSystem {
     }
     clusterId = FSUtils.getClusterId(fs, rd);
 
-    // Make sure the root region directory exists!
-    if (!FSUtils.rootRegionExists(fs, rd)) {
+    // Make sure the meta region directory exists!
+    if (!FSUtils.metaRegionExists(fs, rd)) {
       bootstrap(rd, c);
     }
 
-    // Create tableinfo-s for ROOT and META if not already there.
-    FSTableDescriptors.createTableDescriptor(fs, rd, HTableDescriptor.ROOT_TABLEDESC, false);
+    // Create tableinfo-s for META if not already there.
     FSTableDescriptors.createTableDescriptor(fs, rd, HTableDescriptor.META_TABLEDESC, false);
 
     return rd;
   }
 
+  /**
+   * Make sure the hbase temp directory exists and is empty.
+   * NOTE that this method is only executed once just after the master becomes the active one.
+   */
+  private void checkTempDir(final Path tmpdir, final Configuration c, final FileSystem fs)
+      throws IOException {
+    // If the temp directory exists, clear the content (left over, from the previous run)
+    if (fs.exists(tmpdir)) {
+      // Archive table in temp, maybe left over from failed deletion,
+      // if not the cleaner will take care of them.
+      for (Path tabledir: FSUtils.getTableDirs(fs, tmpdir)) {
+        for (Path regiondir: FSUtils.getRegionDirs(fs, tabledir)) {
+          HFileArchiver.archiveRegion(fs, this.rootdir, tabledir, regiondir);
+        }
+      }
+      if (!fs.delete(tmpdir, true)) {
+        throw new IOException("Unable to clean the temp directory: " + tmpdir);
+      }
+    }
+
+    // Create the temp directory
+    if (!fs.mkdirs(tmpdir)) {
+      throw new IOException("HBase temp directory '" + tmpdir + "' creation failure.");
+    }
+  }
+
   private static void bootstrap(final Path rd, final Configuration c)
   throws IOException {
-    LOG.info("BOOTSTRAP: creating ROOT and first META regions");
+    LOG.info("BOOTSTRAP: creating first META region");
     try {
       // Bootstrapping, make sure blockcache is off.  Else, one will be
       // created here in bootstap and it'll need to be cleaned up.  Better to
       // not make it in first place.  Turn off block caching for bootstrap.
       // Enable after.
-      HRegionInfo rootHRI = new HRegionInfo(HRegionInfo.ROOT_REGIONINFO);
-      setInfoFamilyCachingForRoot(false);
       HRegionInfo metaHRI = new HRegionInfo(HRegionInfo.FIRST_META_REGIONINFO);
       setInfoFamilyCachingForMeta(false);
-      HRegion root = HRegion.createHRegion(rootHRI, rd, c,
-          HTableDescriptor.ROOT_TABLEDESC);
       HRegion meta = HRegion.createHRegion(metaHRI, rd, c,
           HTableDescriptor.META_TABLEDESC);
-      setInfoFamilyCachingForRoot(true);
       setInfoFamilyCachingForMeta(true);
-      // Add first region from the META table to the ROOT region.
-      HRegion.addRegionToMETA(root, meta);
-      HRegion.closeHRegion(root);
       HRegion.closeHRegion(meta);
     } catch (IOException e) {
       e = RemoteExceptionHandler.checkIOException(e);
       LOG.error("bootstrap", e);
       throw e;
-    }
-  }
-
-  /**
-   * Enable in-memory caching for -ROOT-
-   */
-  public static void setInfoFamilyCachingForRoot(final boolean b) {
-    for (HColumnDescriptor hcd:
-        HTableDescriptor.ROOT_TABLEDESC.getColumnFamilies()) {
-       if (Bytes.equals(hcd.getName(), HConstants.CATALOG_FAMILY)) {
-         hcd.setBlockCacheEnabled(b);
-         hcd.setInMemory(b);
-     }
     }
   }
 
@@ -501,6 +516,37 @@ public class MasterFileSystem {
 
   public void deleteTable(byte[] tableName) throws IOException {
     fs.delete(new Path(rootdir, Bytes.toString(tableName)), true);
+  }
+
+  /**
+   * Move the specified file/directory to the hbase temp directory.
+   * @param path The path of the file/directory to move
+   * @return The temp location of the file/directory moved
+   * @throws IOException in case of file-system failure
+   */
+  public Path moveToTemp(final Path path) throws IOException {
+    Path tempPath = new Path(this.tempdir, path.getName());
+
+    // Ensure temp exists
+    if (!fs.exists(tempdir) && !fs.mkdirs(tempdir)) {
+      throw new IOException("HBase temp directory '" + tempdir + "' creation failure.");
+    }
+
+    if (!fs.rename(path, tempPath)) {
+      throw new IOException("Unable to move '" + path + "' to temp '" + tempPath + "'");
+    }
+
+    return tempPath;
+  }
+
+  /**
+   * Move the specified table to the hbase temp directory
+   * @param tableName Table name to move
+   * @return The temp location of the table moved
+   * @throws IOException in case of file-system failure
+   */
+  public Path moveTableToTemp(byte[] tableName) throws IOException {
+    return moveToTemp(HTableDescriptor.getTableDir(this.rootdir, tableName));
   }
 
   public void updateRegionInfo(HRegionInfo region) {

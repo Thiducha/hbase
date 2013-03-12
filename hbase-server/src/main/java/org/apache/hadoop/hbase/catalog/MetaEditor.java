@@ -18,6 +18,7 @@
 package org.apache.hadoop.hbase.catalog;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.net.ConnectException;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,12 +28,20 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
-import org.apache.hadoop.hbase.NotAllMetaRegionsOnlineException;
+import org.apache.hadoop.hbase.exceptions.NotAllMetaRegionsOnlineException;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel;
+import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate.MutateType;
+import org.apache.hadoop.hbase.protobuf.generated.MultiRowMutation.MultiMutateRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MultiRowMutation.MultiRowMutationService;
 import org.apache.hadoop.hbase.util.Bytes;
+
+import com.google.protobuf.ServiceException;
 
 /**
  * Writes region and assignment information to <code>.META.</code>.
@@ -81,17 +90,6 @@ public class MetaEditor {
   }
 
   /**
-   * Put the passed <code>p</code> to the <code>.META.</code> table.
-   * @param ct CatalogTracker on whose back we will ride the edit.
-   * @param p Put to add to .META.
-   * @throws IOException
-   */
-  static void putToRootTable(final CatalogTracker ct, final Put p)
-  throws IOException {
-    put(MetaReader.getRootHTable(ct), p);
-  }
-
-  /**
    * Put the passed <code>p</code> to a catalog table.
    * @param ct CatalogTracker on whose back we will ride the edit.
    * @param p Put to add
@@ -99,7 +97,7 @@ public class MetaEditor {
    */
   static void putToCatalogTable(final CatalogTracker ct, final Put p)
   throws IOException {
-    HTable t = MetaReader.getCatalogHTable(ct, p.getRow());
+    HTable t = MetaReader.getCatalogHTable(ct);
     put(t, p);
   }
 
@@ -138,11 +136,44 @@ public class MetaEditor {
    * @param d Delete to add to .META.
    * @throws IOException
    */
-  static void deleteMetaTable(final CatalogTracker ct, final Delete d)
-  throws IOException {
+  static void deleteFromMetaTable(final CatalogTracker ct, final Delete d)
+      throws IOException {
+    List<Delete> dels = new ArrayList<Delete>(1);
+    dels.add(d);
+    deleteFromMetaTable(ct, dels);
+  }
+
+  /**
+   * Delete the passed <code>deletes</code> from the <code>.META.</code> table.
+   * @param ct CatalogTracker on whose back we will ride the edit.
+   * @param deletes Deletes to add to .META.  This list should support #remove.
+   * @throws IOException
+   */
+  public static void deleteFromMetaTable(final CatalogTracker ct, final List<Delete> deletes)
+      throws IOException {
     HTable t = MetaReader.getMetaHTable(ct);
     try {
-      t.delete(d);
+      t.delete(deletes);
+    } finally {
+      t.close();
+    }
+  }
+
+  /**
+   * Execute the passed <code>mutations</code> against <code>.META.</code> table.
+   * @param ct CatalogTracker on whose back we will ride the edit.
+   * @param mutations Puts and Deletes to execute on .META.
+   * @throws IOException
+   */
+  static void mutateMetaTable(final CatalogTracker ct, final List<Mutation> mutations)
+      throws IOException {
+    HTable t = MetaReader.getMetaHTable(ct);
+    try {
+      t.batch(mutations);
+    } catch (InterruptedException e) {
+      InterruptedIOException ie = new InterruptedIOException(e.getMessage());
+      ie.initCause(e);
+      throw ie;
     } finally {
       t.close();
     }
@@ -175,8 +206,8 @@ public class MetaEditor {
    * Adds a (single) META row for the specified new region and its daughters. Note that this does
    * not add its daughter's as different rows, but adds information about the daughters
    * in the same row as the parent. Use
-   * {@link #offlineParentInMeta(CatalogTracker, HRegionInfo, HRegionInfo, HRegionInfo)} and
-   * {@link #addDaughter(CatalogTracker, HRegionInfo, ServerName, long)}  if you want to do that.
+   * {@link #splitRegion(CatalogTracker, HRegionInfo, HRegionInfo, HRegionInfo, ServerName)}
+   * if you want to do that.
    * @param meta the HTable for META
    * @param regionInfo region information
    * @param splitA first split daughter of the parent regionInfo
@@ -211,32 +242,6 @@ public class MetaEditor {
   }
 
   /**
-   * Offline parent in meta.
-   * Used when splitting.
-   * @param catalogTracker
-   * @param parent
-   * @param a Split daughter region A
-   * @param b Split daughter region B
-   * @throws NotAllMetaRegionsOnlineException
-   * @throws IOException
-   */
-  public static void offlineParentInMeta(CatalogTracker catalogTracker,
-      HRegionInfo parent, final HRegionInfo a, final HRegionInfo b)
-  throws NotAllMetaRegionsOnlineException, IOException {
-    HRegionInfo copyOfParent = new HRegionInfo(parent);
-    copyOfParent.setOffline(true);
-    copyOfParent.setSplit(true);
-    HTable meta = MetaReader.getMetaHTable(catalogTracker);
-    try {
-      addRegionToMeta(meta, copyOfParent, a, b);
-      LOG.info("Offlined parent region " + parent.getRegionNameAsString() +
-          " in META");
-    } finally {
-      meta.close();
-    }
-  }
-
-  /**
    * Adds a daughter region entry to meta.
    * @param regionInfo the region to put
    * @param sn the location of the region
@@ -254,6 +259,60 @@ public class MetaEditor {
     LOG.info("Added daughter " + regionInfo.getRegionNameAsString() +
       (sn == null? ", serverName=null": ", serverName=" + sn.toString()));
   }
+
+  /**
+   * Splits the region into two in an atomic operation. Offlines the parent
+   * region with the information that it is split into two, and also adds
+   * the daughter regions. Does not add the location information to the daughter
+   * regions since they are not open yet.
+   * @param catalogTracker the catalog tracker
+   * @param parent the parent region which is split
+   * @param splitA Split daughter region A
+   * @param splitB Split daughter region A
+   * @param sn the location of the region
+   */
+  public static void splitRegion(final CatalogTracker catalogTracker,
+      HRegionInfo parent, HRegionInfo splitA, HRegionInfo splitB,
+      ServerName sn) throws IOException {
+    HTable meta = MetaReader.getMetaHTable(catalogTracker);
+    HRegionInfo copyOfParent = new HRegionInfo(parent);
+    copyOfParent.setOffline(true);
+    copyOfParent.setSplit(true);
+
+    //Put for parent
+    Put putParent = makePutFromRegionInfo(copyOfParent);
+    addDaughtersToPut(putParent, splitA, splitB);
+
+    //Puts for daughters
+    Put putA = makePutFromRegionInfo(splitA);
+    Put putB = makePutFromRegionInfo(splitB);
+
+    addLocation(putA, sn, 1); //these are new regions, openSeqNum = 1 is fine.
+    addLocation(putB, sn, 1);
+
+    byte[] tableRow = Bytes.toBytes(parent.getRegionNameAsString() + HConstants.DELIMITER);
+    multiPut(meta, tableRow, putParent, putA, putB);
+  }
+
+  /**
+   * Performs an atomic multi-Put operation against the given table.
+   */
+  private static void multiPut(HTable table, byte[] row, Put... puts) throws IOException {
+    CoprocessorRpcChannel channel = table.coprocessorService(row);
+    MultiMutateRequest.Builder mmrBuilder = MultiMutateRequest.newBuilder();
+    for (Put put : puts) {
+      mmrBuilder.addMutationRequest(ProtobufUtil.toMutate(MutateType.PUT, put));
+    }
+
+    MultiRowMutationService.BlockingInterface service =
+        MultiRowMutationService.newBlockingStub(channel);
+    try {
+      service.mutateRows(null, mmrBuilder.build());
+    } catch (ServiceException ex) {
+      ProtobufUtil.toIOException(ex);
+    }
+  }
+
 
   /**
    * Updates the location of the specified META region in ROOT to be the
@@ -328,15 +387,61 @@ public class MetaEditor {
       HRegionInfo regionInfo)
   throws IOException {
     Delete delete = new Delete(regionInfo.getRegionName());
-    deleteMetaTable(catalogTracker, delete);
+    deleteFromMetaTable(catalogTracker, delete);
     LOG.info("Deleted region " + regionInfo.getRegionNameAsString() + " from META");
+  }
+
+  /**
+   * Deletes the specified regions from META.
+   * @param catalogTracker
+   * @param regionsInfo list of regions to be deleted from META
+   * @throws IOException
+   */
+  public static void deleteRegions(CatalogTracker catalogTracker,
+      List<HRegionInfo> regionsInfo) throws IOException {
+    List<Delete> deletes = new ArrayList<Delete>(regionsInfo.size());
+    for (HRegionInfo hri: regionsInfo) {
+      deletes.add(new Delete(hri.getRegionName()));
+    }
+    deleteFromMetaTable(catalogTracker, deletes);
+    LOG.info("Deleted from META, regions: " + regionsInfo);
+  }
+
+  /**
+   * Adds and Removes the specified regions from .META.
+   * @param catalogTracker
+   * @param regionsToRemove list of regions to be deleted from META
+   * @param regionsToAdd list of regions to be added to META
+   * @throws IOException
+   */
+  public static void mutateRegions(CatalogTracker catalogTracker,
+      final List<HRegionInfo> regionsToRemove, final List<HRegionInfo> regionsToAdd)
+      throws IOException {
+    List<Mutation> mutation = new ArrayList<Mutation>();
+    if (regionsToRemove != null) {
+      for (HRegionInfo hri: regionsToRemove) {
+        mutation.add(new Delete(hri.getRegionName()));
+      }
+    }
+    if (regionsToAdd != null) {
+      for (HRegionInfo hri: regionsToAdd) {
+        mutation.add(makePutFromRegionInfo(hri));
+      }
+    }
+    mutateMetaTable(catalogTracker, mutation);
+    if (regionsToRemove != null && regionsToRemove.size() > 0) {
+      LOG.debug("Deleted from META, regions: " + regionsToRemove);
+    }
+    if (regionsToAdd != null && regionsToAdd.size() > 0) {
+      LOG.debug("Add to META, regions: " + regionsToAdd);
+    }
   }
 
   /**
    * Deletes daughters references in offlined split parent.
    * @param catalogTracker
    * @param parent Parent row we're to remove daughter reference from
-   * @throws NotAllMetaRegionsOnlineException
+   * @throws org.apache.hadoop.hbase.exceptions.NotAllMetaRegionsOnlineException
    * @throws IOException
    */
   public static void deleteDaughtersReferencesInParent(CatalogTracker catalogTracker,
@@ -345,7 +450,7 @@ public class MetaEditor {
     Delete delete = new Delete(parent.getRegionName());
     delete.deleteColumns(HConstants.CATALOG_FAMILY, HConstants.SPLITA_QUALIFIER);
     delete.deleteColumns(HConstants.CATALOG_FAMILY, HConstants.SPLITB_QUALIFIER);
-    deleteMetaTable(catalogTracker, delete);
+    deleteFromMetaTable(catalogTracker, delete);
     LOG.info("Deleted daughters references, qualifier=" + Bytes.toStringBinary(HConstants.SPLITA_QUALIFIER) +
       " and qualifier=" + Bytes.toStringBinary(HConstants.SPLITB_QUALIFIER) +
       ", from parent " + parent.getRegionNameAsString());

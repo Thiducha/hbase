@@ -33,7 +33,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.Coprocessor;
 import org.apache.hadoop.hbase.CoprocessorEnvironment;
-import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.HBaseTestCase;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -46,7 +45,7 @@ import org.apache.hadoop.hbase.SmallTests;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.regionserver.HRegion;
-import org.apache.hadoop.hbase.regionserver.HStore;
+import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.regionserver.InternalScanner;
 import org.apache.hadoop.hbase.regionserver.RegionCoprocessorHost;
 import org.apache.hadoop.hbase.regionserver.RegionScanner;
@@ -187,13 +186,13 @@ public class TestCoprocessorInterface extends HBaseTestCase {
     }
     @Override
     public InternalScanner preCompact(ObserverContext<RegionCoprocessorEnvironment> e,
-        HStore store, InternalScanner scanner, ScanType scanType) {
+        Store store, InternalScanner scanner, ScanType scanType) {
       preCompactCalled = true;
       return scanner;
     }
     @Override
     public void postCompact(ObserverContext<RegionCoprocessorEnvironment> e,
-        HStore store, StoreFile resultFile) {
+        Store store, StoreFile resultFile) {
       postCompactCalled = true;
     }
     @Override
@@ -322,7 +321,7 @@ public class TestCoprocessorInterface extends HBaseTestCase {
         Get g = new Get(regions[i].getStartKey());
         regions[i].get(g);
         fail();
-      } catch (DoNotRetryIOException xc) {
+      } catch (org.apache.hadoop.hbase.exceptions.DoNotRetryIOException xc) {
       }
       assertNull(regions[i].getCoprocessorHost().
           findCoprocessor(CoprocessorII.class.getName()));

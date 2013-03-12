@@ -22,7 +22,7 @@ package org.apache.hadoop.hbase.regionserver;
 import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
 import java.rmi.UnexpectedException;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -35,9 +35,11 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.KeyValueUtil;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.HeapSize;
 import org.apache.hadoop.hbase.regionserver.MemStoreLAB.Allocation;
@@ -61,7 +63,7 @@ public class MemStore implements HeapSize {
 
   static final String USEMSLAB_KEY =
     "hbase.hregion.memstore.mslab.enabled";
-  private static final boolean USEMSLAB_DEFAULT = false;
+  private static final boolean USEMSLAB_DEFAULT = true;
 
   private Configuration conf;
 
@@ -498,9 +500,9 @@ public class MemStore implements HeapSize {
 
       // create or update (upsert) a new KeyValue with
       // 'now' and a 0 memstoreTS == immediately visible
-      return upsert(Arrays.asList(
-          new KeyValue(row, family, qualifier, now, Bytes.toBytes(newValue))), 1L
-      );
+      List<Cell> cells = new ArrayList<Cell>(1);
+      cells.add(new KeyValue(row, family, qualifier, now, Bytes.toBytes(newValue)));
+      return upsert(cells, 1L);
     } finally {
       this.lock.readLock().unlock();
     }
@@ -520,16 +522,16 @@ public class MemStore implements HeapSize {
    * This is called under row lock, so Get operations will still see updates
    * atomically.  Scans will only see each KeyValue update as atomic.
    *
-   * @param kvs
+   * @param cells
    * @param readpoint readpoint below which we can safely remove duplicate KVs 
    * @return change in memstore size
    */
-  public long upsert(Iterable<KeyValue> kvs, long readpoint) {
+  public long upsert(Iterable<? extends Cell> cells, long readpoint) {
    this.lock.readLock().lock();
     try {
       long size = 0;
-      for (KeyValue kv : kvs) {
-        size += upsert(kv, readpoint);
+      for (Cell cell : cells) {
+        size += upsert(cell, readpoint);
       }
       return size;
     } finally {
@@ -548,16 +550,17 @@ public class MemStore implements HeapSize {
    * <p>
    * Callers must hold the read lock.
    *
-   * @param kv
+   * @param cell
    * @return change in size of MemStore
    */
-  private long upsert(KeyValue kv, long readpoint) {
+  private long upsert(Cell cell, long readpoint) {
     // Add the KeyValue to the MemStore
     // Use the internalAdd method here since we (a) already have a lock
     // and (b) cannot safely use the MSLAB here without potentially
     // hitting OOME - see TestMemStore.testUpsertMSLAB for a
     // test that triggers the pathological case if we don't avoid MSLAB
     // here.
+    KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
     long addedSize = internalAdd(kv);
 
     // Get the KeyValues for the row/family/qualifier regardless of timestamp.
@@ -586,7 +589,9 @@ public class MemStore implements HeapSize {
             // which means we can prove that no scanner will see this version
 
             // false means there was a change, so give us the size.
-            addedSize -= heapSizeChange(cur, true);
+            long delta = heapSizeChange(cur, true);
+            addedSize -= delta;
+            this.size.addAndGet(-delta);
             it.remove();
           } else {
             versionsVisible++;

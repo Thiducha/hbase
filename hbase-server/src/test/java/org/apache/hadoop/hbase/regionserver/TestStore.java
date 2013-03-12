@@ -49,6 +49,7 @@ import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.KeyValue.KVComparator;
 import org.apache.hadoop.hbase.MediumTests;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.io.compress.Compression;
@@ -56,11 +57,13 @@ import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.monitoring.MonitoredTask;
+import org.apache.hadoop.hbase.regionserver.StoreFileInfo;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionContext;
 import org.apache.hadoop.hbase.regionserver.compactions.CompactionRequest;
+import org.apache.hadoop.hbase.regionserver.compactions.DefaultCompactor;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.regionserver.wal.HLogFactory;
 import org.apache.hadoop.hbase.security.User;
-import org.apache.hadoop.hbase.util.BloomFilterFactory;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManagerTestHelper;
@@ -158,7 +161,7 @@ public class TestStore extends TestCase {
     HLog hlog = HLogFactory.createHLog(fs, basedir, logName, conf);
     HRegion region = new HRegion(basedir, hlog, fs, conf, info, htd, null);
 
-    store = new HStore(basedir, region, hcd, fs, conf);
+    store = new HStore(region, hcd, conf);
   }
 
   /**
@@ -224,17 +227,19 @@ public class TestStore extends TestCase {
     // by the compaction.
     for (int i = 1; i <= storeFileNum; i++) {
       // verify the expired store file.
-      CompactionRequest cr = this.store.requestCompaction();
+      CompactionContext compaction = this.store.requestCompaction();
+      CompactionRequest cr = compaction.getRequest();
       // the first is expired normally.
       // If not the first compaction, there is another empty store file,
+      List<StoreFile> files = new ArrayList<StoreFile>(cr.getFiles());
       assertEquals(Math.min(i, 2), cr.getFiles().size());
-      for (int j = 0; i < cr.getFiles().size(); j++) {
-        assertTrue(cr.getFiles().get(j).getReader().getMaxTimestamp() < (System
+      for (int j = 0; j < files.size(); j++) {
+        assertTrue(files.get(j).getReader().getMaxTimestamp() < (edge
             .currentTimeMillis() - this.store.getScanInfo().getTtl()));
       }
       // Verify that the expired store file is compacted to an empty store file.
       // Default compaction policy creates just one and only one compacted file.
-      StoreFile compactedFile = this.store.compact(cr).get(0);
+      StoreFile compactedFile = this.store.compact(compaction).get(0);
       // It is an empty store file.
       assertEquals(0, compactedFile.getReader().getEntries());
 
@@ -321,10 +326,7 @@ public class TestStore extends TestCase {
     w.close();
     this.store.close();
     // Reopen it... should pick up two files
-    this.store = new HStore(storedir.getParent().getParent(),
-      this.store.getHRegion(),
-      this.store.getFamily(), fs, c);
-    System.out.println(this.store.getHRegionInfo().getEncodedName());
+    this.store = new HStore(this.store.getHRegion(), this.store.getFamily(), c);
     assertEquals(2, this.store.getStorefilesCount());
 
     result = HBaseTestingUtility.getFromStoreFile(store,
@@ -649,10 +651,10 @@ public class TestStore extends TestCase {
         store.add(new KeyValue(row, family, qf3, 1, (byte[])null));
 
         LOG.info("Before flush, we should have no files");
-        FileStatus[] files = fs.listStatus(store.getHomedir());
-        Path[] paths = FileUtil.stat2Paths(files);
-        System.err.println("Got paths: " + Joiner.on(",").join(paths));
-        assertEquals(0, paths.length);
+
+        Collection<StoreFileInfo> files =
+          store.getRegionFileSystem().getStoreFiles(store.getColumnFamilyName());
+        assertEquals(0, files != null ? files.size() : 0);
 
         //flush
         try {
@@ -664,10 +666,8 @@ public class TestStore extends TestCase {
         }
 
         LOG.info("After failed flush, we should still have no files!");
-        files = fs.listStatus(store.getHomedir());
-        paths = FileUtil.stat2Paths(files);
-        System.err.println("Got paths: " + Joiner.on(",").join(paths));
-        assertEquals(0, paths.length);
+        files = store.getRegionFileSystem().getStoreFiles(store.getColumnFamilyName());
+        assertEquals(0, files != null ? files.size() : 0);
         return null;
       }
     });
@@ -854,6 +854,23 @@ public class TestStore extends TestCase {
     init(getName() + "-hcd", conf, htd, hcd);
     assertTrue(store.throttleCompaction(anyValue + 1));
     assertFalse(store.throttleCompaction(anyValue));
+  }
+
+  public static class DummyStoreEngine extends DefaultStoreEngine {
+    public static DefaultCompactor lastCreatedCompactor = null;
+    @Override
+    protected void createComponents(
+        Configuration conf, Store store, KVComparator comparator) throws IOException {
+      super.createComponents(conf, store, comparator);
+      lastCreatedCompactor = this.compactor;
+    }
+  }
+
+  public void testStoreUsesSearchEngineOverride() throws Exception {
+    Configuration conf = HBaseConfiguration.create();
+    conf.set(StoreEngine.STORE_ENGINE_CLASS_KEY, DummyStoreEngine.class.getName());
+    init(this.getName(), conf);
+    assertEquals(DummyStoreEngine.lastCreatedCompactor, this.store.storeEngine.getCompactor());
   }
 }
 

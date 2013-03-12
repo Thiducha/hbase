@@ -33,9 +33,11 @@ import java.util.NavigableSet;
 import com.google.common.collect.ImmutableList;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CoprocessorEnvironment;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Increment;
@@ -45,9 +47,10 @@ import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.InternalScanner;
 import org.apache.hadoop.hbase.regionserver.KeyValueScanner;
 import org.apache.hadoop.hbase.regionserver.Leases;
+import org.apache.hadoop.hbase.regionserver.MiniBatchOperationInProgress;
 import org.apache.hadoop.hbase.regionserver.RegionScanner;
 import org.apache.hadoop.hbase.regionserver.ScanType;
-import org.apache.hadoop.hbase.regionserver.HStore;
+import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.regionserver.StoreFile;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -97,6 +100,8 @@ public class SimpleRegionObserver extends BaseRegionObserver {
   boolean hadPostScannerOpen = false;
   boolean hadPreBulkLoadHFile = false;
   boolean hadPostBulkLoadHFile = false;
+  boolean hadPreBatchMutate = false;
+  boolean hadPostBatchMutate = false;
 
   @Override
   public void start(CoprocessorEnvironment e) throws IOException {
@@ -137,20 +142,22 @@ public class SimpleRegionObserver extends BaseRegionObserver {
   }
 
   @Override
-  public InternalScanner preFlush(ObserverContext<RegionCoprocessorEnvironment> c, HStore store, InternalScanner scanner) {
+  public InternalScanner preFlush(ObserverContext<RegionCoprocessorEnvironment> c,
+      Store store, InternalScanner scanner) {
     hadPreFlush = true;
     return scanner;
   }
 
   @Override
   public InternalScanner preFlushScannerOpen(final ObserverContext<RegionCoprocessorEnvironment> c,
-      HStore store, KeyValueScanner memstoreScanner, InternalScanner s) throws IOException {
+      Store store, KeyValueScanner memstoreScanner, InternalScanner s) throws IOException {
     hadPreFlushScannerOpen = true;
     return null;
   }
 
   @Override
-  public void postFlush(ObserverContext<RegionCoprocessorEnvironment> c, HStore store, StoreFile resultFile) {
+  public void postFlush(ObserverContext<RegionCoprocessorEnvironment> c,
+      Store store, StoreFile resultFile) {
     hadPostFlush = true;
   }
 
@@ -174,26 +181,27 @@ public class SimpleRegionObserver extends BaseRegionObserver {
 
   @Override
   public void preCompactSelection(ObserverContext<RegionCoprocessorEnvironment> c,
-      HStore store, List<StoreFile> candidates) {
+      Store store, List<StoreFile> candidates) {
     hadPreCompactSelect = true;
   }
 
   @Override
   public void postCompactSelection(ObserverContext<RegionCoprocessorEnvironment> c,
-      HStore store, ImmutableList<StoreFile> selected) {
+      Store store, ImmutableList<StoreFile> selected) {
     hadPostCompactSelect = true;
   }
 
   @Override
   public InternalScanner preCompact(ObserverContext<RegionCoprocessorEnvironment> e,
-      HStore store, InternalScanner scanner, ScanType scanType) {
+      Store store, InternalScanner scanner, ScanType scanType) {
     hadPreCompact = true;
     return scanner;
   }
 
   @Override
-  public InternalScanner preCompactScannerOpen(final ObserverContext<RegionCoprocessorEnvironment> c,
-      HStore store, List<? extends KeyValueScanner> scanners, ScanType scanType, long earliestPutTs,
+  public InternalScanner preCompactScannerOpen(
+      final ObserverContext<RegionCoprocessorEnvironment> c,
+      Store store, List<? extends KeyValueScanner> scanners, ScanType scanType, long earliestPutTs,
       InternalScanner s) throws IOException {
     hadPreCompactScanner = true;
     return null;
@@ -201,7 +209,7 @@ public class SimpleRegionObserver extends BaseRegionObserver {
 
   @Override
   public void postCompact(ObserverContext<RegionCoprocessorEnvironment> e,
-      HStore store, StoreFile resultFile) {
+      Store store, StoreFile resultFile) {
     hadPostCompact = true;
   }
 
@@ -219,7 +227,7 @@ public class SimpleRegionObserver extends BaseRegionObserver {
 
   @Override
   public KeyValueScanner preStoreScannerOpen(final ObserverContext<RegionCoprocessorEnvironment> c,
-      final HStore store, final Scan scan, final NavigableSet<byte[]> targetCols,
+      final Store store, final Scan scan, final NavigableSet<byte[]> targetCols,
       final KeyValueScanner s) throws IOException {
     hadPreStoreScannerOpen = true;
     return null;
@@ -307,27 +315,30 @@ public class SimpleRegionObserver extends BaseRegionObserver {
   public void prePut(final ObserverContext<RegionCoprocessorEnvironment> c, 
       final Put put, final WALEdit edit,
       final boolean writeToWAL) throws IOException {
-    Map<byte[], List<KeyValue>> familyMap  = put.getFamilyMap();
+    Map<byte[], List<? extends Cell>> familyMap  = put.getFamilyMap();
     RegionCoprocessorEnvironment e = c.getEnvironment();
     assertNotNull(e);
     assertNotNull(e.getRegion());
     assertNotNull(familyMap);
     if (Arrays.equals(e.getRegion().getTableDesc().getName(),
         TestRegionObserverInterface.TEST_TABLE)) {
-      List<KeyValue> kvs = familyMap.get(TestRegionObserverInterface.A);
-      assertNotNull(kvs);
-      assertNotNull(kvs.get(0));
-      assertTrue(Bytes.equals(kvs.get(0).getQualifier(),
+      List<? extends Cell> cells = familyMap.get(TestRegionObserverInterface.A);
+      assertNotNull(cells);
+      assertNotNull(cells.get(0));
+      KeyValue kv = (KeyValue)cells.get(0);
+      assertTrue(Bytes.equals(kv.getQualifier(),
           TestRegionObserverInterface.A));
-      kvs = familyMap.get(TestRegionObserverInterface.B);
-      assertNotNull(kvs);
-      assertNotNull(kvs.get(0));
-      assertTrue(Bytes.equals(kvs.get(0).getQualifier(),
+      cells = familyMap.get(TestRegionObserverInterface.B);
+      assertNotNull(cells);
+      assertNotNull(cells.get(0));
+      kv = (KeyValue)cells.get(0);
+      assertTrue(Bytes.equals(kv.getQualifier(),
           TestRegionObserverInterface.B));
-      kvs = familyMap.get(TestRegionObserverInterface.C);
-      assertNotNull(kvs);
-      assertNotNull(kvs.get(0));
-      assertTrue(Bytes.equals(kvs.get(0).getQualifier(),
+      cells = familyMap.get(TestRegionObserverInterface.C);
+      assertNotNull(cells);
+      assertNotNull(cells.get(0));
+      kv = (KeyValue)cells.get(0);
+      assertTrue(Bytes.equals(kv.getQualifier(),
           TestRegionObserverInterface.C));
     }
     hadPrePut = true;
@@ -337,28 +348,31 @@ public class SimpleRegionObserver extends BaseRegionObserver {
   public void postPut(final ObserverContext<RegionCoprocessorEnvironment> c,
       final Put put, final WALEdit edit,
       final boolean writeToWAL) throws IOException {
-    Map<byte[], List<KeyValue>> familyMap  = put.getFamilyMap();
+    Map<byte[], List<? extends Cell>> familyMap  = put.getFamilyMap();
     RegionCoprocessorEnvironment e = c.getEnvironment();
     assertNotNull(e);
     assertNotNull(e.getRegion());
     assertNotNull(familyMap);
-    List<KeyValue> kvs = familyMap.get(TestRegionObserverInterface.A);
+    List<? extends Cell> cells = familyMap.get(TestRegionObserverInterface.A);
     if (Arrays.equals(e.getRegion().getTableDesc().getName(),
         TestRegionObserverInterface.TEST_TABLE)) {
-      assertNotNull(kvs);
-      assertNotNull(kvs.get(0));
-      assertTrue(Bytes.equals(kvs.get(0).getQualifier(),
-          TestRegionObserverInterface.A));
-      kvs = familyMap.get(TestRegionObserverInterface.B);
-      assertNotNull(kvs);
-      assertNotNull(kvs.get(0));
-      assertTrue(Bytes.equals(kvs.get(0).getQualifier(),
-          TestRegionObserverInterface.B));
-      kvs = familyMap.get(TestRegionObserverInterface.C);
-      assertNotNull(kvs);
-      assertNotNull(kvs.get(0));
-      assertTrue(Bytes.equals(kvs.get(0).getQualifier(),
-          TestRegionObserverInterface.C));
+      assertNotNull(cells);
+      assertNotNull(cells.get(0));
+      // KeyValue v1 expectation.  Cast for now until we go all Cell all the time. TODO
+      KeyValue kv = (KeyValue)cells.get(0);
+      assertTrue(Bytes.equals(kv.getQualifier(), TestRegionObserverInterface.A));
+      cells = familyMap.get(TestRegionObserverInterface.B);
+      assertNotNull(cells);
+      assertNotNull(cells.get(0));
+      // KeyValue v1 expectation.  Cast for now until we go all Cell all the time. TODO
+      kv = (KeyValue)cells.get(0);
+      assertTrue(Bytes.equals(kv.getQualifier(), TestRegionObserverInterface.B));
+      cells = familyMap.get(TestRegionObserverInterface.C);
+      assertNotNull(cells);
+      assertNotNull(cells.get(0));
+      // KeyValue v1 expectation.  Cast for now until we go all Cell all the time. TODO
+      kv = (KeyValue)cells.get(0);
+      assertTrue(Bytes.equals(kv.getQualifier(), TestRegionObserverInterface.C));
     }
     hadPostPut = true;
   }
@@ -367,7 +381,7 @@ public class SimpleRegionObserver extends BaseRegionObserver {
   public void preDelete(final ObserverContext<RegionCoprocessorEnvironment> c, 
       final Delete delete, final WALEdit edit,
       final boolean writeToWAL) throws IOException {
-    Map<byte[], List<KeyValue>> familyMap  = delete.getFamilyMap();
+    Map<byte[], List<? extends Cell>> familyMap  = delete.getFamilyMap();
     RegionCoprocessorEnvironment e = c.getEnvironment();
     assertNotNull(e);
     assertNotNull(e.getRegion());
@@ -381,13 +395,33 @@ public class SimpleRegionObserver extends BaseRegionObserver {
   public void postDelete(final ObserverContext<RegionCoprocessorEnvironment> c, 
       final Delete delete, final WALEdit edit,
       final boolean writeToWAL) throws IOException {
-    Map<byte[], List<KeyValue>> familyMap  = delete.getFamilyMap();
+    Map<byte[], List<? extends Cell>> familyMap  = delete.getFamilyMap();
     RegionCoprocessorEnvironment e = c.getEnvironment();
     assertNotNull(e);
     assertNotNull(e.getRegion());
     assertNotNull(familyMap);
     beforeDelete = false;
     hadPostDeleted = true;
+  }
+  
+  @Override
+  public void preBatchMutate(ObserverContext<RegionCoprocessorEnvironment> c,
+      MiniBatchOperationInProgress<Pair<Mutation, Integer>> miniBatchOp) throws IOException {
+    RegionCoprocessorEnvironment e = c.getEnvironment();
+    assertNotNull(e);
+    assertNotNull(e.getRegion());
+    assertNotNull(miniBatchOp);
+    hadPreBatchMutate = true;
+  }
+
+  @Override
+  public void postBatchMutate(final ObserverContext<RegionCoprocessorEnvironment> c,
+      final MiniBatchOperationInProgress<Pair<Mutation, Integer>> miniBatchOp) throws IOException {
+    RegionCoprocessorEnvironment e = c.getEnvironment();
+    assertNotNull(e);
+    assertNotNull(e.getRegion());
+    assertNotNull(miniBatchOp);
+    hadPostBatchMutate = true;
   }
 
   @Override
@@ -450,7 +484,7 @@ public class SimpleRegionObserver extends BaseRegionObserver {
 
   @Override
   public boolean postBulkLoadHFile(ObserverContext<RegionCoprocessorEnvironment> ctx,
-                                   List<Pair<byte[], String>> familyPaths, boolean hasLoaded) throws IOException {
+      List<Pair<byte[], String>> familyPaths, boolean hasLoaded) throws IOException {
     RegionCoprocessorEnvironment e = ctx.getEnvironment();
     assertNotNull(e);
     assertNotNull(e.getRegion());
@@ -482,6 +516,15 @@ public class SimpleRegionObserver extends BaseRegionObserver {
   public boolean hadPostPut() {
     return hadPostPut;
   }
+  
+  public boolean hadPreBatchMutate() {
+    return hadPreBatchMutate;
+  }
+
+  public boolean hadPostBatchMutate() {
+    return hadPostBatchMutate;
+  }
+  
   public boolean hadDelete() {
     return !beforeDelete;
   }

@@ -24,17 +24,20 @@ import java.util.NavigableSet;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.HeapSize;
+import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.io.hfile.HFileDataBlockEncoder;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionContext;
 import org.apache.hadoop.hbase.regionserver.compactions.CompactionProgress;
 import org.apache.hadoop.hbase.regionserver.compactions.CompactionRequest;
-
-import com.google.common.collect.ImmutableList;
 
 /**
  * Interface for objects that hold a column family in a Region. Its a memstore and a set of zero or
@@ -75,6 +78,23 @@ public interface Store extends HeapSize, StoreConfigInformation {
       throws IOException;
 
   /**
+   * Get all scanners with no filtering based on TTL (that happens further down
+   * the line).
+   * @param cacheBlocks
+   * @param isGet
+   * @param isCompaction
+   * @param matcher
+   * @param startRow
+   * @param stopRow
+   * @return all scanners for this store
+   */
+  public List<KeyValueScanner> getScanners(boolean cacheBlocks,
+      boolean isGet, boolean isCompaction, ScanQueryMatcher matcher, byte[] startRow,
+      byte[] stopRow) throws IOException;
+
+  public ScanInfo getScanInfo();
+
+  /**
    * Adds or replaces the specified KeyValues.
    * <p>
    * For each KeyValue specified, if a cell with the same row, family, and qualifier exists in
@@ -82,12 +102,12 @@ public interface Store extends HeapSize, StoreConfigInformation {
    * <p>
    * This operation is atomic on each KeyValue (row/family/qualifier) but not necessarily atomic
    * across all of them.
-   * @param kvs
+   * @param cells
    * @param readpoint readpoint below which we can safely remove duplicate KVs 
    * @return memstore size delta
    * @throws IOException
    */
-  public long upsert(Iterable<KeyValue> kvs, long readpoint) throws IOException;
+  public long upsert(Iterable<? extends Cell> cells, long readpoint) throws IOException;
 
   /**
    * Adds a value to the memstore
@@ -117,6 +137,17 @@ public interface Store extends HeapSize, StoreConfigInformation {
    */
   public KeyValue getRowKeyAtOrBefore(final byte[] row) throws IOException;
 
+  public FileSystem getFileSystem();
+
+  /*
+   * @param maxKeyCount
+   * @param compression Compression algorithm to use
+   * @param isCompaction whether we are creating a new file in a compaction
+   * @return Writer for a new StoreFile in the tmp dir.
+   */
+  public StoreFile.Writer createWriterInTmp(long maxKeyCount,
+    Compression.Algorithm compression, boolean isCompaction) throws IOException;
+
   // Compaction oriented methods
 
   public boolean throttleCompaction(long compactionSize);
@@ -127,11 +158,14 @@ public interface Store extends HeapSize, StoreConfigInformation {
    */
   public CompactionProgress getCompactionProgress();
 
-  public CompactionRequest requestCompaction() throws IOException;
+  public CompactionContext requestCompaction() throws IOException;
 
-  public CompactionRequest requestCompaction(int priority) throws IOException;
+  public CompactionContext requestCompaction(int priority, CompactionRequest baseRequest)
+      throws IOException;
 
-  public void finishRequest(CompactionRequest cr);
+  public void cancelRequestedCompaction(CompactionContext compaction);
+
+  public List<StoreFile> compact(CompactionContext compaction) throws IOException;
 
   /**
    * @return true if we should run a major compaction.
@@ -147,13 +181,6 @@ public interface Store extends HeapSize, StoreConfigInformation {
   public boolean needsCompaction();
 
   public int getCompactPriority();
-
-  /**
-   * @param priority priority to check against. When priority is {@link Store#PRIORITY_USER},
-   *          {@link Store#PRIORITY_USER} is returned.
-   * @return The priority that this store has in the compaction queue.
-   */
-  public int getCompactPriority(int priority);
 
   public StoreFlusher getStoreFlusher(long cacheFlushId);
 
@@ -259,11 +286,32 @@ public interface Store extends HeapSize, StoreConfigInformation {
   public CacheConfig getCacheConfig();
 
   /**
-   * @return the parent region hosting this store
+   * @return the parent region info hosting this store
    */
-  public HRegion getHRegion();
+  public HRegionInfo getRegionInfo();
+
+  public RegionCoprocessorHost getCoprocessorHost();
+
+  public boolean areWritesEnabled();
+
+  /**
+   * @return The smallest mvcc readPoint across all the scanners in this
+   * region. Writes older than this readPoint, are included  in every
+   * read operation.
+   */
+  public long getSmallestReadPoint();
 
   public String getColumnFamilyName();
 
   public String getTableName();
+
+  /*
+   * @param o Observer who wants to know about changes in set of Readers
+   */
+  public void addChangedReaderObserver(ChangedReadersObserver o);
+
+  /*
+   * @param o Observer no longer interested in changes in set of Readers.
+   */
+  public void deleteChangedReaderObserver(ChangedReadersObserver o);
 }

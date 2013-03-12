@@ -176,7 +176,7 @@ message ServerLoad {
 /**
  * A range of time. Both from and to are Java time
  * stamp in milliseconds. If you don't specify a time
- * range, it means all time.  By default, if not 
+ * range, it means all time.  By default, if not
  * specified, from = 0, and to = Long.MAX_VALUE
  */
 message TimeRange {
@@ -263,9 +263,29 @@ message NameInt64Pair {
   optional int64 value = 2;
 }
 
+/**
+ * Description of the snapshot to take
+ */
+message SnapshotDescription {
+  required string name = 1;
+  optional string table = 2; // not needed for delete, but checked for in taking snapshot
+  optional int64 creationTime = 3 [default = 0];
+  enum Type {
+    DISABLED = 0;
+    FLUSH = 1;
+  }
+  optional Type type = 4 [default = FLUSH];
+  optional int32 version = 5;
+}
+
 message EmptyMsg {
 }
 
 message LongMsg {
   required int64 longMsg = 1;
+
+}
+
+message BigDecimalMsg {
+  required bytes bigdecimalMsg = 1;
 }

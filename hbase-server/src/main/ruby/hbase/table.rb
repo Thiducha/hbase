@@ -409,14 +409,14 @@ EOF
     # Generally used for admin functions which just have one name and take the table name
     def self.add_admin_utils(*args)
       args.each do |method|
-        define_method method do
-          @shell.command(method, @name)
+        define_method method do |*method_args|
+          @shell.command(method, @name, *method_args)
         end
       end
     end
 
     #Add the following admin utilities to the table
-    add_admin_utils :enable, :disable, :flush, :drop, :describe
+    add_admin_utils :enable, :disable, :flush, :drop, :describe, :snapshot
 
     #----------------------------
     #give the general help for the table
@@ -459,7 +459,7 @@ EOF
     # Checks if current table is one of the 'meta' tables
     def is_meta_table?
       tn = @table.table_name
-      org.apache.hadoop.hbase.util.Bytes.equals(tn, org.apache.hadoop.hbase.HConstants::META_TABLE_NAME) || org.apache.hadoop.hbase.util.Bytes.equals(tn, org.apache.hadoop.hbase.HConstants::ROOT_TABLE_NAME)
+      org.apache.hadoop.hbase.util.Bytes.equals(tn, org.apache.hadoop.hbase.HConstants::META_TABLE_NAME)
     end
 
     # Returns family and (when has it) qualifier for a column name

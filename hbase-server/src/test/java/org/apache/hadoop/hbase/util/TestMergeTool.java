@@ -35,6 +35,7 @@ import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.regionserver.wal.HLogFactory;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.InternalScanner;
+import org.apache.hadoop.hbase.util.FSUtils;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.util.ToolRunner;
 import org.junit.experimental.categories.Category;
@@ -125,9 +126,9 @@ public class TestMergeTool extends HBaseTestCase {
     this.dfsCluster = TEST_UTIL.startMiniDFSCluster(2);
     this.fs = this.dfsCluster.getFileSystem();
     System.out.println("fs=" + this.fs);
-    this.conf.set("fs.defaultFS", fs.getUri().toString());
+    FSUtils.setFsDefault(this.conf, new Path(fs.getUri()));
     Path parentdir = fs.getHomeDirectory();
-    conf.set(HConstants.HBASE_DIR, parentdir.toString());
+    FSUtils.setRootDir(conf, parentdir);
     fs.mkdirs(parentdir);
     FSUtils.setVersion(fs, parentdir);
 
@@ -136,8 +137,8 @@ public class TestMergeTool extends HBaseTestCase {
 
     super.setUp();
     try {
-      // Create root and meta regions
-      createRootAndMetaRegions();
+      // Create meta region
+      createMetaRegion();
       FSTableDescriptors.createTableDescriptor(this.fs, this.testDir, this.desc);
       /*
        * Create the regions we will merge
@@ -273,7 +274,7 @@ public class TestMergeTool extends HBaseTestCase {
     
     try {
        // Merge Region 0 and Region 1
-      HRegion merged = mergeAndVerify("merging regions 0 and 1",
+      HRegion merged = mergeAndVerify("merging regions 0 and 1 ",
         this.sourceRegions[0].getRegionNameAsString(),
         this.sourceRegions[1].getRegionNameAsString(), log, 2);
 

@@ -34,7 +34,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.Scan;
-import org.apache.hadoop.hbase.regionserver.HStore.ScanInfo;
+import org.apache.hadoop.hbase.regionserver.ScanInfo;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import com.google.common.base.Joiner;
@@ -795,17 +795,17 @@ public class TestMemStore extends TestCase {
   ////////////////////////////////////
   //Test for upsert with MSLAB
   ////////////////////////////////////
-  
+
   /**
    * Test a pathological pattern that shows why we can't currently
    * use the MSLAB for upsert workloads. This test inserts data
    * in the following pattern:
-   * 
+   *
    * - row0001 through row1000 (fills up one 2M Chunk)
    * - row0002 through row1001 (fills up another 2M chunk, leaves one reference
    *   to the first chunk
    * - row0003 through row1002 (another chunk, another dangling reference)
-   * 
+   *
    * This causes OOME pretty quickly if we use MSLAB for upsert
    * since each 2M chunk is held onto by a single reference.
    */
@@ -813,17 +813,17 @@ public class TestMemStore extends TestCase {
     Configuration conf = HBaseConfiguration.create();
     conf.setBoolean(MemStore.USEMSLAB_KEY, true);
     memstore = new MemStore(conf, KeyValue.COMPARATOR);
-    
+
     int ROW_SIZE = 2048;
     byte[] qualifier = new byte[ROW_SIZE - 4];
-    
+
     MemoryMXBean bean = ManagementFactory.getMemoryMXBean();
     for (int i = 0; i < 3; i++) { System.gc(); }
     long usageBefore = bean.getHeapMemoryUsage().getUsed();
-    
+
     long size = 0;
     long ts=0;
-    
+
     for (int newValue = 0; newValue < 1000; newValue++) {
       for (int row = newValue; row < newValue + 1000; row++) {
         byte[] rowBytes = Bytes.toBytes(row);
@@ -834,16 +834,46 @@ public class TestMemStore extends TestCase {
     for (int i = 0; i < 3; i++) { System.gc(); }
     long usageAfter = bean.getHeapMemoryUsage().getUsed();
     System.out.println("Memory used: " + (usageAfter - usageBefore)
-        + " (heapsize: " + memstore.heapSize() + 
+        + " (heapsize: " + memstore.heapSize() +
         " size: " + size + ")");
   }
-  
+
   //////////////////////////////////////////////////////////////////////////////
   // Helpers
   //////////////////////////////////////////////////////////////////////////////
   private static byte [] makeQualifier(final int i1, final int i2){
     return Bytes.toBytes(Integer.toString(i1) + ";" +
         Integer.toString(i2));
+  }
+
+  /**
+   * Add keyvalues with a fixed memstoreTs, and checks that memstore size is decreased
+   * as older keyvalues are deleted from the memstore.
+   * @throws Exception
+   */
+  public void testUpsertMemstoreSize() throws Exception {
+    Configuration conf = HBaseConfiguration.create();
+    memstore = new MemStore(conf, KeyValue.COMPARATOR);
+    long oldSize = memstore.size.get();
+
+    List<Cell> l = new ArrayList<Cell>();
+    KeyValue kv1 = KeyValueTestUtil.create("r", "f", "q", 100, "v");
+    KeyValue kv2 = KeyValueTestUtil.create("r", "f", "q", 101, "v");
+    KeyValue kv3 = KeyValueTestUtil.create("r", "f", "q", 102, "v");
+
+    kv1.setMvccVersion(1); kv2.setMvccVersion(1);kv3.setMvccVersion(1);
+    l.add(kv1); l.add(kv2); l.add(kv3);
+
+    this.memstore.upsert(l, 2);// readpoint is 2
+    long newSize = this.memstore.size.get();
+    assert(newSize > oldSize);
+
+    KeyValue kv4 = KeyValueTestUtil.create("r", "f", "q", 104, "v");
+    kv4.setMvccVersion(1);
+    l.clear(); l.add(kv4);
+    this.memstore.upsert(l, 3);
+    assertEquals(newSize, this.memstore.size.get());
+    //this.memstore = null;
   }
 
   /**

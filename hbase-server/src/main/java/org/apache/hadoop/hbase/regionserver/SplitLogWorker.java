@@ -29,7 +29,7 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.DeserializationException;
+import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.SplitLogCounters;
 import org.apache.hadoop.hbase.SplitLogTask;
@@ -108,8 +108,8 @@ public class SplitLogWorker extends ZooKeeperListener implements Runnable {
         // interrupted or has encountered a transient error and when it has
         // encountered a bad non-retry-able persistent error.
         try {
-          if (!HLogSplitter.splitLogFile(rootdir,
-              fs.getFileStatus(new Path(filename)), fs, conf, p, sequenceIdChecker)) {
+          if (!HLogSplitter.splitLogFile(rootdir, fs.getFileStatus(new Path(rootdir, filename)),
+            fs, conf, p, sequenceIdChecker)) {
             return Status.PREEMPTED;
           }
         } catch (InterruptedIOException iioe) {

@@ -1,3 +1,5 @@
+
+
 /**
  *
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -63,6 +65,10 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
+import org.apache.hadoop.hbase.exceptions.TableExistsException;
+import org.apache.hadoop.hbase.exceptions.TableNotEnabledException;
+import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.fs.HFileSystem;
 import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.compress.Compression.Algorithm;
@@ -453,9 +459,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
 
     // Set this just-started cluster as our filesystem.
     FileSystem fs = this.dfsCluster.getFileSystem();
-    this.conf.set("fs.defaultFS", fs.getUri().toString());
-    // Do old style too just to be safe.
-    this.conf.set("fs.default.name", fs.getUri().toString());
+    FSUtils.setFsDefault(this.conf, new Path(fs.getUri()));
 
     // Wait for the cluster to be totally up
     this.dfsCluster.waitClusterUp();
@@ -475,9 +479,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
 
     // Set this just-started cluster as our filesystem.
     FileSystem fs = this.dfsCluster.getFileSystem();
-    this.conf.set("fs.defaultFS", fs.getUri().toString());
-    // Do old style too just to be safe.
-    this.conf.set("fs.default.name", fs.getUri().toString());
+    FSUtils.setFsDefault(this.conf, new Path(fs.getUri()));
 
     // Wait for the cluster to be totally up
     this.dfsCluster.waitClusterUp();
@@ -569,8 +571,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
       this.dfsCluster.shutdown();
       dfsCluster = null;
       dataTestDirOnTestFS = null;
-      this.conf.set("fs.defaultFS", "file:///");
-      this.conf.set("fs.default.name", "file:///");
+      FSUtils.setFsDefault(this.conf, new Path("file:///"));
     }
   }
 
@@ -919,7 +920,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
   public Path createRootDir() throws IOException {
     FileSystem fs = FileSystem.get(this.conf);
     Path hbaseRootdir = getDefaultRootDirPath();
-    this.conf.set(HConstants.HBASE_DIR, hbaseRootdir.toString());
+    FSUtils.setRootDir(this.conf, hbaseRootdir);
     fs.mkdirs(hbaseRootdir);
     FSUtils.setVersion(fs, hbaseRootdir);
     return hbaseRootdir;
@@ -1246,6 +1247,20 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
    */
   public int countRows(final HTable table) throws IOException {
     Scan scan = new Scan();
+    ResultScanner results = table.getScanner(scan);
+    int count = 0;
+    for (@SuppressWarnings("unused") Result res : results) {
+      count++;
+    }
+    results.close();
+    return count;
+  }
+
+  public int countRows(final HTable table, final byte[]... families) throws IOException {
+    Scan scan = new Scan();
+    for (byte[] family: families) {
+      scan.addFamily(family);
+    }
     ResultScanner results = table.getScanner(scan);
     int count = 0;
     for (@SuppressWarnings("unused") Result res : results) {
@@ -1853,6 +1868,25 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     return HFileSystem.get(conf);
   }
 
+  /**
+   * Wait until all regions in a table have been assigned.  Waits default timeout before giving up
+   * (30 seconds).
+   * @param table Table to wait on.
+   * @throws InterruptedException
+   * @throws IOException
+   */
+  public void waitTableAvailable(byte[] table)
+      throws InterruptedException, IOException {
+    waitTableAvailable(table, 30000);
+  }
+
+  /**
+   * Wait until all regions in a table have been assigned
+   * @param table Table to wait on.
+   * @param timeoutMillis Timeout.
+   * @throws InterruptedException
+   * @throws IOException
+   */
   public void waitTableAvailable(byte[] table, long timeoutMillis)
   throws InterruptedException, IOException {
     long startWait = System.currentTimeMillis();
@@ -1864,14 +1898,38 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     }
   }
 
+  /**
+   * Waits for a table to be 'enabled'.  Enabled means that table is set as 'enabled' and the
+   * regions have been all assigned.  Will timeout after default period (30 seconds)
+   * @see #waitTableAvailable(byte[])
+   * @param table Table to wait on.
+   * @param table
+   * @throws InterruptedException
+   * @throws IOException
+   */
+  public void waitTableEnabled(byte[] table)
+      throws InterruptedException, IOException {
+    waitTableEnabled(table, 30000);
+  }
+
+  /**
+   * Waits for a table to be 'enabled'.  Enabled means that table is set as 'enabled' and the
+   * regions have been all assigned.
+   * @see #waitTableAvailable(byte[])
+   * @param table Table to wait on.
+   * @param timeoutMillis Time to wait on it being marked enabled.
+   * @throws InterruptedException
+   * @throws IOException
+   */
   public void waitTableEnabled(byte[] table, long timeoutMillis)
   throws InterruptedException, IOException {
     long startWait = System.currentTimeMillis();
-    while (!getHBaseAdmin().isTableAvailable(table) &&
-           !getHBaseAdmin().isTableEnabled(table)) {
+    waitTableAvailable(table, timeoutMillis);
+    long remainder = System.currentTimeMillis() - startWait;
+    while (!getHBaseAdmin().isTableEnabled(table)) {
       assertTrue("Timed out waiting for table to become available and enabled " +
          Bytes.toStringBinary(table),
-         System.currentTimeMillis() - startWait < timeoutMillis);
+         System.currentTimeMillis() - remainder < timeoutMillis);
       Thread.sleep(200);
     }
   }
@@ -2091,7 +2149,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
    * @param serverName
    * @return
    * @throws IOException
-   * @throws ZooKeeperConnectionException
+   * @throws org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException
    * @throws KeeperException
    * @throws NodeExistsException
    */

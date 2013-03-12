@@ -24,13 +24,13 @@ import java.io.OutputStream;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.hbase.KeyValueTool;
+import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.CellUtil;
+import org.apache.hadoop.hbase.KeyValueUtil;
+import org.apache.hadoop.hbase.io.CellOutputStream;
 import org.apache.hadoop.hbase.util.ArrayUtils;
 import org.apache.hadoop.hbase.util.ByteRange;
 import org.apache.hadoop.io.WritableUtils;
-import org.apache.hbase.Cell;
-import org.apache.hbase.cell.CellOutputStream;
-import org.apache.hbase.cell.CellTool;
 import org.apache.hbase.codec.prefixtree.PrefixTreeBlockMeta;
 import org.apache.hbase.codec.prefixtree.encode.column.ColumnSectionWriter;
 import org.apache.hbase.codec.prefixtree.encode.other.CellTypeEncoder;
@@ -255,7 +255,7 @@ public class PrefixTreeEncoder implements CellOutputStream {
   public void write(Cell cell) {
     ensurePerCellCapacities();
 
-    rowTokenizer.addSorted(CellTool.fillRowRange(cell, rowRange));
+    rowTokenizer.addSorted(CellUtil.fillRowRange(cell, rowRange));
     addFamilyPart(cell);
     addQualifierPart(cell);
     addAfterRowFamilyQualifier(cell);
@@ -291,26 +291,26 @@ public class PrefixTreeEncoder implements CellOutputStream {
     totalValueBytes += cell.getValueLength();
     // double the array each time we run out of space
     values = ArrayUtils.growIfNecessary(values, totalValueBytes, 2 * totalValueBytes);
-    CellTool.copyValueTo(cell, values, valueOffsets[totalCells]);
+    CellUtil.copyValueTo(cell, values, valueOffsets[totalCells]);
     if (cell.getValueLength() > maxValueLength) {
       maxValueLength = cell.getValueLength();
     }
     valueOffsets[totalCells + 1] = totalValueBytes;
 
     // general
-    totalUnencodedBytes += KeyValueTool.length(cell);
+    totalUnencodedBytes += KeyValueUtil.length(cell);
     ++totalCells;
   }
 
   private void addFamilyPart(Cell cell) {
     if (MULITPLE_FAMILIES_POSSIBLE || totalCells == 0) {
-      CellTool.fillFamilyRange(cell, familyRange);
+      CellUtil.fillFamilyRange(cell, familyRange);
       familyDeduplicator.add(familyRange);
     }
   }
 
   private void addQualifierPart(Cell cell) {
-    CellTool.fillQualifierRange(cell, qualifierRange);
+    CellUtil.fillQualifierRange(cell, qualifierRange);
     qualifierDeduplicator.add(qualifierRange);
   }
 

@@ -439,7 +439,7 @@ public class TestHFileOutputFormat  {
         LOG.info("Waiting for table to disable");
       }
       admin.enableTable(TABLE_NAME);
-      util.waitTableAvailable(TABLE_NAME, 30000);
+      util.waitTableAvailable(TABLE_NAME);
       assertEquals("Data should remain after reopening of regions",
           tableDigestBefore, util.checksumRows(table));
     } finally {
@@ -699,7 +699,7 @@ public class TestHFileOutputFormat  {
       // deep inspection: get the StoreFile dir
       final Path storePath = HStore.getStoreHomedir(
           HTableDescriptor.getTableDir(FSUtils.getRootDir(conf), TABLE_NAME),
-          admin.getTableRegions(TABLE_NAME).get(0).getEncodedName(),
+          admin.getTableRegions(TABLE_NAME).get(0),
           FAMILIES[0]);
       assertEquals(0, fs.listStatus(storePath).length);
 
@@ -767,7 +767,7 @@ public class TestHFileOutputFormat  {
       // deep inspection: get the StoreFile dir
       final Path storePath = HStore.getStoreHomedir(
           HTableDescriptor.getTableDir(FSUtils.getRootDir(conf), TABLE_NAME),
-          admin.getTableRegions(TABLE_NAME).get(0).getEncodedName(),
+          admin.getTableRegions(TABLE_NAME).get(0),
           FAMILIES[0]);
       assertEquals(0, fs.listStatus(storePath).length);
 

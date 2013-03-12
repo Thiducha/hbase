@@ -32,7 +32,7 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.ZooKeeperConnectionException;
+import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.catalog.MetaEditor;
 import org.apache.hadoop.hbase.client.AdminProtocol;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
@@ -149,7 +149,7 @@ public class HBaseFsckRepair {
   public static void closeRegionSilentlyAndWait(HBaseAdmin admin,
       ServerName server, HRegionInfo region) throws IOException, InterruptedException {
     HConnection connection = admin.getConnection();
-    AdminProtocol rs = connection.getAdmin(server.getHostname(), server.getPort());
+    AdminProtocol rs = connection.getAdmin(server);
     ProtobufUtil.closeRegion(rs, region.getRegionName(), false);
     long timeout = admin.getConfiguration()
       .getLong("hbase.hbck.close.timeout", 120000);

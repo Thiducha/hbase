@@ -36,7 +36,7 @@ import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.KeyValueTestUtil;
 import org.apache.hadoop.hbase.MediumTests;
 import org.apache.hadoop.hbase.client.Scan;
-import org.apache.hadoop.hbase.regionserver.HStore.ScanInfo;
+import org.apache.hadoop.hbase.regionserver.ScanInfo;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.EnvironmentEdge;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManagerTestHelper;
@@ -547,7 +547,7 @@ public class TestStoreScanner extends TestCase {
       List<KeyValueScanner> scanners = scanFixture(kvs);
       Scan scan = new Scan();
       scan.setMaxVersions(2);
-      HStore.ScanInfo scanInfo = new HStore.ScanInfo(Bytes.toBytes("cf"),
+      ScanInfo scanInfo = new ScanInfo(Bytes.toBytes("cf"),
         0 /* minVersions */,
         2 /* maxVersions */, 500 /* ttl */,
         false /* keepDeletedCells */,
@@ -555,7 +555,7 @@ public class TestStoreScanner extends TestCase {
         KeyValue.COMPARATOR);
       StoreScanner scanner =
         new StoreScanner(scan, scanInfo,
-          ScanType.MAJOR_COMPACT, null, scanners,
+          ScanType.COMPACT_DROP_DELETES, null, scanners,
           HConstants.OLDEST_TIMESTAMP);
       List<KeyValue> results = new ArrayList<KeyValue>();
       results = new ArrayList<KeyValue>();
@@ -568,6 +568,7 @@ public class TestStoreScanner extends TestCase {
       assertEquals(kvs[14], results.get(5));
       assertEquals(kvs[15], results.get(6));
       assertEquals(7, results.size());
+      scanner.close();
     }finally{
     EnvironmentEdgeManagerTestHelper.reset();
     }

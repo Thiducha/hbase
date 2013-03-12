@@ -28,10 +28,10 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.Server;
 import org.apache.hadoop.hbase.executor.EventHandler;
+import org.apache.hadoop.hbase.executor.EventType;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.RegionServerAccounting;
 import org.apache.hadoop.hbase.regionserver.RegionServerServices;
-import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.util.CancelableProgressable;
 import org.apache.hadoop.hbase.zookeeper.ZKAssign;
 import org.apache.zookeeper.KeeperException;
@@ -87,8 +87,9 @@ public class OpenRegionHandler extends EventHandler {
   @Override
   public void process() throws IOException {
     boolean openSuccessful = false;
-    boolean transitionToFailedOpen = false;
+    boolean transitionedToOpening = false;
     final String regionName = regionInfo.getRegionNameAsString();
+    HRegion region = null;
 
     try {
       if (this.server.isStopped() || this.rsServices.isStopping()) {
@@ -106,7 +107,6 @@ public class OpenRegionHandler extends EventHandler {
         LOG.error("Region " + encodedName +
             " was already online when we started processing the opening. " +
             "Marking this new attempt as failed");
-        tryTransitionFromOfflineToFailedOpen(this.rsServices, regionInfo, this.version);
         return;
       }
 
@@ -115,23 +115,19 @@ public class OpenRegionHandler extends EventHandler {
       // Calling transitionZookeeperOfflineToOpening initializes this.version.
       if (!isRegionStillOpening()){
         LOG.error("Region " + encodedName + " opening cancelled");
-        tryTransitionFromOfflineToFailedOpen(this.rsServices, regionInfo, this.version);
         return;
       }
 
       if (!transitionZookeeperOfflineToOpening(encodedName, versionOfOfflineNode)) {
         LOG.warn("Region was hijacked? Opening cancelled for encodedName=" + encodedName);
         // This is a desperate attempt: the znode is unlikely to be ours. But we can't do more.
-        tryTransitionFromOfflineToFailedOpen(this.rsServices, regionInfo, this.version);
         return;
       }
-
+      transitionedToOpening = true;
       // Open region.  After a successful open, failures in subsequent
       // processing needs to do a close as part of cleanup.
-      HRegion region = openRegion();
+      region = openRegion();
       if (region == null) {
-        tryTransitionFromOpeningToFailedOpen(regionInfo);
-        transitionToFailedOpen = true;
         return;
       }
       boolean failed = true;
@@ -142,9 +138,6 @@ public class OpenRegionHandler extends EventHandler {
       }
       if (failed || this.server.isStopped() ||
           this.rsServices.isStopping()) {
-        cleanupFailedOpen(region);
-        tryTransitionFromOpeningToFailedOpen(regionInfo);
-        transitionToFailedOpen = true;
         return;
       }
 
@@ -155,9 +148,6 @@ public class OpenRegionHandler extends EventHandler {
         // OR (b) someone else opened the region before us
         // OR (c) someone cancelled the open
         // In all cases, we try to transition to failed_open to be safe.
-        cleanupFailedOpen(region);
-        tryTransitionFromOpeningToFailedOpen(regionInfo);
-        transitionToFailedOpen = true;
         return;
       }
 
@@ -180,6 +170,10 @@ public class OpenRegionHandler extends EventHandler {
 
 
     } finally {
+      // Do all clean up here
+      if (!openSuccessful) {
+        doCleanUpOnFailedOpen(region, transitionedToOpening);
+      }
       final Boolean current = this.rsServices.getRegionsInTransitionInRS().
           remove(this.regionInfo.getEncodedNameAsBytes());
 
@@ -191,24 +185,40 @@ public class OpenRegionHandler extends EventHandler {
       // 1) this.rsServices.addToOnlineRegions(region);
       // 2) the ZK state.
       if (openSuccessful) {
-        if (current == null) {  // Should NEVER happen, but let's be paranoid.
-          LOG.error("Bad state: we've just opened a region that was NOT in transition. Region=" +
-              regionName
-          );
-        } else if (Boolean.FALSE.equals(current)) { // Can happen, if we're really unlucky.
+        if (current == null) { // Should NEVER happen, but let's be paranoid.
+          LOG.error("Bad state: we've just opened a region that was NOT in transition. Region="
+              + regionName);
+        } else if (Boolean.FALSE.equals(current)) { // Can happen, if we're
+                                                    // really unlucky.
           LOG.error("Race condition: we've finished to open a region, while a close was requested "
-              + " on region=" + regionName + ". It can be a critical error, as a region that" +
-              " should be closed is now opened."
-          );
+              + " on region=" + regionName + ". It can be a critical error, as a region that"
+              + " should be closed is now opened.");
         }
-      } else if (transitionToFailedOpen == false) {
+      } 
+    }
+  }
+
+  private void doCleanUpOnFailedOpen(HRegion region, boolean transitionedToOpening)
+      throws IOException {
+    if (transitionedToOpening) {
+      try {
+        if (region != null) {
+          cleanupFailedOpen(region);
+        }
+      } finally {
+        // Even if cleanupFailed open fails we need to do this transition
+        // See HBASE-7698
         tryTransitionFromOpeningToFailedOpen(regionInfo);
       }
+    } else {
+      // If still transition to OPENING is not done, we need to transition znode
+      // to FAILED_OPEN
+      tryTransitionFromOfflineToFailedOpen(this.rsServices, regionInfo, versionOfOfflineNode);
     }
   }
 
   /**
-   * Update ZK, ROOT or META.  This can take a while if for example the
+   * Update ZK or META.  This can take a while if for example the
    * .META. is not available -- if server hosting .META. crashed and we are
    * waiting on it to come back -- so run in a thread and keep updating znode
    * state meantime so master doesn't timeout our region-in-transition.
@@ -224,6 +234,8 @@ public class OpenRegionHandler extends EventHandler {
     PostOpenDeployTasksThread t = new PostOpenDeployTasksThread(r,
       this.server, this.rsServices, signaller);
     t.start();
+    boolean tomActivated = this.server.getConfiguration().
+        getBoolean("hbase.assignment.timeout.management", false);
     int assignmentTimeout = this.server.getConfiguration().
       getInt("hbase.master.assignment.timeoutmonitor.period", 10000);
     // Total timeout for meta edit.  If we fail adding the edit then close out
@@ -238,11 +250,13 @@ public class OpenRegionHandler extends EventHandler {
     boolean tickleOpening = true;
     while (!signaller.get() && t.isAlive() && !this.server.isStopped() &&
         !this.rsServices.isStopping() && (endTime > now)) {
-      long elapsed = now - lastUpdate;
-      if (elapsed > period) {
-        // Only tickle OPENING if postOpenDeployTasks is taking some time.
-        lastUpdate = now;
-        tickleOpening = tickleOpening("post_open_deploy");
+      if (tomActivated) {
+        long elapsed = now - lastUpdate;
+        if (elapsed > period) {
+          // Only tickle OPENING if postOpenDeployTasks is taking some time.
+          lastUpdate = now;
+          tickleOpening = tickleOpening("post_open_deploy");
+        }
       }
       synchronized (signaller) {
         try {
@@ -303,7 +317,7 @@ public class OpenRegionHandler extends EventHandler {
     public void run() {
       try {
         this.services.postOpenDeployTasks(this.region,
-          this.server.getCatalogTracker(), false);
+          this.server.getCatalogTracker());
       } catch (Exception e) {
         LOG.warn("Exception running postOpenDeployTasks; region=" +
           this.region.getRegionInfo().getEncodedName(), e);
@@ -431,7 +445,7 @@ public class OpenRegionHandler extends EventHandler {
       // Instantiate the region.  This also periodically tickles our zk OPENING
       // state so master doesn't timeout this region in transition.
       region = HRegion.openHRegion(this.regionInfo, this.htd,
-          this.rsServices.getWAL(this.regionInfo), 
+          this.rsServices.getWAL(this.regionInfo),
           this.server.getConfiguration(),
           this.rsServices,
         new CancelableProgressable() {
@@ -476,7 +490,7 @@ public class OpenRegionHandler extends EventHandler {
    * @param encodedName Name of the znode file (Region encodedName is the znode
    * name).
    * @param versionOfOfflineNode - version Of OfflineNode that needs to be compared
-   * before changing the node's state from OFFLINE 
+   * before changing the node's state from OFFLINE
    * @return True if successful transition.
    */
   boolean transitionZookeeperOfflineToOpening(final String encodedName,

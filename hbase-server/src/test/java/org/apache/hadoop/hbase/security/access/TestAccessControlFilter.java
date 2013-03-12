@@ -27,6 +27,7 @@ import java.security.PrivilegedExceptionAction;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.io.IOException;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -40,7 +41,7 @@ import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.generated.AccessControlProtos.AccessControlService;
-import org.apache.hadoop.hbase.security.AccessDeniedException;
+import org.apache.hadoop.hbase.exceptions.AccessDeniedException;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.AfterClass;
@@ -74,7 +75,7 @@ public class TestAccessControlFilter {
     conf.set("hbase.superuser", conf.get("hbase.superuser", "") +
         String.format(",%s.hfs.0,%s.hfs.1,%s.hfs.2", baseuser, baseuser, baseuser));
     TEST_UTIL.startMiniCluster();
-    TEST_UTIL.waitTableAvailable(AccessControlLists.ACL_TABLE_NAME, 5000);
+    TEST_UTIL.waitTableEnabled(AccessControlLists.ACL_TABLE_NAME);
 
     ADMIN = User.createUserForTesting(conf, "admin", new String[]{"supergroup"});
     READER = User.createUserForTesting(conf, "reader", new String[0]);
@@ -90,7 +91,14 @@ public class TestAccessControlFilter {
   @Test
   public void testQualifierAccess() throws Exception {
     final HTable table = TEST_UTIL.createTable(TABLE, FAMILY);
+    try {
+      doQualifierAccess(table);
+    } finally {
+      table.close();
+    }
+  }
 
+  private void doQualifierAccess(final HTable table) throws IOException, InterruptedException {
     // set permissions
     ADMIN.runAs(new PrivilegedExceptionAction<Object>() {
       @Override

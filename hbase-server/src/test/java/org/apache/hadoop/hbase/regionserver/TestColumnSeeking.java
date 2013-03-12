@@ -35,7 +35,6 @@ import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hbase.cell.CellComparator;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -132,6 +131,7 @@ public class TestColumnSeeking {
         Scan scan = new Scan();
         scan.setMaxVersions();
         if (i < numberOfTests) {
+          if (columnLists[i].size() == 0) continue; // HBASE-7700
           kvSet = kvMaps[i].values();
           for (String column : columnLists[i]) {
             scan.addColumn(familyBytes, Bytes.toBytes(column));
@@ -243,6 +243,7 @@ public class TestColumnSeeking {
       Scan scan = new Scan();
       scan.setMaxVersions();
       if (i < numberOfTests) {
+        if (columnLists[i].size() == 0) continue; // HBASE-7700
         kvSet = kvMaps[i].values();
         for (String column : columnLists[i]) {
           scan.addColumn(familyBytes, Bytes.toBytes(column));

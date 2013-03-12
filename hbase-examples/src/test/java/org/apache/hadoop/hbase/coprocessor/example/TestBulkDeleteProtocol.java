@@ -53,6 +53,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.Ignore;
 import org.junit.experimental.categories.Category;
 
 @Category(MediumTests.class)
@@ -64,19 +65,19 @@ public class TestBulkDeleteProtocol {
   private static final byte[] QUALIFIER3 = Bytes.toBytes("c3");
   private static final HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
 
-  @BeforeClass
+  // @Ignore @BeforeClass
   public static void setupBeforeClass() throws Exception {
     TEST_UTIL.getConfiguration().set(CoprocessorHost.USER_REGION_COPROCESSOR_CONF_KEY,
         BulkDeleteEndpoint.class.getName());
     TEST_UTIL.startMiniCluster(2);
   }
 
-  @AfterClass
+  // @Ignore @AfterClass
   public static void tearDownAfterClass() throws Exception {
     TEST_UTIL.shutdownMiniCluster();
   }
 
-  @Test
+  // @Ignore @Test
   public void testBulkDeleteEndpoint() throws Throwable {
     byte[] tableName = Bytes.toBytes("testBulkDeleteEndpoint");
     HTable ht = createTable(tableName);
@@ -95,9 +96,10 @@ public class TestBulkDeleteProtocol {
       rows++;
     }
     assertEquals(0, rows);
+    ht.close();
   }
 
-  @Test
+  // @Ignore @Test
   public void testBulkDeleteEndpointWhenRowBatchSizeLessThanRowsToDeleteFromARegion()
       throws Throwable {
     byte[] tableName = Bytes
@@ -118,16 +120,17 @@ public class TestBulkDeleteProtocol {
       rows++;
     }
     assertEquals(0, rows);
+    ht.close();
   }
 
   private long invokeBulkDeleteProtocol(byte[] tableName, final Scan scan, final int rowBatchSize,
       final DeleteType deleteType, final Long timeStamp) throws Throwable {
     HTable ht = new HTable(TEST_UTIL.getConfiguration(), tableName);
     long noOfDeletedRows = 0L;
-    Batch.Call<BulkDeleteService, BulkDeleteResponse> callable = 
+    Batch.Call<BulkDeleteService, BulkDeleteResponse> callable =
       new Batch.Call<BulkDeleteService, BulkDeleteResponse>() {
       ServerRpcController controller = new ServerRpcController();
-      BlockingRpcCallback<BulkDeleteResponse> rpcCallback = 
+      BlockingRpcCallback<BulkDeleteResponse> rpcCallback =
         new BlockingRpcCallback<BulkDeleteResponse>();
 
       public BulkDeleteResponse call(BulkDeleteService service) throws IOException {
@@ -147,10 +150,11 @@ public class TestBulkDeleteProtocol {
     for (BulkDeleteResponse response : result.values()) {
       noOfDeletedRows += response.getRowsDeleted();
     }
+    ht.close();
     return noOfDeletedRows;
   }
 
-  @Test
+  // @Ignore @Test
   public void testBulkDeleteWithConditionBasedDelete() throws Throwable {
     byte[] tableName = Bytes.toBytes("testBulkDeleteWithConditionBasedDelete");
     HTable ht = createTable(tableName);
@@ -177,9 +181,10 @@ public class TestBulkDeleteProtocol {
       rows++;
     }
     assertEquals(90, rows);
+    ht.close();
   }
 
-  @Test
+  // @Ignore @Test
   public void testBulkDeleteColumn() throws Throwable {
     byte[] tableName = Bytes.toBytes("testBulkDeleteColumn");
     HTable ht = createTable(tableName);
@@ -205,9 +210,10 @@ public class TestBulkDeleteProtocol {
       rows++;
     }
     assertEquals(100, rows);
+    ht.close();
   }
 
-  @Test
+  // @Ignore @Test
   public void testBulkDeleteFamily() throws Throwable {
     byte[] tableName = Bytes.toBytes("testBulkDeleteFamily");
     HTableDescriptor htd = new HTableDescriptor(tableName);
@@ -235,9 +241,10 @@ public class TestBulkDeleteProtocol {
       rows++;
     }
     assertEquals(100, rows);
+    ht.close();
   }
 
-  @Test
+  // @Ignore @Test
   public void testBulkDeleteColumnVersion() throws Throwable {
     byte[] tableName = Bytes.toBytes("testBulkDeleteColumnVersion");
     HTable ht = createTable(tableName);
@@ -282,9 +289,10 @@ public class TestBulkDeleteProtocol {
       rows++;
     }
     assertEquals(100, rows);
+    ht.close();
   }
 
-  @Test
+  // @Ignore @Test
   public void testBulkDeleteColumnVersionBasedOnTS() throws Throwable {
     byte[] tableName = Bytes.toBytes("testBulkDeleteColumnVersionBasedOnTS");
     HTable ht = createTable(tableName);
@@ -328,9 +336,10 @@ public class TestBulkDeleteProtocol {
       rows++;
     }
     assertEquals(100, rows);
+    ht.close();
   }
 
-  @Test
+  // @Ignore @Test
   public void testBulkDeleteWithNumberOfVersions() throws Throwable {
     byte[] tableName = Bytes.toBytes("testBulkDeleteWithNumberOfVersions");
     HTable ht = createTable(tableName);
@@ -371,10 +380,10 @@ public class TestBulkDeleteProtocol {
 
     long noOfDeletedRows = 0L;
     long noOfVersionsDeleted = 0L;
-    Batch.Call<BulkDeleteService, BulkDeleteResponse> callable = 
+    Batch.Call<BulkDeleteService, BulkDeleteResponse> callable =
       new Batch.Call<BulkDeleteService, BulkDeleteResponse>() {
       ServerRpcController controller = new ServerRpcController();
-      BlockingRpcCallback<BulkDeleteResponse> rpcCallback = 
+      BlockingRpcCallback<BulkDeleteResponse> rpcCallback =
         new BlockingRpcCallback<BulkDeleteResponse>();
 
       public BulkDeleteResponse call(BulkDeleteService service) throws IOException {
@@ -412,6 +421,7 @@ public class TestBulkDeleteProtocol {
       rows++;
     }
     assertEquals(100, rows);
+    ht.close();
   }
 
   private HTable createTable(byte[] tableName) throws IOException {

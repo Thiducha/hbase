@@ -25,8 +25,9 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.InvalidFamilyOperationException;
+import org.apache.hadoop.hbase.exceptions.InvalidFamilyOperationException;
 import org.apache.hadoop.hbase.Server;
+import org.apache.hadoop.hbase.executor.EventType;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.master.MasterCoprocessorHost;
 import org.apache.hadoop.hbase.master.MasterServices;
@@ -40,14 +41,19 @@ public class TableAddFamilyHandler extends TableEventHandler {
   private final HColumnDescriptor familyDesc;
 
   public TableAddFamilyHandler(byte[] tableName, HColumnDescriptor familyDesc,
-      Server server, final MasterServices masterServices) throws IOException {
+      Server server, final MasterServices masterServices) {
     super(EventType.C_M_ADD_FAMILY, tableName, server, masterServices);
+    this.familyDesc = familyDesc;
+  }
+
+  @Override
+  protected void prepareWithTableLock() throws IOException {
+    super.prepareWithTableLock();
     HTableDescriptor htd = getTableDescriptor();
     if (htd.hasFamily(familyDesc.getName())) {
       throw new InvalidFamilyOperationException("Family '" +
         familyDesc.getNameAsString() + "' already exists so cannot be added");
     }
-    this.familyDesc = familyDesc;
   }
 
   @Override

@@ -31,7 +31,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Random;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -43,6 +42,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.HConnectionManager.HConnectionImplementation;
 import org.apache.hadoop.hbase.client.HConnectionManager.HConnectionKey;
+import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.regionserver.RegionServerStoppedException;
@@ -217,8 +217,8 @@ public class TestHCM {
 
     final int nextPort = conn.getCachedLocation(TABLE_NAME, ROW).getPort() + 1;
     HRegionLocation loc = conn.getCachedLocation(TABLE_NAME, ROW);
-    conn.updateCachedLocation(loc.getRegionInfo(), loc,  new ServerName("127.0.0.1", nextPort,
-      HConstants.LATEST_TIMESTAMP));
+    conn.updateCachedLocation(loc.getRegionInfo(), loc, new ServerName("127.0.0.1", nextPort,
+      HConstants.LATEST_TIMESTAMP), HConstants.LATEST_TIMESTAMP);
     Assert.assertEquals(conn.getCachedLocation(TABLE_NAME, ROW).getPort(), nextPort);
 
     conn.forceDeleteCachedLocation(TABLE_NAME.clone(), ROW.clone());
@@ -415,34 +415,34 @@ public class TestHCM {
     HRegionLocation location = conn.getCachedLocation(TABLE_NAME2, ROW);
     assertNotNull(location);
 
-    HRegionLocation anySource = new HRegionLocation(location.getRegionInfo(),
-        location.getHostname(), location.getPort() - 1);
+    HRegionLocation anySource = new HRegionLocation(location.getRegionInfo(), new ServerName(
+        location.getHostname(), location.getPort() - 1, 0L), HConstants.NO_SEQNUM);
 
     // Same server as already in cache reporting - overwrites any value despite seqNum.
     int nextPort = location.getPort() + 1;
     conn.updateCachedLocation(location.getRegionInfo(), location,
-        new ServerName("127.0.0.1", nextPort, location.getSeqNum() - 1));
+        new ServerName("127.0.0.1", nextPort, 0), location.getSeqNum() - 1);
     location = conn.getCachedLocation(TABLE_NAME2, ROW);
     Assert.assertEquals(nextPort, location.getPort());
 
     // No source specified - same.
     nextPort = location.getPort() + 1;
     conn.updateCachedLocation(location.getRegionInfo(), location,
-        new ServerName( "127.0.0.1", nextPort, location.getSeqNum() - 1));
+        new ServerName("127.0.0.1", nextPort, 0), location.getSeqNum() - 1);
     location = conn.getCachedLocation(TABLE_NAME2, ROW);
     Assert.assertEquals(nextPort, location.getPort());
 
     // Higher seqNum - overwrites lower seqNum.
     nextPort = location.getPort() + 1;
     conn.updateCachedLocation(location.getRegionInfo(), anySource,
-        new ServerName("127.0.0.1", nextPort, location.getSeqNum() + 1));
+        new ServerName("127.0.0.1", nextPort, 0), location.getSeqNum() + 1);
     location = conn.getCachedLocation(TABLE_NAME2, ROW);
     Assert.assertEquals(nextPort, location.getPort());
 
     // Lower seqNum - does not overwrite higher seqNum.
     nextPort = location.getPort() + 1;
     conn.updateCachedLocation(location.getRegionInfo(), anySource,
-        new ServerName("127.0.0.1", nextPort, location.getSeqNum() - 1));
+        new ServerName("127.0.0.1", nextPort, 0), location.getSeqNum() - 1);
     location = conn.getCachedLocation(TABLE_NAME2, ROW);
     Assert.assertEquals(nextPort - 1, location.getPort());
   }

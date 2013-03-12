@@ -32,27 +32,37 @@ import org.apache.hadoop.hbase.regionserver.StoreFile;
 @InterfaceAudience.Private
 public abstract class Compactor {
 
-  CompactionProgress progress;
-  CompactionPolicy policy;
+  protected CompactionProgress progress;
+  protected Configuration conf;
 
-  Compactor(final CompactionPolicy policy) {
-    this.policy = policy;
+  Compactor(final Configuration conf) {
+    this.conf = conf;
   }
 
   /**
    * Do a minor/major compaction on an explicit set of storefiles from a Store.
-   *
-   * @param filesToCompact which files to compact
-   * @param majorCompaction true to major compact (prune all deletes, max versions, etc)
-   * @return Product of compaction or an empty list if all cells expired or deleted and
-   * nothing made it through the compaction.
+   * @param request the requested compaction
+   * @return Product of compaction or an empty list if all cells expired or deleted and nothing made
+   *         it through the compaction.
    * @throws IOException
    */
-  public abstract List<Path> compact(final Collection<StoreFile> filesToCompact,
-    final boolean majorCompaction) throws IOException;
+  public abstract List<Path> compact(final CompactionRequest request) throws IOException;
 
-  public Configuration getConf() {
-    return policy.getConf();
+  /**
+   * Compact a list of files for testing. Creates a fake {@link CompactionRequest} to pass to
+   * {@link #compact(CompactionRequest)};
+   * @param filesToCompact the files to compact. These are used as the compactionSelection for the
+   *          generated {@link CompactionRequest}.
+   * @param isMajor true to major compact (prune all deletes, max versions, etc)
+   * @return Product of compaction or an empty list if all cells expired or deleted and nothing made
+   *         it through the compaction.
+   * @throws IOException
+   */
+  public List<Path> compactForTesting(final Collection<StoreFile> filesToCompact, boolean isMajor)
+      throws IOException {
+    CompactionRequest cr = new CompactionRequest(filesToCompact);
+    cr.setIsMajor(isMajor);
+    return this.compact(cr);
   }
 
   public CompactionProgress getProgress() {

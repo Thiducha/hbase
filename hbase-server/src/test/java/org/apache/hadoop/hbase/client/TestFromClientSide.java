@@ -49,7 +49,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Abortable;
-import org.apache.hadoop.hbase.DoNotRetryIOException;
+import org.apache.hadoop.hbase.exceptions.DoNotRetryIOException;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
@@ -85,13 +85,12 @@ import org.apache.hadoop.hbase.protobuf.generated.MultiRowMutation.MultiMutateRe
 import org.apache.hadoop.hbase.protobuf.generated.MultiRowMutation.MultiRowMutationService;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
-import org.apache.hadoop.hbase.regionserver.NoSuchColumnFamilyException;
+import org.apache.hadoop.hbase.exceptions.NoSuchColumnFamilyException;
 import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
-import org.apache.hadoop.io.DataInputBuffer;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -3635,7 +3634,8 @@ public class TestFromClientSide {
     assertEquals(put.size(), 1);
     assertEquals(put.getFamilyMap().get(CONTENTS_FAMILY).size(), 1);
 
-    KeyValue kv = put.getFamilyMap().get(CONTENTS_FAMILY).get(0);
+    // KeyValue v1 expectation.  Cast for now until we go all Cell all the time. TODO
+    KeyValue kv = (KeyValue)put.getFamilyMap().get(CONTENTS_FAMILY).get(0);
 
     assertTrue(Bytes.equals(kv.getFamily(), CONTENTS_FAMILY));
     // will it return null or an empty byte array?
@@ -4159,7 +4159,7 @@ public class TestFromClientSide {
     mrmBuilder.addMutationRequest(m2);
     MultiMutateRequest mrm = mrmBuilder.build();
     CoprocessorRpcChannel channel = t.coprocessorService(ROW);
-    MultiRowMutationService.BlockingInterface service = 
+    MultiRowMutationService.BlockingInterface service =
        MultiRowMutationService.newBlockingStub(channel);
     service.mutateRows(null, mrm);
     Get g = new Get(ROW);

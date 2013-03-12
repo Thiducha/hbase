@@ -43,7 +43,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.hbase.Chore;
-import org.apache.hadoop.hbase.DeserializationException;
+import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.SplitLogCounters;
 import org.apache.hadoop.hbase.SplitLogTask;
@@ -278,7 +278,8 @@ public class SplitLogManager extends ZooKeeperListener {
       // recover-lease is done. totalSize will be under in most cases and the
       // metrics that it drives will also be under-reported.
       totalSize += lf.getLen();
-      if (enqueueSplitTask(lf.getPath().toString(), batch) == false) {
+      String pathToLog = FSUtils.removeRootPath(lf.getPath(), conf);
+      if (!enqueueSplitTask(pathToLog, batch)) {
         throw new IOException("duplicate log split scheduled for " + lf.getPath());
       }
     }

@@ -42,7 +42,7 @@ import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.NotAllMetaRegionsOnlineException;
+import org.apache.hadoop.hbase.exceptions.NotAllMetaRegionsOnlineException;
 import org.apache.hadoop.hbase.Server;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.SmallTests;
@@ -111,8 +111,8 @@ public class TestCatalogJanitor {
           HRegionInfo.FIRST_META_REGIONINFO);
       // Set hbase.rootdir into test dir.
       FileSystem fs = FileSystem.get(this.c);
-      Path rootdir = fs.makeQualified(new Path(this.c.get(HConstants.HBASE_DIR)));
-      this.c.set(HConstants.HBASE_DIR, rootdir.toString());
+      Path rootdir = FSUtils.getRootDir(this.c);
+      FSUtils.setRootDir(this.c, rootdir);
       this.ct = Mockito.mock(CatalogTracker.class);
       AdminProtocol hri = Mockito.mock(AdminProtocol.class);
       Mockito.when(this.ct.getConnection()).thenReturn(this.connection);
@@ -201,6 +201,11 @@ public class TestCatalogJanitor {
     @Override
     public MasterFileSystem getMasterFileSystem() {
       return this.mfs;
+    }
+
+    @Override
+    public MasterCoprocessorHost getCoprocessorHost() {
+      return null;
     }
 
     @Override
@@ -315,6 +320,11 @@ public class TestCatalogJanitor {
 
     @Override
     public void deleteColumn(byte[] tableName, byte[] columnName) throws IOException { }
+
+    @Override
+    public TableLockManager getTableLockManager() {
+      return null;
+    }
   }
 
   @Test
@@ -344,7 +354,7 @@ public class TestCatalogJanitor {
       Path rootdir = services.getMasterFileSystem().getRootDir();
       Path tabledir =
         HTableDescriptor.getTableDir(rootdir, htd.getName());
-      Path storedir = HStore.getStoreHomedir(tabledir, splita.getEncodedName(),
+      Path storedir = HStore.getStoreHomedir(tabledir, splita,
           htd.getColumnFamilies()[0].getName());
       Reference ref = Reference.createTopReference(Bytes.toBytes("ccc"));
       long now = System.currentTimeMillis();
@@ -590,8 +600,7 @@ public class TestCatalogJanitor {
     // the single test passes, but when the full suite is run, things get borked).
     FSUtils.setRootDir(fs.getConf(), rootdir);
     Path tabledir = HTableDescriptor.getTableDir(rootdir, htd.getName());
-    Path storedir = HStore.getStoreHomedir(tabledir, parent.getEncodedName(),
-      htd.getColumnFamilies()[0].getName());
+    Path storedir = HStore.getStoreHomedir(tabledir, parent, htd.getColumnFamilies()[0].getName());
     Path storeArchive = HFileArchiveUtil.getStoreArchivePath(services.getConfiguration(), parent,
       tabledir, htd.getColumnFamilies()[0].getName());
     LOG.debug("Table dir:" + tabledir);
@@ -672,8 +681,7 @@ public class TestCatalogJanitor {
     // the single test passes, but when the full suite is run, things get borked).
     FSUtils.setRootDir(fs.getConf(), rootdir);
     Path tabledir = HTableDescriptor.getTableDir(rootdir, parent.getTableName());
-    Path storedir = HStore.getStoreHomedir(tabledir, parent.getEncodedName(),
-      htd.getColumnFamilies()[0].getName());
+    Path storedir = HStore.getStoreHomedir(tabledir, parent, htd.getColumnFamilies()[0].getName());
     System.out.println("Old root:" + rootdir);
     System.out.println("Old table:" + tabledir);
     System.out.println("Old store:" + storedir);
@@ -736,8 +744,8 @@ public class TestCatalogJanitor {
     Path testdir = htu.getDataTestDir(subdir);
     FileSystem fs = FileSystem.get(htu.getConfiguration());
     if (fs.exists(testdir)) assertTrue(fs.delete(testdir, true));
-    htu.getConfiguration().set(HConstants.HBASE_DIR, testdir.toString());
-    return htu.getConfiguration().get(HConstants.HBASE_DIR);
+    FSUtils.setRootDir(htu.getConfiguration(), testdir);
+    return FSUtils.getRootDir(htu.getConfiguration()).toString();
   }
 
   /**
@@ -756,7 +764,7 @@ public class TestCatalogJanitor {
   throws IOException {
     Path rootdir = services.getMasterFileSystem().getRootDir();
     Path tabledir = HTableDescriptor.getTableDir(rootdir, parent.getTableName());
-    Path storedir = HStore.getStoreHomedir(tabledir, daughter.getEncodedName(),
+    Path storedir = HStore.getStoreHomedir(tabledir, daughter,
       htd.getColumnFamilies()[0].getName());
     Reference ref =
       top? Reference.createTopReference(midkey): Reference.createBottomReference(midkey);

@@ -22,7 +22,7 @@
     <parent>
         <artifactId>hbase</artifactId>
         <groupId>org.apache.hbase</groupId>
-        <version>0.95-SNAPSHOT</version>
+        <version>0.97-SNAPSHOT</version>
         <relativePath>..</relativePath>
     </parent>
 
@@ -53,11 +53,16 @@
     </build>
 
     <dependencies>
-        <!-- General dependencies -->
-        <dependency>
-            <groupId>com.google.protobuf</groupId>
-            <artifactId>protobuf-java</artifactId>
-        </dependency>
+      <!-- Intra-project dependencies -->
+      <dependency>
+        <groupId>org.apache.hbase</groupId>
+        <artifactId>hbase-common</artifactId>
+      </dependency>
+      <!-- General dependencies -->
+      <dependency>
+        <groupId>com.google.protobuf</groupId>
+        <artifactId>protobuf-java</artifactId>
+      </dependency>
     </dependencies>
 
     <profiles>

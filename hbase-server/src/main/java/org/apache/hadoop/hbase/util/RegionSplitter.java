@@ -58,7 +58,7 @@ import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.NoServerForRegionException;
 import org.apache.hadoop.hbase.regionserver.HStore;
-import org.apache.hadoop.hbase.regionserver.StoreFile;
+import org.apache.hadoop.hbase.regionserver.StoreFileInfo;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -398,7 +398,7 @@ public class RegionSplitter {
     final int MAX_OUTSTANDING =
         Math.max(table.getConnection().getCurrentNrHRS() / 2, minOS);
 
-    Path hbDir = new Path(conf.get(HConstants.HBASE_DIR));
+    Path hbDir = FSUtils.getRootDir(conf);
     Path tableDir = HTableDescriptor.getTableDir(hbDir, table.getTableName());
     Path splitFile = new Path(tableDir, "_balancedSplit");
     FileSystem fs = FileSystem.get(conf);
@@ -669,11 +669,10 @@ public class RegionSplitter {
           HTableDescriptor htd = table.getTableDescriptor();
           // check every Column Family for that region
           for (HColumnDescriptor c : htd.getFamilies()) {
-            Path cfDir = HStore.getStoreHomedir(tableDir, hri.getEncodedName(),
-                c.getName());
+            Path cfDir = HStore.getStoreHomedir(tableDir, hri, c.getName());
             if (fs.exists(cfDir)) {
               for (FileStatus file : fs.listStatus(cfDir)) {
-                refFound |= StoreFile.isReference(file.getPath());
+                refFound |= StoreFileInfo.isReference(file.getPath());
                 if (refFound)
                   break;
               }
@@ -708,7 +707,7 @@ public class RegionSplitter {
 
   static LinkedList<Pair<byte[], byte[]>> getSplits(HTable table,
       SplitAlgorithm splitAlgo) throws IOException {
-    Path hbDir = new Path(table.getConfiguration().get(HConstants.HBASE_DIR));
+    Path hbDir = FSUtils.getRootDir(table.getConfiguration());
     Path tableDir = HTableDescriptor.getTableDir(hbDir, table.getTableName());
     Path splitFile = new Path(tableDir, "_balancedSplit");
     FileSystem fs = tableDir.getFileSystem(table.getConfiguration());

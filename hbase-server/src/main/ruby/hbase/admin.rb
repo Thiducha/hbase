@@ -313,7 +313,6 @@ module Hbase
     def describe(table_name)
       tables = @admin.listTables.to_a
       tables << org.apache.hadoop.hbase.HTableDescriptor::META_TABLEDESC
-      tables << org.apache.hadoop.hbase.HTableDescriptor::ROOT_TABLEDESC
 
       tables.each do |t|
         # Found the table
@@ -328,11 +327,12 @@ module Hbase
     def truncate(table_name, conf = @conf)
       h_table = org.apache.hadoop.hbase.client.HTable.new(conf, table_name)
       table_description = h_table.getTableDescriptor()
+      raise ArgumentError, "Table #{table_name} is not enabled. Enable it first.'" unless enabled?(table_name)
       yield 'Disabling table...' if block_given?
-      disable(table_name)
+      @admin.disableTable(table_name)
 
       yield 'Dropping table...' if block_given?
-      drop(table_name)
+      @admin.deleteTable(table_name)
 
       yield 'Creating table...' if block_given?
       @admin.createTable(table_description)
@@ -655,6 +655,42 @@ module Hbase
         end
     end
     
+    #----------------------------------------------------------------------------------------------
+    # Take a snapshot of specified table
+    def snapshot(table, snapshot_name)
+      @admin.snapshot(snapshot_name.to_java_bytes, table.to_java_bytes)
+    end
+
+    #----------------------------------------------------------------------------------------------
+    # Restore specified snapshot
+    def restore_snapshot(snapshot_name)
+      @admin.restoreSnapshot(snapshot_name.to_java_bytes)
+    end
+
+    #----------------------------------------------------------------------------------------------
+    # Create a new table by cloning the snapshot content
+    def clone_snapshot(snapshot_name, table)
+      @admin.cloneSnapshot(snapshot_name.to_java_bytes, table.to_java_bytes)
+    end
+
+    #----------------------------------------------------------------------------------------------
+    # Rename specified snapshot
+    def rename_snapshot(old_snapshot_name, new_snapshot_name)
+      @admin.renameSnapshot(old_snapshot_name.to_java_bytes, new_snapshot_name.to_java_bytes)
+    end
+
+    #----------------------------------------------------------------------------------------------
+    # Delete specified snapshot
+    def delete_snapshot(snapshot_name)
+      @admin.deleteSnapshot(snapshot_name.to_java_bytes)
+    end
+
+    #----------------------------------------------------------------------------------------------
+    # Returns a list of snapshots
+    def list_snapshot
+      @admin.listSnapshots
+    end
+
     # Apply config specific to a table/column to its descriptor
     def set_descriptor_config(descriptor, config)
       raise(ArgumentError, "#{CONFIGURATION} must be a Hash type") unless config.kind_of?(Hash)

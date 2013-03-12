@@ -55,10 +55,8 @@ public class TestHFileLinkCleaner {
   @Test
   public void testHFileLinkCleaning() throws Exception {
     Configuration conf = TEST_UTIL.getConfiguration();
-    conf.set(HConstants.HBASE_DIR, TEST_UTIL.getDataTestDir().toString());
-    conf.set(HFileCleaner.MASTER_HFILE_CLEANER_PLUGINS,
-             "org.apache.hadoop.hbase.master.cleaner.TimeToLiveHFileCleaner," +
-             "org.apache.hadoop.hbase.master.cleaner.HFileLinkCleaner");
+    FSUtils.setRootDir(conf, TEST_UTIL.getDataTestDir());
+    conf.set(HFileCleaner.MASTER_HFILE_CLEANER_PLUGINS, HFileLinkCleaner.class.getName());
     Path rootDir = FSUtils.getRootDir(conf);
     FileSystem fs = FileSystem.get(conf);
 
@@ -72,9 +70,9 @@ public class TestHFileLinkCleaner {
 
     Path archiveDir = HFileArchiveUtil.getArchivePath(conf);
     Path archiveStoreDir = HFileArchiveUtil.getStoreArchivePath(conf,
-          tableName, hri.getEncodedName(), familyName);
+          tableName, hri, familyName);
     Path archiveLinkStoreDir = HFileArchiveUtil.getStoreArchivePath(conf,
-          tableLinkName, hriLink.getEncodedName(), familyName);
+          tableLinkName, hriLink, familyName);
 
     // Create hfile /hbase/table-link/region/cf/getEncodedName.HFILE(conf);
     Path familyPath = getFamilyDirPath(archiveDir, tableName, hri.getEncodedName(), familyName);
@@ -100,14 +98,12 @@ public class TestHFileLinkCleaner {
     HFileCleaner cleaner = new HFileCleaner(1000, server, conf, fs, archiveDir);
 
     // Link backref cannot be removed
-    Thread.sleep(ttl * 2);
     cleaner.chore();
     assertTrue(fs.exists(linkBackRef));
     assertTrue(fs.exists(hfilePath));
 
     // Link backref can be removed
     fs.rename(new Path(rootDir, tableLinkName), new Path(archiveDir, tableLinkName));
-    Thread.sleep(ttl * 2);
     cleaner.chore();
     assertFalse("Link should be deleted", fs.exists(linkBackRef));
 

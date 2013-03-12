@@ -52,6 +52,7 @@ import org.apache.hadoop.hbase.client.AdminProtocol;
 import org.apache.hadoop.hbase.client.HConnection;
 import org.apache.hadoop.hbase.client.HConnectionManager;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
+import org.apache.hadoop.hbase.protobuf.ReplicationProtbufUtil;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.regionserver.wal.HLogKey;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
@@ -326,6 +327,7 @@ public class ReplicationSource extends Thread
       }
 
       boolean gotIOE = false;
+      currentNbOperations = 0;
       currentNbEntries = 0;
       currentSize = 0;
       try {
@@ -363,6 +365,7 @@ public class ReplicationSource extends Thread
         }
       } finally {
         try {
+          this.reader = null;
           this.repLogReader.closeReader();
         } catch (IOException e) {
           gotIOE = true;
@@ -635,8 +638,8 @@ public class ReplicationSource extends Thread
       }
       try {
         AdminProtocol rrs = getRS();
-        ProtobufUtil.replicateWALEntry(rrs,
-          Arrays.copyOf(this.entriesArray, currentNbEntries));
+        ReplicationProtbufUtil.replicateWALEntry(rrs,
+            Arrays.copyOf(this.entriesArray, currentNbEntries));
         if (this.lastLoggedPosition != this.repLogReader.getPosition()) {
           this.manager.logPositionAndCleanOldLogs(this.currentPath,
               this.peerClusterZnode, this.repLogReader.getPosition(),
@@ -764,7 +767,7 @@ public class ReplicationSource extends Thread
     }
     ServerName address =
         currentPeers.get(random.nextInt(this.currentPeers.size()));
-    return this.conn.getAdmin(address.getHostname(), address.getPort());
+    return this.conn.getAdmin(address);
   }
 
   /**

@@ -47,8 +47,9 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
-import org.apache.hadoop.hbase.regionserver.HRegion;
+import org.apache.hadoop.hbase.regionserver.HRegionFileSystem;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.FSUtils;
 import org.apache.zookeeper.KeeperException;
 import org.junit.After;
 import org.junit.Before;
@@ -181,7 +182,7 @@ public class OfflineMetaRebuildTestCore {
         TEST_UTIL.getHBaseAdmin().unassign(deleteRow, true);
 
         LOG.info("deleting hdfs data: " + hri.toString() + hsa.toString());
-        Path rootDir = new Path(conf.get(HConstants.HBASE_DIR));
+        Path rootDir = FSUtils.getRootDir(conf);
         FileSystem fs = rootDir.getFileSystem(conf);
         Path p = new Path(rootDir + "/" + htd.getNameAsString(),
             hri.getEncodedName());
@@ -207,12 +208,12 @@ public class OfflineMetaRebuildTestCore {
     HRegionInfo hri = new HRegionInfo(htbl.getTableName(), startKey, endKey);
 
     LOG.info("manually adding regioninfo and hdfs data: " + hri.toString());
-    Path rootDir = new Path(conf.get(HConstants.HBASE_DIR));
+    Path rootDir = FSUtils.getRootDir(conf);
     FileSystem fs = rootDir.getFileSystem(conf);
     Path p = new Path(rootDir + "/" + htd.getNameAsString(),
         hri.getEncodedName());
     fs.mkdirs(p);
-    Path riPath = new Path(p, HRegion.REGIONINFO_FILE);
+    Path riPath = new Path(p, HRegionFileSystem.REGION_INFO_FILE);
     FSDataOutputStream out = fs.create(riPath);
     out.write(hri.toDelimitedByteArray());
     out.close();

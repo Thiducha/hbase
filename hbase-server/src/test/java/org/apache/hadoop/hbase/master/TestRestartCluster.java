@@ -28,7 +28,8 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.MetaScanner;
-import org.apache.hadoop.hbase.executor.EventHandler.EventType;
+import org.apache.hadoop.hbase.exceptions.TableExistsException;
+import org.apache.hadoop.hbase.executor.EventType;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.zookeeper.ZKAssign;
@@ -97,7 +98,7 @@ public class TestRestartCluster {
       UTIL.createTable(TABLE, FAMILY);
     }
     for(byte [] TABLE : TABLES) {
-      UTIL.waitTableAvailable(TABLE, 30000);
+      UTIL.waitTableEnabled(TABLE);
     }
 
     List<HRegionInfo> allRegions =
@@ -128,7 +129,7 @@ public class TestRestartCluster {
       } catch(TableExistsException tee) {
         LOG.info("Table already exists as expected");
       }
-      UTIL.waitTableAvailable(TABLE, 30000);
+      UTIL.waitTableAvailable(TABLE);
     }
   }
 

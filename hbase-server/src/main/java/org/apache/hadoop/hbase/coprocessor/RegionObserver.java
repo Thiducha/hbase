@@ -28,6 +28,7 @@ import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Increment;
+import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
@@ -36,11 +37,13 @@ import org.apache.hadoop.hbase.filter.ByteArrayComparable;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.InternalScanner;
 import org.apache.hadoop.hbase.regionserver.KeyValueScanner;
+import org.apache.hadoop.hbase.regionserver.MiniBatchOperationInProgress;
 import org.apache.hadoop.hbase.regionserver.RegionScanner;
 import org.apache.hadoop.hbase.regionserver.ScanType;
-import org.apache.hadoop.hbase.regionserver.HStore;
+import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.regionserver.StoreFile;
 import org.apache.hadoop.hbase.regionserver.StoreFileScanner;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionRequest;
 import org.apache.hadoop.hbase.regionserver.wal.HLogKey;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
 
@@ -84,14 +87,14 @@ public interface RegionObserver extends Coprocessor {
    * @throws IOException if an error occurred on the coprocessor
    */
   InternalScanner preFlushScannerOpen(final ObserverContext<RegionCoprocessorEnvironment> c,
-      final HStore store, final KeyValueScanner memstoreScanner, final InternalScanner s)
+      final Store store, final KeyValueScanner memstoreScanner, final InternalScanner s)
       throws IOException;
 
   /**
    * Called before the memstore is flushed to disk.
    * @param c the environment provided by the region server
    * @throws IOException if an error occurred on the coprocessor
-   * @deprecated use {@link #preFlush(ObserverContext, HStore, InternalScanner)} instead
+   * @deprecated use {@link #preFlush(ObserverContext, Store, InternalScanner)} instead
    */
   void preFlush(final ObserverContext<RegionCoprocessorEnvironment> c) throws IOException;
 
@@ -104,14 +107,14 @@ public interface RegionObserver extends Coprocessor {
    * unless the implementation is writing new store files on its own.
    * @throws IOException if an error occurred on the coprocessor
    */
-  InternalScanner preFlush(final ObserverContext<RegionCoprocessorEnvironment> c, final HStore store,
+  InternalScanner preFlush(final ObserverContext<RegionCoprocessorEnvironment> c, final Store store,
       final InternalScanner scanner) throws IOException;
 
   /**
    * Called after the memstore is flushed to disk.
    * @param c the environment provided by the region server
    * @throws IOException if an error occurred on the coprocessor
-   * @deprecated use {@link #preFlush(ObserverContext, HStore, InternalScanner)} instead.
+   * @deprecated use {@link #preFlush(ObserverContext, Store, InternalScanner)} instead.
    */
   void postFlush(final ObserverContext<RegionCoprocessorEnvironment> c) throws IOException;
 
@@ -122,92 +125,188 @@ public interface RegionObserver extends Coprocessor {
    * @param resultFile the new store file written out during compaction
    * @throws IOException if an error occurred on the coprocessor
    */
-  void postFlush(final ObserverContext<RegionCoprocessorEnvironment> c, final HStore store,
+  void postFlush(final ObserverContext<RegionCoprocessorEnvironment> c, final Store store,
       final StoreFile resultFile) throws IOException;
 
   /**
-   * Called prior to selecting the {@link StoreFile}s to compact from the list
-   * of available candidates.  To alter the files used for compaction, you may
-   * mutate the passed in list of candidates.
+   * Called prior to selecting the {@link StoreFile StoreFiles} to compact from the list of
+   * available candidates. To alter the files used for compaction, you may mutate the passed in list
+   * of candidates.
+   * @param c the environment provided by the region server
+   * @param store the store where compaction is being requested
+   * @param candidates the store files currently available for compaction
+   * @param request custom compaction request
+   * @throws IOException if an error occurred on the coprocessor
+   */
+  void preCompactSelection(final ObserverContext<RegionCoprocessorEnvironment> c,
+      final Store store, final List<StoreFile> candidates, final CompactionRequest request)
+      throws IOException;
+
+  /**
+   * Called prior to selecting the {@link StoreFile}s to compact from the list of available
+   * candidates. To alter the files used for compaction, you may mutate the passed in list of
+   * candidates.
    * @param c the environment provided by the region server
    * @param store the store where compaction is being requested
    * @param candidates the store files currently available for compaction
    * @throws IOException if an error occurred on the coprocessor
+   * @deprecated Use {@link #preCompactSelection(ObserverContext, Store, List, CompactionRequest)}
+   *             instead
    */
+  @Deprecated
   void preCompactSelection(final ObserverContext<RegionCoprocessorEnvironment> c,
-      final HStore store, final List<StoreFile> candidates) throws IOException;
+      final Store store, final List<StoreFile> candidates) throws IOException;
 
   /**
-   * Called after the {@link StoreFile}s to compact have been selected from the
-   * available candidates.
+   * Called after the {@link StoreFile}s to compact have been selected from the available
+   * candidates.
    * @param c the environment provided by the region server
    * @param store the store being compacted
    * @param selected the store files selected to compact
+   * @param request custom compaction request
    */
   void postCompactSelection(final ObserverContext<RegionCoprocessorEnvironment> c,
-      final HStore store, final ImmutableList<StoreFile> selected);
+      final Store store, final ImmutableList<StoreFile> selected, CompactionRequest request);
 
   /**
-   * Called prior to writing the {@link StoreFile}s selected for compaction into
-   * a new {@code StoreFile}.  To override or modify the compaction process,
-   * implementing classes have two options:
+   * Called after the {@link StoreFile}s to compact have been selected from the available
+   * candidates.
+   * @param c the environment provided by the region server
+   * @param store the store being compacted
+   * @param selected the store files selected to compact
+   * @deprecated use {@link #postCompactSelection(ObserverContext, Store, ImmutableList,
+   *             CompactionRequest)} instead.
+   */
+  @Deprecated
+  void postCompactSelection(final ObserverContext<RegionCoprocessorEnvironment> c,
+      final Store store, final ImmutableList<StoreFile> selected);
+
+  /**
+   * Called prior to writing the {@link StoreFile}s selected for compaction into a new
+   * {@code StoreFile}. To override or modify the compaction process, implementing classes have two
+   * options:
    * <ul>
-   *   <li>Wrap the provided {@link InternalScanner} with a custom
-   *   implementation that is returned from this method.  The custom scanner
-   *   can then inspect {@link KeyValue}s from the wrapped scanner, applying
-   *   its own policy to what gets written.</li>
-   *   <li>Call {@link org.apache.hadoop.hbase.coprocessor.ObserverContext#bypass()}
-   *   and provide a custom implementation for writing of new
-   *   {@link StoreFile}s.  <strong>Note: any implementations bypassing
-   *   core compaction using this approach must write out new store files
-   *   themselves or the existing data will no longer be available after
-   *   compaction.</strong></li>
+   * <li>Wrap the provided {@link InternalScanner} with a custom implementation that is returned
+   * from this method. The custom scanner can then inspect {@link KeyValue}s from the wrapped
+   * scanner, applying its own policy to what gets written.</li>
+   * <li>Call {@link org.apache.hadoop.hbase.coprocessor.ObserverContext#bypass()} and provide a
+   * custom implementation for writing of new {@link StoreFile}s. <strong>Note: any implementations
+   * bypassing core compaction using this approach must write out new store files themselves or the
+   * existing data will no longer be available after compaction.</strong></li>
    * </ul>
    * @param c the environment provided by the region server
    * @param store the store being compacted
-   * @param scanner the scanner over existing data used in the store file
-   * rewriting
+   * @param scanner the scanner over existing data used in the store file rewriting
    * @param scanType type of Scan
-   * @return the scanner to use during compaction.  Should not be {@code null}
-   * unless the implementation is writing new store files on its own.
+   * @param request the requested compaction
+   * @return the scanner to use during compaction. Should not be {@code null} unless the
+   *         implementation is writing new store files on its own.
    * @throws IOException if an error occurred on the coprocessor
    */
   InternalScanner preCompact(final ObserverContext<RegionCoprocessorEnvironment> c,
-      final HStore store, final InternalScanner scanner,
-      final ScanType scanType) throws IOException;
+      final Store store, final InternalScanner scanner, final ScanType scanType,
+      CompactionRequest request) throws IOException;
 
   /**
-   * Called prior to writing the {@link StoreFile}s selected for compaction into
-   * a new {@code StoreFile} and prior to creating the scanner used to read the
-   * input files.  To override or modify the compaction process,
-   * implementing classes can return a new scanner to provide the KeyValues to be
-   * stored into the new {@code StoreFile} or null to perform the default processing.
-   * Calling {@link org.apache.hadoop.hbase.coprocessor.ObserverContext#bypass()} has no
+   * Called prior to writing the {@link StoreFile}s selected for compaction into a new
+   * {@code StoreFile}. To override or modify the compaction process, implementing classes have two
+   * options:
+   * <ul>
+   * <li>Wrap the provided {@link InternalScanner} with a custom implementation that is returned
+   * from this method. The custom scanner can then inspect {@link KeyValue}s from the wrapped
+   * scanner, applying its own policy to what gets written.</li>
+   * <li>Call {@link org.apache.hadoop.hbase.coprocessor.ObserverContext#bypass()} and provide a
+   * custom implementation for writing of new {@link StoreFile}s. <strong>Note: any implementations
+   * bypassing core compaction using this approach must write out new store files themselves or the
+   * existing data will no longer be available after compaction.</strong></li>
+   * </ul>
+   * @param c the environment provided by the region server
+   * @param store the store being compacted
+   * @param scanner the scanner over existing data used in the store file rewriting
+   * @param scanType type of Scan
+   * @return the scanner to use during compaction. Should not be {@code null} unless the
+   *         implementation is writing new store files on its own.
+   * @throws IOException if an error occurred on the coprocessor
+   * @deprecated use
+   *             {@link #preCompact(ObserverContext, Store, InternalScanner,
+   *             ScanType, CompactionRequest)} instead
+   */
+  @Deprecated
+  InternalScanner preCompact(final ObserverContext<RegionCoprocessorEnvironment> c,
+      final Store store, final InternalScanner scanner, final ScanType scanType) throws IOException;
+
+  /**
+   * Called prior to writing the {@link StoreFile}s selected for compaction into a new
+   * {@code StoreFile} and prior to creating the scanner used to read the input files. To override
+   * or modify the compaction process, implementing classes can return a new scanner to provide the
+   * KeyValues to be stored into the new {@code StoreFile} or null to perform the default
+   * processing. Calling {@link org.apache.hadoop.hbase.coprocessor.ObserverContext#bypass()} has no
    * effect in this hook.
    * @param c the environment provided by the region server
    * @param store the store being compacted
    * @param scanners the list {@link StoreFileScanner}s to be read from
    * @param scanType the {@link ScanType} indicating whether this is a major or minor compaction
-   * @param earliestPutTs timestamp of the earliest put that was found in any of the involved
-   * store files
+   * @param earliestPutTs timestamp of the earliest put that was found in any of the involved store
+   *          files
    * @param s the base scanner, if not {@code null}, from previous RegionObserver in the chain
-   * @return the scanner to use during compaction.  {@code null} if the default implementation
-   * is to be used.
+   * @param request the requested compaction
+   * @return the scanner to use during compaction. {@code null} if the default implementation is to
+   *         be used.
    * @throws IOException if an error occurred on the coprocessor
    */
   InternalScanner preCompactScannerOpen(final ObserverContext<RegionCoprocessorEnvironment> c,
-      final HStore store, List<? extends KeyValueScanner> scanners, final ScanType scanType,
+      final Store store, List<? extends KeyValueScanner> scanners, final ScanType scanType,
+      final long earliestPutTs, final InternalScanner s, CompactionRequest request)
+      throws IOException;
+
+  /**
+   * Called prior to writing the {@link StoreFile}s selected for compaction into a new
+   * {@code StoreFile} and prior to creating the scanner used to read the input files. To override
+   * or modify the compaction process, implementing classes can return a new scanner to provide the
+   * KeyValues to be stored into the new {@code StoreFile} or null to perform the default
+   * processing. Calling {@link org.apache.hadoop.hbase.coprocessor.ObserverContext#bypass()} has no
+   * effect in this hook.
+   * @param c the environment provided by the region server
+   * @param store the store being compacted
+   * @param scanners the list {@link StoreFileScanner}s to be read from
+   * @param scanType the {@link ScanType} indicating whether this is a major or minor compaction
+   * @param earliestPutTs timestamp of the earliest put that was found in any of the involved store
+   *          files
+   * @param s the base scanner, if not {@code null}, from previous RegionObserver in the chain
+   * @return the scanner to use during compaction. {@code null} if the default implementation is to
+   *         be used.
+   * @throws IOException if an error occurred on the coprocessor
+   * @deprecated Use
+   *             {@link #preCompactScannerOpen(ObserverContext, Store, List, ScanType, long,
+   *             InternalScanner, CompactionRequest)} instead.
+   */
+  @Deprecated
+  InternalScanner preCompactScannerOpen(final ObserverContext<RegionCoprocessorEnvironment> c,
+      final Store store, List<? extends KeyValueScanner> scanners, final ScanType scanType,
       final long earliestPutTs, final InternalScanner s) throws IOException;
 
   /**
-   * Called after compaction has completed and the new store file has been
-   * moved in to place.
+   * Called after compaction has completed and the new store file has been moved in to place.
+   * @param c the environment provided by the region server
+   * @param store the store being compacted
+   * @param resultFile the new store file written out during compaction
+   * @param request the requested compaction
+   * @throws IOException if an error occurred on the coprocessor
+   */
+  void postCompact(final ObserverContext<RegionCoprocessorEnvironment> c, final Store store,
+      StoreFile resultFile, CompactionRequest request) throws IOException;
+
+  /**
+   * Called after compaction has completed and the new store file has been moved in to place.
    * @param c the environment provided by the region server
    * @param store the store being compacted
    * @param resultFile the new store file written out during compaction
    * @throws IOException if an error occurred on the coprocessor
+   * @deprecated Use {@link #postCompact(ObserverContext, Store, StoreFile, CompactionRequest)}
+   *             instead
    */
-  void postCompact(final ObserverContext<RegionCoprocessorEnvironment> c, final HStore store,
+  @Deprecated
+  void postCompact(final ObserverContext<RegionCoprocessorEnvironment> c, final Store store,
       StoreFile resultFile) throws IOException;
 
   /**
@@ -215,17 +314,19 @@ public interface RegionObserver extends Coprocessor {
    * @param c the environment provided by the region server
    * (e.getRegion() returns the parent region)
    * @throws IOException if an error occurred on the coprocessor
-   * @deprecated Use preSplit(final ObserverContext<RegionCoprocessorEnvironment> c, byte[] splitRow)
+   * @deprecated Use preSplit(
+   *    final ObserverContext<RegionCoprocessorEnvironment> c, byte[] splitRow)
    */
   void preSplit(final ObserverContext<RegionCoprocessorEnvironment> c) throws IOException;
-  
+
   /**
    * Called before the region is split.
    * @param c the environment provided by the region server
    * (e.getRegion() returns the parent region)
    * @throws IOException if an error occurred on the coprocessor
    */
-  void preSplit(final ObserverContext<RegionCoprocessorEnvironment> c, byte[] splitRow) throws IOException;
+  void preSplit(final ObserverContext<RegionCoprocessorEnvironment> c, byte[] splitRow)
+      throws IOException;
 
   /**
    * Called after the region is split.
@@ -238,28 +339,30 @@ public interface RegionObserver extends Coprocessor {
    */
   void postSplit(final ObserverContext<RegionCoprocessorEnvironment> c, final HRegion l,
       final HRegion r) throws IOException;
-    
+
   /**
    * This will be called before the roll back of the split region is completed 
    * @param ctx
    * @throws IOException
    */
   void preRollBackSplit(final ObserverContext<RegionCoprocessorEnvironment> ctx) throws IOException;
-  
+
   /**
    * This will be called after the roll back of the split region is completed
    * @param ctx
    * @throws IOException
    */
-  void postRollBackSplit(final ObserverContext<RegionCoprocessorEnvironment> ctx) throws IOException;
-  
+  void postRollBackSplit(final ObserverContext<RegionCoprocessorEnvironment> ctx)
+    throws IOException;
+
   /**
    * Called after any split request is processed.  This will be called irrespective of success or
    * failure of the split.
    * @param ctx
    * @throws IOException
    */
-  void postCompleteSplit(final ObserverContext<RegionCoprocessorEnvironment> ctx) throws IOException;
+  void postCompleteSplit(final ObserverContext<RegionCoprocessorEnvironment> ctx)
+    throws IOException;
   /**
    * Called before the region is reported as closed to the master.
    * @param c the environment provided by the region server
@@ -438,6 +541,29 @@ public interface RegionObserver extends Coprocessor {
   void postDelete(final ObserverContext<RegionCoprocessorEnvironment> c,
       final Delete delete, final WALEdit edit, final boolean writeToWAL)
     throws IOException;
+  
+  /**
+   * This will be called for every batch mutation operation happening at the server. This will be
+   * called after acquiring the locks on the mutating rows and after applying the proper timestamp
+   * for each Mutation at the server. The batch may contain Put/Delete. By setting OperationStatus
+   * of Mutations ({@link MiniBatchOperationInProgress#setOperationStatus(int, OperationStatus)}),
+   * {@link RegionObserver} can make HRegion to skip these Mutations.
+   * @param c the environment provided by the region server
+   * @param miniBatchOp batch of Mutations getting applied to region.
+   * @throws IOException if an error occurred on the coprocessor
+   */
+  void preBatchMutate(final ObserverContext<RegionCoprocessorEnvironment> c,
+      final MiniBatchOperationInProgress<Pair<Mutation, Integer>> miniBatchOp) throws IOException;
+
+  /**
+   * This will be called after applying a batch of Mutations on a region. The Mutations are added to
+   * memstore and WAL.
+   * @param c the environment provided by the region server
+   * @param miniBatchOp batch of Mutations applied to region.
+   * @throws IOException if an error occurred on the coprocessor
+   */
+  void postBatchMutate(final ObserverContext<RegionCoprocessorEnvironment> c,
+      final MiniBatchOperationInProgress<Pair<Mutation, Integer>> miniBatchOp) throws IOException;
 
   /**
    * Called before checkAndPut
@@ -661,8 +787,9 @@ public interface RegionObserver extends Coprocessor {
    * Called before a store opens a new scanner.
    * This hook is called when a "user" scanner is opened.
    * <p>
-   * See {@link #preFlushScannerOpen(ObserverContext, HStore, KeyValueScanner, InternalScanner)}
-   * and {@link #preCompactScannerOpen(ObserverContext, HStore, List, ScanType, long, InternalScanner)}
+   * See {@link #preFlushScannerOpen(ObserverContext, Store, KeyValueScanner, InternalScanner)}
+   * and {@link #preCompactScannerOpen(ObserverContext,
+   *  Store, List, ScanType, long, InternalScanner)}
    * to override scanners created for flushes or compactions, resp.
    * <p>
    * Call CoprocessorEnvironment#complete to skip any subsequent chained
@@ -678,7 +805,7 @@ public interface RegionObserver extends Coprocessor {
    * @throws IOException if an error occurred on the coprocessor
    */
   KeyValueScanner preStoreScannerOpen(final ObserverContext<RegionCoprocessorEnvironment> c,
-      final HStore store, final Scan scan, final NavigableSet<byte[]> targetCols,
+      final Store store, final Scan scan, final NavigableSet<byte[]> targetCols,
       final KeyValueScanner s) throws IOException;
 
   /**

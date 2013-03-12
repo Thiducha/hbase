@@ -19,11 +19,14 @@
 package org.apache.hadoop.hbase.regionserver;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -32,7 +35,12 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.RemoteExceptionHandler;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionContext;
 import org.apache.hadoop.hbase.regionserver.compactions.CompactionRequest;
+import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
+import org.apache.hadoop.hbase.util.Pair;
+import org.apache.hadoop.util.StringUtils;
 
 import com.google.common.base.Preconditions;
 
@@ -87,8 +95,7 @@ public class CompactSplitThread implements CompactionRequestor {
             return t;
           }
       });
-    this.largeCompactions
-        .setRejectedExecutionHandler(new CompactionRequest.Rejection());
+    this.largeCompactions.setRejectedExecutionHandler(new Rejection());
     this.smallCompactions = new ThreadPoolExecutor(smallThreads, smallThreads,
         60, TimeUnit.SECONDS, new PriorityBlockingQueue<Runnable>(),
         new ThreadFactory() {
@@ -100,7 +107,7 @@ public class CompactSplitThread implements CompactionRequestor {
           }
       });
     this.smallCompactions
-        .setRejectedExecutionHandler(new CompactionRequest.Rejection());
+        .setRejectedExecutionHandler(new Rejection());
     this.splits = (ThreadPoolExecutor)
         Executors.newFixedThreadPool(splitThreads,
             new ThreadFactory() {
@@ -183,23 +190,41 @@ public class CompactSplitThread implements CompactionRequestor {
     }
   }
 
-  public synchronized void requestCompaction(final HRegion r,
-      final String why) throws IOException {
-    for (Store s : r.getStores().values()) {
-      requestCompaction(r, s, why, Store.NO_PRIORITY);
-    }
+  @Override
+  public synchronized List<CompactionRequest> requestCompaction(final HRegion r, final String why)
+      throws IOException {
+    return requestCompaction(r, why, null);
   }
 
-  public synchronized void requestCompaction(final HRegion r, final Store s,
-      final String why) throws IOException {
-    requestCompaction(r, s, why, Store.NO_PRIORITY);
+  @Override
+  public synchronized List<CompactionRequest> requestCompaction(final HRegion r, final String why,
+      List<Pair<CompactionRequest, Store>> requests) throws IOException {
+    return requestCompaction(r, why, Store.NO_PRIORITY, requests);
   }
 
-  public synchronized void requestCompaction(final HRegion r, final String why,
-      int p) throws IOException {
-    for (Store s : r.getStores().values()) {
-      requestCompaction(r, s, why, p);
+  @Override
+  public synchronized CompactionRequest requestCompaction(final HRegion r, final Store s,
+      final String why, CompactionRequest request) throws IOException {
+    return requestCompaction(r, s, why, Store.NO_PRIORITY, request);
+  }
+
+  @Override
+  public synchronized List<CompactionRequest> requestCompaction(final HRegion r, final String why,
+      int p, List<Pair<CompactionRequest, Store>> requests) throws IOException {
+    // not a special compaction request, so make our own list
+    List<CompactionRequest> ret;
+    if (requests == null) {
+      ret = new ArrayList<CompactionRequest>(r.getStores().size());
+      for (Store s : r.getStores().values()) {
+        ret.add(requestCompaction(r, s, why, p, null));
+      }
+    } else {
+      ret = new ArrayList<CompactionRequest>(requests.size());
+      for (Pair<CompactionRequest, Store> pair : requests) {
+        ret.add(requestCompaction(r, pair.getSecond(), why, p, pair.getFirst()));
+      }
     }
+    return ret;
   }
 
   /**
@@ -207,33 +232,37 @@ public class CompactSplitThread implements CompactionRequestor {
    * @param s Store to request compaction on
    * @param why Why compaction requested -- used in debug messages
    * @param priority override the default priority (NO_PRIORITY == decide)
+   * @param request custom compaction request. Can be <tt>null</tt> in which case a simple
+   *          compaction will be used.
    */
-  public synchronized void requestCompaction(final HRegion r, final Store s,
-      final String why, int priority) throws IOException {
+  public synchronized CompactionRequest requestCompaction(final HRegion r, final Store s,
+      final String why, int priority, CompactionRequest request) throws IOException {
     if (this.server.isStopped()) {
-      return;
+      return null;
     }
-    CompactionRequest cr = s.requestCompaction(priority);
-    if (cr != null) {
-      cr.setServer(server);
-      if (priority != Store.NO_PRIORITY) {
-        cr.setPriority(priority);
-      }
-      ThreadPoolExecutor pool = s.throttleCompaction(cr.getSize())
-        ? largeCompactions : smallCompactions;
-      pool.execute(cr);
-      if (LOG.isDebugEnabled()) {
-        String type = (pool == smallCompactions) ? "Small " : "Large ";
-        LOG.debug(type + "Compaction requested: " + cr
-            + (why != null && !why.isEmpty() ? "; Because: " + why : "")
-            + "; " + this);
-      }
-    } else {
+    CompactionContext compaction = s.requestCompaction(priority, request);
+    if (compaction == null) {
       if(LOG.isDebugEnabled()) {
         LOG.debug("Not compacting " + r.getRegionNameAsString() + 
             " because compaction request was cancelled");
       }
+      return null;
     }
+
+    assert compaction.hasSelection();
+    if (priority != Store.NO_PRIORITY) {
+      compaction.getRequest().setPriority(priority);
+    }
+    ThreadPoolExecutor pool = s.throttleCompaction(compaction.getRequest().getSize())
+      ? largeCompactions : smallCompactions;
+    pool.execute(new CompactionRunner(s, r, compaction));
+    if (LOG.isDebugEnabled()) {
+      String type = (pool == smallCompactions) ? "Small " : "Large ";
+      LOG.debug(type + "Compaction requested: " + compaction
+          + (why != null && !why.isEmpty() ? "; Because: " + why : "")
+          + "; " + this);
+    }
+    return compaction.getRequest();
   }
 
   /**
@@ -285,5 +314,74 @@ public class CompactSplitThread implements CompactionRequestor {
    */
   public int getRegionSplitLimit() {
     return this.regionSplitLimit;
+  }
+
+  private class CompactionRunner implements Runnable, Comparable<CompactionRunner> {
+    private final Store store;
+    private final HRegion region;
+    private final CompactionContext compaction;
+
+    public CompactionRunner(Store store, HRegion region, CompactionContext compaction) {
+      super();
+      this.store = store;
+      this.region = region;
+      this.compaction = compaction;
+    }
+
+    @Override
+    public void run() {
+      Preconditions.checkNotNull(server);
+      if (server.isStopped()) {
+        return;
+      }
+      this.compaction.getRequest().beforeExecute();
+      try {
+        // Note: please don't put single-compaction logic here;
+        //       put it into region/store/etc. This is CST logic.
+        long start = EnvironmentEdgeManager.currentTimeMillis();
+        boolean completed = region.compact(compaction, store);
+        long now = EnvironmentEdgeManager.currentTimeMillis();
+        LOG.info(((completed) ? "Completed" : "Aborted") + " compaction: " +
+              this + "; duration=" + StringUtils.formatTimeDiff(now, start));
+        if (completed) {
+          // degenerate case: blocked regions require recursive enqueues
+          if (store.getCompactPriority() <= 0) {
+            requestCompaction(region, store, "Recursive enqueue", null);
+          } else {
+            // see if the compaction has caused us to exceed max region size
+            requestSplit(region);
+          }
+        }
+      } catch (IOException ex) {
+        LOG.error("Compaction failed " + this, RemoteExceptionHandler.checkIOException(ex));
+        server.checkFileSystem();
+      } catch (Exception ex) {
+        LOG.error("Compaction failed " + this, ex);
+        server.checkFileSystem();
+      } finally {
+        LOG.debug("CompactSplitThread Status: " + CompactSplitThread.this);
+      }
+      this.compaction.getRequest().afterExecute();
+    }
+
+    @Override
+    public int compareTo(CompactionRunner o) {
+      // Only compare the underlying request, for queue sorting purposes.
+      return this.compaction.getRequest().compareTo(o.compaction.getRequest());
+    }
+  }
+
+  /**
+   * Cleanup class to use when rejecting a compaction request from the queue.
+   */
+  private static class Rejection implements RejectedExecutionHandler {
+    @Override
+    public void rejectedExecution(Runnable runnable, ThreadPoolExecutor pool) {
+      if (runnable instanceof CompactionRunner) {
+        CompactionRunner runner = (CompactionRunner)runnable;
+        LOG.debug("Compaction Rejected: " + runner);
+        runner.store.cancelRequestedCompaction(runner.compaction);
+      }
+    }
   }
 }

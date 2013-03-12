@@ -24,10 +24,12 @@ import static org.mockito.Mockito.spy;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.CountDownLatch;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -47,13 +49,18 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
-import org.apache.hadoop.hbase.io.hfile.HFileDataBlockEncoderImpl;
 import org.apache.hadoop.hbase.io.hfile.HFileDataBlockEncoder;
+import org.apache.hadoop.hbase.io.hfile.HFileDataBlockEncoderImpl;
 import org.apache.hadoop.hbase.io.hfile.HFileScanner;
-import org.apache.hadoop.hbase.regionserver.compactions.*;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionProgress;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionRequest;
+import org.apache.hadoop.hbase.regionserver.compactions.Compactor;
+import org.apache.hadoop.hbase.regionserver.compactions.DefaultCompactionPolicy;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.Pair;
 import org.junit.experimental.categories.Category;
+import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
@@ -281,8 +288,8 @@ public class TestCompaction extends HBaseTestCase {
     final int ttl = 1000;
     for (Store hstore : this.r.stores.values()) {
       HStore store = ((HStore) hstore);
-      HStore.ScanInfo old = store.getScanInfo();
-      HStore.ScanInfo si = new HStore.ScanInfo(old.getFamily(),
+      ScanInfo old = store.getScanInfo();
+      ScanInfo si = new ScanInfo(old.getFamily(),
           old.getMinVersions(), old.getMaxVersions(), ttl,
           old.getKeepDeletedCells(), 0, old.getComparator());
       store.setScanInfo(si);
@@ -302,7 +309,7 @@ public class TestCompaction extends HBaseTestCase {
     conf.setFloat("hbase.hregion.majorcompaction.jitter", jitterPct);
 
     HStore s = ((HStore) r.getStore(COLUMN_FAMILY));
-    s.compactionPolicy.setConf(conf);
+    s.storeEngine.getCompactionPolicy().setConf(conf);
     try {
       createStoreFile(r);
       createStoreFile(r);
@@ -314,7 +321,7 @@ public class TestCompaction extends HBaseTestCase {
       assertEquals(2, s.getStorefilesCount());
 
       // ensure that major compaction time is deterministic
-      DefaultCompactionPolicy c = (DefaultCompactionPolicy)s.compactionPolicy;
+      DefaultCompactionPolicy c = (DefaultCompactionPolicy)s.storeEngine.getCompactionPolicy();
       Collection<StoreFile> storeFiles = s.getStorefiles();
       long mcTime = c.getNextMajorCompactTime(storeFiles);
       for (int i = 0; i < 10; ++i) {
@@ -518,7 +525,7 @@ public class TestCompaction extends HBaseTestCase {
       assertEquals(compactionThreshold, s.getStorefilesCount());
       assertTrue(s.getStorefilesSize() > 15*1000);
       // and no new store files persisted past compactStores()
-      FileStatus[] ls = FileSystem.get(conf).listStatus(r.getTmpDir());
+      FileStatus[] ls = r.getFilesystem().listStatus(r.getRegionFileSystem().getTempDir());
       assertEquals(0, ls.length);
 
     } finally {
@@ -540,8 +547,8 @@ public class TestCompaction extends HBaseTestCase {
       final int ttl = 1000;
       for (Store hstore: this.r.stores.values()) {
         HStore store = (HStore)hstore;
-        HStore.ScanInfo old = store.getScanInfo();
-        HStore.ScanInfo si = new HStore.ScanInfo(old.getFamily(),
+        ScanInfo old = store.getScanInfo();
+        ScanInfo si = new ScanInfo(old.getFamily(),
             old.getMinVersions(), old.getMaxVersions(), ttl,
             old.getKeepDeletedCells(), 0, old.getComparator());
         store.setScanInfo(si);
@@ -569,8 +576,12 @@ public class TestCompaction extends HBaseTestCase {
   }
 
   private void createStoreFile(final HRegion region) throws IOException {
+    createStoreFile(region, Bytes.toString(COLUMN_FAMILY));
+  }
+
+  private void createStoreFile(final HRegion region, String family) throws IOException {
     HRegionIncommon loader = new HRegionIncommon(region);
-    addContent(loader, Bytes.toString(COLUMN_FAMILY));
+    addContent(loader, family);
     loader.flushcache();
   }
 
@@ -589,25 +600,22 @@ public class TestCompaction extends HBaseTestCase {
     HStore store = (HStore) r.getStore(COLUMN_FAMILY);
 
     Collection<StoreFile> storeFiles = store.getStorefiles();
-    Compactor tool = store.compactionPolicy.getCompactor();
+    Compactor tool = store.storeEngine.getCompactor();
 
-    List<Path> newFiles =
-      tool.compact(storeFiles, false);
+    List<Path> newFiles = tool.compactForTesting(storeFiles, false);
 
     // Now lets corrupt the compacted file.
-    FileSystem fs = FileSystem.get(conf);
+    FileSystem fs = store.getFileSystem();
     // default compaction policy created one and only one new compacted file
-    Path origPath = newFiles.get(0);
-    Path homedir = store.getHomedir();
-    Path dstPath = new Path(homedir, origPath.getName());
-    FSDataOutputStream stream = fs.create(origPath, null, true, 512, (short) 3,
-        (long) 1024,
-        null);
+    Path dstPath = store.getRegionFileSystem().createTempName();
+    FSDataOutputStream stream = fs.create(dstPath, null, true, 512, (short)3, (long)1024, null);
     stream.writeChars("CORRUPT FILE!!!!");
     stream.close();
+    Path origPath = store.getRegionFileSystem().commitStoreFile(
+      Bytes.toString(COLUMN_FAMILY), dstPath);
 
     try {
-      store.completeCompaction(storeFiles, origPath);
+      ((HStore)store).moveFileIntoPlace(origPath);
     } catch (Exception e) {
       // The complete compaction should fail and the corrupt file should remain
       // in the 'tmp' directory;
@@ -619,7 +627,7 @@ public class TestCompaction extends HBaseTestCase {
     fail("testCompactionWithCorruptResult failed since no exception was" +
         "thrown while completing a corrupt file");
   }
-  
+
   /**
    * Test for HBASE-5920 - Test user requested major compactions always occurring
    */
@@ -631,7 +639,7 @@ public class TestCompaction extends HBaseTestCase {
     }
     store.triggerMajorCompaction();
 
-    CompactionRequest request = store.requestCompaction(Store.NO_PRIORITY);
+    CompactionRequest request = store.requestCompaction(Store.NO_PRIORITY, null).getRequest();
     assertNotNull("Expected to receive a compaction request", request);
     assertEquals(
       "System-requested major compaction should not occur if there are too many store files",
@@ -649,7 +657,7 @@ public class TestCompaction extends HBaseTestCase {
       createStoreFile(r);
     }
     store.triggerMajorCompaction();
-    CompactionRequest request = store.requestCompaction(Store.PRIORITY_USER);
+    CompactionRequest request = store.requestCompaction(Store.PRIORITY_USER, null).getRequest();
     assertNotNull("Expected to receive a compaction request", request);
     assertEquals(
       "User-requested major compaction should always occur, even if there are too many store files",
@@ -657,5 +665,89 @@ public class TestCompaction extends HBaseTestCase {
       request.isMajor());
   }
 
-}
+  /**
+   * Create a custom compaction request and be sure that we can track it through the queue, knowing
+   * when the compaction is completed.
+   */
+  public void testTrackingCompactionRequest() throws Exception {
+    // setup a compact/split thread on a mock server
+    HRegionServer mockServer = Mockito.mock(HRegionServer.class);
+    Mockito.when(mockServer.getConfiguration()).thenReturn(r.getBaseConf());
+    CompactSplitThread thread = new CompactSplitThread(mockServer);
+    Mockito.when(mockServer.getCompactSplitThread()).thenReturn(thread);
 
+    // setup a region/store with some files
+    Store store = r.getStore(COLUMN_FAMILY);
+    createStoreFile(r);
+    for (int i = 0; i < MAX_FILES_TO_COMPACT + 1; i++) {
+      createStoreFile(r);
+    }
+
+    CountDownLatch latch = new CountDownLatch(1);
+    TrackableCompactionRequest request = new TrackableCompactionRequest(latch);
+    thread.requestCompaction(r, store, "test custom comapction", Store.PRIORITY_USER, request);
+    // wait for the latch to complete.
+    latch.await();
+
+    thread.interruptIfNecessary();
+  }
+
+  /**
+   * HBASE-7947: Regression test to ensure adding to the correct list in the
+   * {@link CompactSplitThread}
+   * @throws Exception on failure
+   */
+  public void testMultipleCustomCompactionRequests() throws Exception {
+    // setup a compact/split thread on a mock server
+    HRegionServer mockServer = Mockito.mock(HRegionServer.class);
+    Mockito.when(mockServer.getConfiguration()).thenReturn(r.getBaseConf());
+    CompactSplitThread thread = new CompactSplitThread(mockServer);
+    Mockito.when(mockServer.getCompactSplitThread()).thenReturn(thread);
+
+    // setup a region/store with some files
+    int numStores = r.getStores().size();
+    List<Pair<CompactionRequest, Store>> requests =
+        new ArrayList<Pair<CompactionRequest, Store>>(numStores);
+    CountDownLatch latch = new CountDownLatch(numStores);
+    // create some store files and setup requests for each store on which we want to do a
+    // compaction
+    for (Store store : r.getStores().values()) {
+      createStoreFile(r, store.getColumnFamilyName());
+      createStoreFile(r, store.getColumnFamilyName());
+      createStoreFile(r, store.getColumnFamilyName());
+      requests
+          .add(new Pair<CompactionRequest, Store>(new TrackableCompactionRequest(latch), store));
+    }
+
+    thread.requestCompaction(r, "test mulitple custom comapctions", Store.PRIORITY_USER,
+      Collections.unmodifiableList(requests));
+
+    // wait for the latch to complete.
+    latch.await();
+
+    thread.interruptIfNecessary();
+  }
+
+
+  /**
+   * Simple {@link CompactionRequest} on which you can wait until the requested compaction finishes.
+   */
+  public static class TrackableCompactionRequest extends CompactionRequest {
+    private CountDownLatch done;
+
+    /**
+     * Constructor for a custom compaction. Uses the setXXX methods to update the state of the
+     * compaction before being used.
+     */
+    public TrackableCompactionRequest(CountDownLatch finished) {
+      super();
+      this.done = finished;
+    }
+
+    @Override
+    public void afterExecute() {
+      super.afterExecute();
+      this.done.countDown();
+    }
+  }
+}

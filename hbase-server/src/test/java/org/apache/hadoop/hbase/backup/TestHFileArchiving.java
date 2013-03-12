@@ -37,12 +37,11 @@ import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.MediumTests;
 import org.apache.hadoop.hbase.Stoppable;
-import org.apache.hadoop.hbase.backup.HFileArchiver;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.apache.hadoop.hbase.master.MasterFileSystem;
 import org.apache.hadoop.hbase.master.cleaner.HFileCleaner;
 import org.apache.hadoop.hbase.regionserver.ConstantSizeRegionSplitPolicy;
 import org.apache.hadoop.hbase.regionserver.HRegion;
+import org.apache.hadoop.hbase.regionserver.HRegionFileSystem;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.FSUtils;
@@ -244,6 +243,7 @@ public class TestHFileArchiving {
 
     // then delete the table so the hfiles get archived
     UTIL.deleteTable(TABLE_NAME);
+    LOG.debug("Deleted table");
 
     // then get the files in the archive directory.
     Path archiveDir = HFileArchiveUtil.getArchivePath(UTIL.getConfiguration());
@@ -360,7 +360,7 @@ public class TestHFileArchiving {
 
         try {
           // Try to archive the file
-          HFileArchiver.archiveRegion(conf, fs, rootDir,
+          HFileArchiver.archiveRegion(fs, rootDir,
               sourceRegionDir.getParent(), sourceRegionDir);
 
           // The archiver succeded, the file is no longer in the original location
@@ -422,11 +422,11 @@ public class TestHFileArchiving {
     // remove all the non-storefile named files for the region
     for (int i = 0; i < storeFiles.size(); i++) {
       String file = storeFiles.get(i);
-      if (file.contains(HRegion.REGIONINFO_FILE) || file.contains("hlog")) {
+      if (file.contains(HRegionFileSystem.REGION_INFO_FILE) || file.contains("hlog")) {
         storeFiles.remove(i--);
       }
     }
-    storeFiles.remove(HRegion.REGIONINFO_FILE);
+    storeFiles.remove(HRegionFileSystem.REGION_INFO_FILE);
     return storeFiles;
   }
 }
