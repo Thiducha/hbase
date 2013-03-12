@@ -354,6 +354,11 @@ checkHadoop20Compile () {
   echo ""
   echo ""
 
+  patchForHadoop2=`$GREP -c -i 'hadoop.profile=2.0' $PATCH_DIR/patch`
+  if [[ $patchForHadoop2 != 0 ]] ; then
+    return 0;
+  fi
+
   export MAVEN_OPTS="${MAVEN_OPTS}"
   # build core and tests
   $MVN clean test help:active-profiles -X -DskipTests -Dhadoop.profile=2.0 -D${PROJECT_NAME}PatchProcess > $PATCH_DIR/trunk2.0JavacWarnings.txt 2>&1
@@ -678,6 +683,34 @@ runTests () {
 }
 
 ###############################################################################
+### Check docbook site xml
+checkSiteXml () {
+  echo ""
+  echo ""
+  echo "======================================================================"
+  echo "======================================================================"
+  echo "    Checking Site generation"
+  echo "======================================================================"
+  echo "======================================================================"
+  echo ""
+  echo ""
+
+  echo "$MVN clean compile site -DskipTests -D${PROJECT_NAME}PatchProcess > $PATCH_DIR/patchSiteOutput.txt 2>&1"
+  export MAVEN_OPTS="${MAVEN_OPTS}"
+  $MVN clean compile site -DskipTests -D${PROJECT_NAME}PatchProcess  > $PATCH_DIR/patchSiteOutput.txt 2>&1
+  if [[ $? != 0 ]] ; then
+    JIRA_COMMENT="$JIRA_COMMENT
+
+    {color:red}-1 site{color}.  The patch appears to cause mvn site goal to fail."
+    return 1
+  fi
+  JIRA_COMMENT="$JIRA_COMMENT
+
+  {color:green}+1 site{color}.  The mvn site goal succeeds with this patch."
+  return 0
+}
+
+###############################################################################
 ### Run the inject-system-faults target
 checkInjectSystemFaults () {
   echo ""
@@ -817,6 +850,8 @@ checkReleaseAuditWarnings
 (( RESULT = RESULT + $? ))
 checkLineLengths
 (( RESULT = RESULT + $? ))
+checkSiteXml
+(( RESULT = RESULT + $?))
 ### Do not call these when run by a developer 
 if [[ $JENKINS == "true" ]] ; then
   runTests

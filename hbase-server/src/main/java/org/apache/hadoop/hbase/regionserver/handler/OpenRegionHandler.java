@@ -32,7 +32,6 @@ import org.apache.hadoop.hbase.executor.EventType;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.RegionServerAccounting;
 import org.apache.hadoop.hbase.regionserver.RegionServerServices;
-import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.util.CancelableProgressable;
 import org.apache.hadoop.hbase.zookeeper.ZKAssign;
 import org.apache.zookeeper.KeeperException;
@@ -219,7 +218,7 @@ public class OpenRegionHandler extends EventHandler {
   }
 
   /**
-   * Update ZK, ROOT or META.  This can take a while if for example the
+   * Update ZK or META.  This can take a while if for example the
    * .META. is not available -- if server hosting .META. crashed and we are
    * waiting on it to come back -- so run in a thread and keep updating znode
    * state meantime so master doesn't timeout our region-in-transition.
@@ -235,6 +234,8 @@ public class OpenRegionHandler extends EventHandler {
     PostOpenDeployTasksThread t = new PostOpenDeployTasksThread(r,
       this.server, this.rsServices, signaller);
     t.start();
+    boolean tomActivated = this.server.getConfiguration().
+        getBoolean("hbase.assignment.timeout.management", false);
     int assignmentTimeout = this.server.getConfiguration().
       getInt("hbase.master.assignment.timeoutmonitor.period", 10000);
     // Total timeout for meta edit.  If we fail adding the edit then close out
@@ -249,11 +250,13 @@ public class OpenRegionHandler extends EventHandler {
     boolean tickleOpening = true;
     while (!signaller.get() && t.isAlive() && !this.server.isStopped() &&
         !this.rsServices.isStopping() && (endTime > now)) {
-      long elapsed = now - lastUpdate;
-      if (elapsed > period) {
-        // Only tickle OPENING if postOpenDeployTasks is taking some time.
-        lastUpdate = now;
-        tickleOpening = tickleOpening("post_open_deploy");
+      if (tomActivated) {
+        long elapsed = now - lastUpdate;
+        if (elapsed > period) {
+          // Only tickle OPENING if postOpenDeployTasks is taking some time.
+          lastUpdate = now;
+          tickleOpening = tickleOpening("post_open_deploy");
+        }
       }
       synchronized (signaller) {
         try {
@@ -314,7 +317,7 @@ public class OpenRegionHandler extends EventHandler {
     public void run() {
       try {
         this.services.postOpenDeployTasks(this.region,
-          this.server.getCatalogTracker(), false);
+          this.server.getCatalogTracker());
       } catch (Exception e) {
         LOG.warn("Exception running postOpenDeployTasks; region=" +
           this.region.getRegionInfo().getEncodedName(), e);
@@ -442,7 +445,7 @@ public class OpenRegionHandler extends EventHandler {
       // Instantiate the region.  This also periodically tickles our zk OPENING
       // state so master doesn't timeout this region in transition.
       region = HRegion.openHRegion(this.regionInfo, this.htd,
-          this.rsServices.getWAL(this.regionInfo), 
+          this.rsServices.getWAL(this.regionInfo),
           this.server.getConfiguration(),
           this.rsServices,
         new CancelableProgressable() {
@@ -487,7 +490,7 @@ public class OpenRegionHandler extends EventHandler {
    * @param encodedName Name of the znode file (Region encodedName is the znode
    * name).
    * @param versionOfOfflineNode - version Of OfflineNode that needs to be compared
-   * before changing the node's state from OFFLINE 
+   * before changing the node's state from OFFLINE
    * @return True if successful transition.
    */
   boolean transitionZookeeperOfflineToOpening(final String encodedName,
