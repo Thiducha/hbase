@@ -18,7 +18,35 @@
  */
 package org.apache.hadoop.hbase.client;
 
-import com.google.protobuf.ServiceException;
+import java.io.Closeable;
+import java.io.IOException;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.lang.reflect.UndeclaredThrowableException;
+import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.NavigableMap;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -65,34 +93,7 @@ import org.apache.hadoop.hbase.zookeeper.MetaRegionTracker;
 import org.apache.hadoop.ipc.RemoteException;
 import org.apache.zookeeper.KeeperException;
 
-import java.io.Closeable;
-import java.io.IOException;
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
-import java.lang.reflect.UndeclaredThrowableException;
-import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.NavigableMap;
-import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
+import com.google.protobuf.ServiceException;
 
 /**
  * A non-instantiable class that manages {@link HConnection}s.
@@ -615,7 +616,7 @@ public class HConnectionManager {
       // ProtobufRpcClientEngine is the main RpcClientEngine implementation,
       // but we maintain access through an interface to allow overriding for tests
       // RPC engine setup must follow obtaining the cluster ID for token authentication to work
-      this.rpcEngine = new ProtobufRpcClientEngine(this.conf);
+      this.rpcEngine = new ProtobufRpcClientEngine(this.conf, this.clusterId);
     }
 
     /**
@@ -627,41 +628,35 @@ public class HConnectionManager {
     }
 
     private String clusterId = null;
+
     public final void retrieveClusterId(){
-      if (conf.get(HConstants.CLUSTER_ID) != null){
+      if (clusterId != null) {
         return;
       }
 
       // No synchronized here, worse case we will retrieve it twice, that's
       //  not an issue.
-      if (this.clusterId == null){
-        this.clusterId = conf.get(HConstants.CLUSTER_ID);
-        if (this.clusterId == null) {
-          ZooKeeperKeepAliveConnection zkw = null;
-          try {
-            zkw = getKeepAliveZooKeeperWatcher();
-            this.clusterId = ZKClusterId.readClusterIdZNode(zkw);
-            if (clusterId == null) {
-              LOG.info("ClusterId read in ZooKeeper is null");
-            }
-          } catch (KeeperException e) {
-            LOG.warn("Can't retrieve clusterId from Zookeeper", e);
-          } catch (IOException e) {
-            LOG.warn("Can't retrieve clusterId from Zookeeper", e);
-          } finally {
-            if (zkw != null) {
-              zkw.close();
-            }
-          }
-          if (this.clusterId == null) {
-            this.clusterId = "default";
-          }
-
-          LOG.info("ClusterId is " + clusterId);
+      ZooKeeperKeepAliveConnection zkw = null;
+      try {
+        zkw = getKeepAliveZooKeeperWatcher();
+        clusterId = ZKClusterId.readClusterIdZNode(zkw);
+        if (clusterId == null) {
+          LOG.info("ClusterId read in ZooKeeper is null");
+        }
+      } catch (KeeperException e) {
+        LOG.warn("Can't retrieve clusterId from Zookeeper", e);
+      } catch (IOException e) {
+        LOG.warn("Can't retrieve clusterId from Zookeeper", e);
+      } finally {
+        if (zkw != null) {
+          zkw.close();
         }
       }
+      if (clusterId == null) {
+        clusterId = HConstants.CLUSTER_ID_DEFAULT;
+      }
 
-      conf.set(HConstants.CLUSTER_ID, clusterId);
+      LOG.info("ClusterId is " + clusterId);
     }
 
     @Override
@@ -848,20 +843,64 @@ public class HConnectionManager {
         public boolean processRow(Result row) throws IOException {
           HRegionInfo info = MetaScanner.getHRegionInfo(row);
           if (info != null) {
-            if (Bytes.equals(tableName, info.getTableName())) {
+            if (Bytes.compareTo(tableName, info.getTableName()) == 0) {
               ServerName server = HRegionInfo.getServerName(row);
               if (server == null) {
                 available.set(false);
                 return false;
               }
               regionCount.incrementAndGet();
+            } else if (Bytes.compareTo(tableName, info.getTableName()) < 0) {
+              // Return if we are done with the current table
+              return false;
             }
           }
           return true;
         }
       };
-      MetaScanner.metaScan(conf, visitor);
+      MetaScanner.metaScan(conf, visitor, tableName);
       return available.get() && (regionCount.get() > 0);
+    }
+    
+    @Override
+    public boolean isTableAvailable(final byte[] tableName, final byte[][] splitKeys)
+        throws IOException {
+      final AtomicBoolean available = new AtomicBoolean(true);
+      final AtomicInteger regionCount = new AtomicInteger(0);
+      MetaScannerVisitor visitor = new MetaScannerVisitorBase() {
+        @Override
+        public boolean processRow(Result row) throws IOException {
+          HRegionInfo info = MetaScanner.getHRegionInfo(row);
+          if (info != null) {
+            if (Bytes.compareTo(tableName, info.getTableName()) == 0) {
+              ServerName server = HRegionInfo.getServerName(row);
+              if (server == null) {
+                available.set(false);
+                return false;
+              }
+              if (!Bytes.equals(info.getStartKey(), HConstants.EMPTY_BYTE_ARRAY)) {
+                for (byte[] splitKey : splitKeys) {
+                  // Just check if the splitkey is available
+                  if (Bytes.equals(info.getStartKey(), splitKey)) {
+                    regionCount.incrementAndGet();
+                    break;
+                  }
+                }
+              } else {
+                // Always empty start row should be counted
+                regionCount.incrementAndGet();
+              }
+            } else if (Bytes.compareTo(tableName, info.getTableName()) < 0) {
+              // Return if we are done with the current table
+              return false;
+            }
+          }
+          return true;
+        }
+      };
+      MetaScanner.metaScan(conf, visitor, tableName);
+      // +1 needs to be added so that the empty start row is also taken into account
+      return available.get() && (regionCount.get() == splitKeys.length + 1);
     }
 
     /*
@@ -894,7 +933,7 @@ public class HConnectionManager {
     throws IOException {
       return locateRegions (tableName, false, true);
     }
-    
+
     @Override
     public List<HRegionLocation> locateRegions(final byte[] tableName, final boolean useCache,
         final boolean offlined) throws IOException {
@@ -2049,7 +2088,9 @@ public class HConnectionManager {
             for (List<Action<R>> actions : currentTask.getFirst().actions.values()) {
               for (Action<R> action : actions) {
                 Row row = action.getAction();
-                hci.updateCachedLocations(tableName, row, exception, currentTask.getSecond());
+                // Do not use the exception for updating cache because it might be coming from
+                // any of the regions in the MultiAction.
+                hci.updateCachedLocations(tableName, row, null, currentTask.getSecond());
                 if (noRetry) {
                   errors.add(exception, row, currentTask);
                 } else {
