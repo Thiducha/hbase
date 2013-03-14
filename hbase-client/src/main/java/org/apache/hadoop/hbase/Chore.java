@@ -58,7 +58,7 @@ public abstract class Chore extends HasThread {
 
   /**
    * This constructor is for test only. It allows to create an object and to call chore() on
-   *  it. There is no sleeper not stoppable.
+   *  it. There is no sleeper nor stoppable.
    */
   protected Chore(){
     sleeper = null;

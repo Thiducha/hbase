@@ -44,6 +44,7 @@ import org.apache.hadoop.hbase.client.HConnectionManager.HConnectionImplementati
 import org.apache.hadoop.hbase.client.HConnectionManager.HConnectionKey;
 import org.apache.hadoop.hbase.exceptions.RegionServerStoppedException;
 import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
+import org.apache.hadoop.hbase.master.ClusterStatusPublisher;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -68,16 +69,12 @@ public class TestHCM {
   private static final byte[] FAM_NAM = Bytes.toBytes("f");
   private static final byte[] ROW = Bytes.toBytes("bbb");
 
-  private static final int MC_PERIOD = 2000;
-
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
-    TEST_UTIL.getConfiguration().set(HConstants.STATUS_MULTICAST_ADDRESS ,
-        HBaseTestingUtility.randomMultiCastAddress());
-    TEST_UTIL.getConfiguration().setInt(HConstants.STATUS_MULTICAST_PORT,
-        HBaseTestingUtility.randomFreePort());
-    TEST_UTIL.getConfiguration().setInt(HConstants.STATUS_MULTICAST_PERIOD, MC_PERIOD);
-
+    TEST_UTIL.getConfiguration().setClass(ClusterStatusPublisher.STATUS_PUBLISHER_CLASS,
+        ClusterStatusPublisher.MulticastPublisher.class, ClusterStatusPublisher.Publisher.class);
+    TEST_UTIL.getConfiguration().setClass(ClusterStatusListener.STATUS_LISTENER_CLASS,
+        ClusterStatusListener.MultiCastListener.class, ClusterStatusListener.Listener.class);
     TEST_UTIL.startMiniCluster(2);
   }
 
@@ -89,7 +86,7 @@ public class TestHCM {
 
   public static void createNewConfigurations() throws SecurityException,
   IllegalArgumentException, NoSuchFieldException,
-  IllegalAccessException, InterruptedException, ZooKeeperConnectionException {
+  IllegalAccessException, InterruptedException, ZooKeeperConnectionException, IOException {
     HConnection last = null;
     for (int i = 0; i <= (HConnectionManager.MAX_CACHED_HBASE_INSTANCES * 2); i++) {
       // set random key to differentiate the connection from previous ones
@@ -118,30 +115,24 @@ public class TestHCM {
     return HConnectionTestingUtility.getConnectionCount();
   }
 
-  /**
-   * Initiate a connection, then kill the server. We expect the connection to get the message
-   *  from the master that the server is dead. So when we will want to use it, we will get an
-   *  exception.
-   */
   @Test(expected = RegionServerStoppedException.class)
-  public void testClusterStatus() throws Exception {
+  public void testClusterStatus() throws IOException, InterruptedException {
     byte[] tn = "testClusterStatus".getBytes();
     byte[] cf = "cf".getBytes();
     byte[] rk = "rk1".getBytes();
 
     JVMClusterUtil.RegionServerThread rs = TEST_UTIL.getHBaseCluster().startRegionServer();
     rs.waitForServerOnline();
-    final ServerName sn = rs.getRegionServer().getServerName();
+    ServerName sn = rs.getRegionServer().getServerName();
 
 
     HTable t = TEST_UTIL.createTable(tn, cf);
     TEST_UTIL.waitTableAvailable(tn, 20000);
 
-    while(TEST_UTIL.getHBaseCluster().getMaster().getAssignmentManager().getRegionStates().
-        isRegionsInTransition()){
+    while(TEST_UTIL.getHBaseCluster().getMaster().getAssignmentManager().getRegionStates().isRegionsInTransition()){
       Thread.sleep(1);
     }
-    final HConnectionImplementation hci =  (HConnectionImplementation)t.getConnection();
+    HConnectionImplementation hci =  (HConnectionImplementation)t.getConnection();
     while (t.getRegionLocation(rk).getPort() != sn.getPort()){
       TEST_UTIL.getHBaseAdmin().move(t.getRegionLocation(rk).getRegionInfo().
           getEncodedNameAsBytes(), sn.getVersionedBytes());
@@ -151,6 +142,7 @@ public class TestHCM {
       }
       hci.clearRegionCache(tn);
     }
+    Assert.assertNotNull(hci.clusterStatusListener);
     TEST_UTIL.assertRegionOnServer(t.getRegionLocation(rk).getRegionInfo(), sn, 20000);
 
     Put p1 = new Put(rk);
@@ -159,38 +151,15 @@ public class TestHCM {
 
     rs.getRegionServer().abort("I'm dead");
 
-    // The client knows that the server is dead
-    // Give some time for the status to be updated.
-    TEST_UTIL.waitFor(MC_PERIOD * 5, 100, new Waiter.Predicate<Exception>() {
-      @Override
-      public boolean evaluate() throws Exception {
-        return hci.isDeadServer(sn);
-      }
-    });
+    Thread.sleep(40000); // We want the status to be updated. That's a least 10 second
+    Assert.assertTrue(TEST_UTIL.getHBaseCluster().getMaster().getServerManager().
+        getDeadServers().isDeadServer(sn));
+
+    Assert.assertTrue(hci.clusterStatusListener.isDeadServer(sn));
 
     hci.getClient(sn);  // will throw an exception: RegionServerStoppedException
   }
 
-  /**
-   * Test that if a server is marked as dead, connections to it will be stopped immediately.
-   * @throws IOException
-   * @throws InterruptedException
-   */
-  public void testDeadsExitEarlier() throws IOException, InterruptedException {
-    /*
-    Seems impossible to test without simulating a computer unplug.
-
-    start 3 RS.
-    Put a table on RS3.
-    Do a put on RS3.
-    Unplug it.
-    Do a put on it, with a huge timeout.
-    Should exit after ZK
-
-
-
-     */
-  }
   
   @Test
   public void abortingHConnectionRemovesItselfFromHCM() throws Exception {

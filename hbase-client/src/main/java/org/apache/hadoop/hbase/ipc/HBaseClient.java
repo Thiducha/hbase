@@ -185,7 +185,6 @@ public class HBaseClient {
 
       return false;
     }
-
   }
 
   public static class FailedServerException extends IOException {
@@ -195,7 +194,6 @@ public class HBaseClient {
       super(s);
     }
   }
-
 
   /**
    * set the ping interval value in configuration

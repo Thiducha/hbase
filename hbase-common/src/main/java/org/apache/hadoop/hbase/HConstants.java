@@ -358,8 +358,6 @@ public final class HConstants {
 
   /** delimiter used between portions of a region name */
   public static final int META_ROW_DELIMITER = ',';
-  
-  public static final byte[] META_ROW_DELIMITER_BYTES = Bytes.toBytes(",,");
 
   /** The catalog family as a string*/
   public static final String CATALOG_FAMILY_STR = "info";
@@ -822,10 +820,9 @@ public final class HConstants {
 
   /**
    * IP to use for the multicast status messages between the master and the clients.
-   * If not set, the master wo,'t send any message.
    */
   public static final String STATUS_MULTICAST_ADDRESS = "hbase.status.multicast.address.ip";
-  public static final String DEFAULT_STATUS_MULTICAST_ADDRESS = null; // "226.1.1.3";
+  public static final String DEFAULT_STATUS_MULTICAST_ADDRESS = "226.1.1.3";
 
   /**
    * The port to use for the multicast messages.
@@ -833,18 +830,6 @@ public final class HConstants {
   public static final String STATUS_MULTICAST_PORT = "hbase.status.multicast.port";
   public static final int DEFAULT_STATUS_MULTICAST_PORT = 60100;
 
-  /**
-   * The minimum time between two status messages.
-   */
-  public static final String STATUS_MULTICAST_PERIOD = "hbase.status.period";
-  public static final int DEFAULT_STATUS_MULTICAST_PERIOD = 10000;
-
-  /**
-   * The timeframe considered to send a message. If there is a dead server, it will be included in
-   *  the status message for hbase.status.period.range * hbase.status.period milliseconds.
-   */
-  public static final String STATUS_MULTICAST_PERIOD_RANGE = "hbase.status.period.range";
-  public static final int DEFAULT_STATUS_MULTICAST_PERIOD_RANGE = 5;
 
 
   private HConstants() {

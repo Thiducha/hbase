@@ -23,7 +23,6 @@ package org.apache.hadoop.hbase.client;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.ClusterStatus;
 import org.apache.hadoop.hbase.HConstants;
@@ -42,12 +41,14 @@ import org.jboss.netty.channel.socket.oio.OioDatagramChannelFactory;
 import org.jboss.netty.handler.codec.protobuf.ProtobufDecoder;
 
 import java.io.Closeable;
+import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -58,82 +59,128 @@ import java.util.concurrent.Executors;
  * The class is abstract to allow multiple implementations, from ZooKeeper to multicast based.
  */
 @InterfaceAudience.Private
-@InterfaceStability.Evolving
-abstract public class ClusterStatusListener implements Closeable {
+public class ClusterStatusListener implements Closeable {
+  private static final Log LOG = LogFactory.getLog(ClusterStatusListener.class);
+  private final List<ServerName> deadServers = new ArrayList<ServerName>();
+  private final DeadServerHandler deadServerHandler;
+  private final Listener listener;
+
+  /**
+   * The implementation class to use to read the status. Default is null.
+   */
+  public static final String STATUS_LISTENER_CLASS = "hbase.status.listener.class";
+  public static final Class<? extends Listener> DEFAULT_STATUS_LISTENER_CLASS = null;
 
   /**
    * Class to be extended to manage a new dead server.
    */
-  public abstract static class DeadServerHandler {
+  public interface DeadServerHandler {
 
     /**
      * Called when a server is identified as dead. Called only once even if we receive the
-     *  information multiple times.
+     * information multiple times.
      *
      * @param sn - the server name
      */
-    abstract public void newDead(ServerName sn);
+    public void newDead(ServerName sn);
   }
 
+  public static interface Listener extends Closeable {
+    /**
+     * Called to close the resources, if any. Cannot throw an exception.
+     */
+    @Override
+    public void close();
+
+    /**
+     * Called to connect.
+     *
+     * @param conf Configuration to use.
+     * @throws IOException
+     */
+    public void connect(Configuration conf) throws IOException;
+  }
+
+  public ClusterStatusListener(DeadServerHandler dsh, Configuration conf,
+                               Class<? extends Listener> listenerClass) throws IOException {
+    this.deadServerHandler = dsh;
+    try {
+      Constructor<? extends Listener> ctor =
+          listenerClass.getConstructor(ClusterStatusListener.class);
+      this.listener = ctor.newInstance(this);
+    } catch (InstantiationException e) {
+      throw new IOException("Can't create publisher " + listenerClass.getName(), e);
+    } catch (IllegalAccessException e) {
+      throw new IOException("Can't create publisher " + listenerClass.getName(), e);
+    } catch (NoSuchMethodException e) {
+      throw new IllegalStateException();
+    } catch (InvocationTargetException e) {
+      throw new IllegalStateException();
+    }
+
+    this.listener.connect(conf);
+  }
 
   /**
-   * Returns true if we know for sure that the server is dead.
+   * Acts upon the reception of a new cluster status.
    *
-   * @param sn the ServerName
-   * @return true if the server is dead, false if it's alive or we don't know.
+   * @param ncs the cluster status
    */
-  public abstract boolean isDeadServer(ServerName sn);
+  public void receive(ClusterStatus ncs) {
+    if (ncs.getDeadServerNames() != null) {
+      for (ServerName sn : ncs.getDeadServerNames()) {
+        if (!isDeadServer(sn)) {
+          LOG.info("There is a new dead server: " + sn);
+          deadServers.add(sn);
+          if (deadServerHandler != null) {
+            deadServerHandler.newDead(sn);
+          }
+        }
+      }
+    }
+  }
 
-  /**
-   * Called to close the resources, if any. Cannot throw an exception.
-   */
   @Override
   public void close() {
+    listener.close();
+  }
+
+  /**
+   * Check if we know if a server is dead.
+   *
+   * @param sn the server name to check.
+   * @return true if we know for sure that the server is dead, false otherwise.
+   */
+  public boolean isDeadServer(ServerName sn) {
+    if (sn.getStartcode() <= 0) {
+      return false;
+    }
+
+    for (ServerName dead : deadServers) {
+      if (dead.getStartcode() >= sn.getStartcode() &&
+          dead.getPort() == sn.getPort() &&
+          dead.getHostname().equals(sn.getHostname())) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
 
   /**
    * An implementation using a multicast message between the master & the client.
    */
-  public static class ClusterStatusMultiCastListener extends ClusterStatusListener {
-    private static final Log LOG = LogFactory.getLog(ClusterStatusMultiCastListener.class);
+  public class MultiCastListener implements Listener {
     private DatagramChannel channel;
-    private final List<ServerName> deadServers = new ArrayList<ServerName>();
-    private final DeadServerHandler deadServerHandler;
     private final ExecutorService service = Executors.newSingleThreadExecutor(
         Threads.newDaemonThreadFactory("hbase-client-clusterStatus"));
 
-    /**
-     * Check if we know if a server is dead.
-     *
-     * @param sn the server name to check.
-     * @return true if we know for sure that the server is dead, false otherwise.
-     */
-    public boolean isDeadServer(ServerName sn) {
-      if (sn.getStartcode() <= 0) {
-        return false;
-      }
 
-      for (ServerName dead : deadServers) {
-        if (dead.getStartcode() >= sn.getStartcode() &&
-            dead.getPort() == sn.getPort() &&
-            dead.getHostname().equals(sn.getHostname())) {
-          return true;
-        }
-      }
-
-      return false;
+    public MultiCastListener() {
     }
 
-
-    public ClusterStatusMultiCastListener(DeadServerHandler deadServerHandler, Configuration conf)
-        throws UnknownHostException, InterruptedException {
-      this.deadServerHandler = deadServerHandler;
-      connect(conf);
-    }
-
-
-    public void connect(Configuration conf) throws InterruptedException, UnknownHostException {
+    public void connect(Configuration conf) throws IOException {
       // Can't be NiO with Netty today => not implemented in Netty.
       DatagramChannelFactory f = new OioDatagramChannelFactory(service);
 
@@ -150,7 +197,12 @@ abstract public class ClusterStatusListener implements Closeable {
 
       channel.getConfig().setReuseAddress(true);
 
-      InetAddress ina = InetAddress.getByName(mcAddress);
+      InetAddress ina;
+      try {
+        ina = InetAddress.getByName(mcAddress);
+      } catch (UnknownHostException e) {
+        throw new IOException("Can't connect to " + mcAddress, e);
+      }
       channel.joinGroup(ina);
     }
 
@@ -164,7 +216,7 @@ abstract public class ClusterStatusListener implements Closeable {
 
 
     /**
-     * Class, conforming to the Netty framework, that manages the message received.s
+     * Class, conforming to the Netty framework, that manages the message received.
      */
     private class ClusterStatusHandler extends SimpleChannelUpstreamHandler {
 
@@ -172,18 +224,7 @@ abstract public class ClusterStatusListener implements Closeable {
       public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
         ClusterStatusProtos.ClusterStatus csp = (ClusterStatusProtos.ClusterStatus) e.getMessage();
         ClusterStatus ncs = ClusterStatus.convert(csp);
-
-        if (ncs.getDeadServerNames() != null) {
-          for (ServerName sn : ncs.getDeadServerNames()) {
-            if (!isDeadServer(sn)) {
-              LOG.info("There is a new dead server: " + sn);
-              deadServers.add(sn);
-              if (deadServerHandler != null) {
-                deadServerHandler.newDead(sn);
-              }
-            }
-          }
-        }
+        receive(ncs);
       }
 
       /**

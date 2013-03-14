@@ -93,17 +93,16 @@ public class TestDefaultCompactSelection extends TestCase {
     htd.addFamily(hcd);
     HRegionInfo info = new HRegionInfo(htd.getName(), null, null, false);
 
-    hlog = HLogFactory.createHLog(fs, basedir,
-        logName, conf);
+    hlog = HLogFactory.createHLog(fs, basedir, logName, conf);
     region = HRegion.createHRegion(info, basedir, conf, htd);
     HRegion.closeHRegion(region);
     Path tableDir = new Path(basedir, Bytes.toString(htd.getName()));
     region = new HRegion(tableDir, hlog, fs, conf, info, htd, null);
 
-    store = new HStore(basedir, region, hcd, fs, conf);
+    store = new HStore(region, hcd, conf);
 
-    TEST_FILE = StoreFile.getRandomFilename(fs, store.getHomedir());
-    fs.create(TEST_FILE);
+    TEST_FILE = region.getRegionFileSystem().createTempName();
+    fs.createNewFile(TEST_FILE);
   }
 
   @After
@@ -235,8 +234,8 @@ public class TestDefaultCompactSelection extends TestCase {
   throws IOException {
     store.forceMajor = forcemajor;
     //Test Default compactions
-    CompactionRequest result = ((DefaultCompactionPolicy)store.compactionPolicy).selectCompaction(
-        candidates, new ArrayList<StoreFile>(), false, isOffPeak, forcemajor);
+    CompactionRequest result = ((DefaultCompactionPolicy)store.storeEngine.getCompactionPolicy())
+        .selectCompaction(candidates, new ArrayList<StoreFile>(), false, isOffPeak, forcemajor);
     List<StoreFile> actual = new ArrayList<StoreFile>(result.getFiles());
     if (isOffPeak && !forcemajor) {
       assertTrue(result.isOffPeak());
@@ -289,7 +288,7 @@ public class TestDefaultCompactSelection extends TestCase {
     compactEquals(sfCreate(100,50,23,12,12), true, 23, 12, 12);
     conf.setLong(HConstants.MAJOR_COMPACTION_PERIOD, 1);
     conf.setFloat("hbase.hregion.majorcompaction.jitter", 0);
-    store.compactionPolicy.setConf(conf);
+    store.storeEngine.getCompactionPolicy().setConf(conf);
     try {
       // trigger an aged major compaction
       compactEquals(sfCreate(50,25,12,12), 50, 25, 12, 12);
@@ -322,7 +321,7 @@ public class TestDefaultCompactSelection extends TestCase {
      */
     // set an off-peak compaction threshold
     this.conf.setFloat("hbase.hstore.compaction.ratio.offpeak", 5.0F);
-    store.compactionPolicy.setConf(this.conf);
+    store.storeEngine.getCompactionPolicy().setConf(this.conf);
     // Test with and without the flag.
     compactEquals(sfCreate(999, 50, 12, 12, 1), false, true, 50, 12, 12, 1);
     compactEquals(sfCreate(999, 50, 12, 12, 1), 12, 12, 1);

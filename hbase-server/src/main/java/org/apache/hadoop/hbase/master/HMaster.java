@@ -27,7 +27,6 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -297,7 +296,7 @@ Server {
   private volatile boolean isActiveMaster = false;
   // flag set after we complete initialization once active (used for testing)
   private volatile boolean initialized = false;
-  // flag set after we complete assignRootAndMeta.
+  // flag set after we complete assignMeta.
   private volatile boolean serverShutdownHandlerEnabled = false;
 
   // Instance of the hbase executor service.
@@ -343,6 +342,7 @@ Server {
 
   /** The health check chore. */
   private HealthCheckChore healthCheckChore;
+
 
   /**
    * Initializes the HMaster. The steps are as follows:
@@ -431,10 +431,14 @@ Server {
       healthCheckChore = new HealthCheckChore(sleepTime, this, getConfiguration());
     }
 
-    // Do we multicast the status?
-    if (conf.get(HConstants.STATUS_MULTICAST_ADDRESS,
-        HConstants.DEFAULT_STATUS_MULTICAST_ADDRESS) != null){
-      clusterStatusPublisherChore = new ClusterStatusPublisher(this, conf);
+    // Do we publish the status?
+    Class<? extends ClusterStatusPublisher.Publisher> publisherClass =
+        conf.getClass(ClusterStatusPublisher.STATUS_PUBLISHER_CLASS,
+            ClusterStatusPublisher.DEFAULT_STATUS_PUBLISHER_CLASS,
+            ClusterStatusPublisher.Publisher.class);
+
+    if (publisherClass != null) {
+      clusterStatusPublisherChore = new ClusterStatusPublisher(this, conf, publisherClass);
       Threads.setDaemonThreadRunning(clusterStatusPublisherChore.getThread());
     }
   }
@@ -442,7 +446,7 @@ Server {
   /**
    * Stall startup if we are designated a backup master; i.e. we want someone
    * else to become the master before proceeding.
-   * @param c
+   * @param c configuration
    * @param amm
    * @throws InterruptedException
    */
@@ -660,7 +664,7 @@ Server {
    * <li>Set cluster as UP in ZooKeeper</li>
    * <li>Wait for RegionServers to check-in</li>
    * <li>Split logs and perform data recovery, if necessary</li>
-   * <li>Ensure assignment of root and meta regions<li>
+   * <li>Ensure assignment of meta regions<li>
    * <li>Handle either fresh cluster start or master failover</li>
    * </ol>
    *
@@ -742,8 +746,8 @@ Server {
     status.setStatus("Splitting logs after master startup");
     splitLogAfterStartup(this.fileSystemManager);
 
-    // Make sure root and meta assigned before proceeding.
-    if (!assignRootAndMeta(status)) return;
+    // Make sure meta assigned before proceeding.
+    if (!assignMeta(status)) return;
     enableServerShutdownHandler();
 
     // Update meta with new PB serialization if required. i.e migrate all HRI
@@ -759,10 +763,6 @@ Server {
     this.assignmentManager.joinCluster();
 
     this.balancer.setClusterStatus(getClusterStatus());
-
-    // Fixing up missing daughters if any
-    status.setStatus("Fixing up missing daughters");
-    fixupDaughters(status);
 
     if (!masterRecovery) {
       // Start balancer and meta catalog janitor after meta and regions have
@@ -838,76 +838,43 @@ Server {
   }
 
   /**
-   * Check <code>-ROOT-</code> and <code>.META.</code> are assigned.  If not,
+   * Check <code>.META.</code> are assigned.  If not,
    * assign them.
    * @throws InterruptedException
    * @throws IOException
    * @throws KeeperException
-   * @return True if root and meta are healthy, assigned
+   * @return True if meta is healthy, assigned
    */
-  boolean assignRootAndMeta(MonitoredTask status)
+  boolean assignMeta(MonitoredTask status)
   throws InterruptedException, IOException, KeeperException {
     int assigned = 0;
     long timeout = this.conf.getLong("hbase.catalog.verification.timeout", 1000);
 
-    // Work on ROOT region.  Is it in zk in transition?
-    status.setStatus("Assigning ROOT region");
-    assignmentManager.getRegionStates().createRegionState(
-      HRegionInfo.ROOT_REGIONINFO);
-    boolean rit = this.assignmentManager.
-      processRegionInTransitionAndBlockUntilAssigned(HRegionInfo.ROOT_REGIONINFO);
-    ServerName currentRootServer = null;
-    boolean rootRegionLocation = catalogTracker.verifyRootRegionLocation(timeout);
-    if (!rit && !rootRegionLocation) {
-      currentRootServer = this.catalogTracker.getRootLocation();
-      splitLogAndExpireIfOnline(currentRootServer);
-      this.assignmentManager.assignRoot();
-      // Make sure a -ROOT- location is set.
-      if (!isRootLocation()) return false;
-      // This guarantees that the transition assigning -ROOT- has completed
-      this.assignmentManager.waitForAssignment(HRegionInfo.ROOT_REGIONINFO);
-      assigned++;
-    } else if (rit && !rootRegionLocation) {
-      // Make sure a -ROOT- location is set.
-      if (!isRootLocation()) return false;
-      // This guarantees that the transition assigning -ROOT- has completed
-      this.assignmentManager.waitForAssignment(HRegionInfo.ROOT_REGIONINFO);
-      assigned++;
-    } else if (rootRegionLocation) {
-      // Region already assigned.  We didn't assign it.  Add to in-memory state.
-      this.assignmentManager.regionOnline(HRegionInfo.ROOT_REGIONINFO,
-        this.catalogTracker.getRootLocation());
-    }
-    // Enable the ROOT table if on process fail over the RS containing ROOT
-    // was active.
-    enableCatalogTables(Bytes.toString(HConstants.ROOT_TABLE_NAME));
-    // Check for stopped, just in case
-    if (this.stopped) return false;
-    LOG.info("-ROOT- assigned=" + assigned + ", rit=" + rit +
-      ", location=" + catalogTracker.getRootLocation());
-
-    // Work on meta region
+    // Work on .META. region.  Is it in zk in transition?
     status.setStatus("Assigning META region");
     assignmentManager.getRegionStates().createRegionState(
-      HRegionInfo.FIRST_META_REGIONINFO);
-    rit = this.assignmentManager.
+        HRegionInfo.FIRST_META_REGIONINFO);
+    boolean rit = this.assignmentManager.
       processRegionInTransitionAndBlockUntilAssigned(HRegionInfo.FIRST_META_REGIONINFO);
-    boolean metaRegionLocation = this.catalogTracker.verifyMetaRegionLocation(timeout);
+    ServerName currentMetaServer = null;
+    boolean metaRegionLocation = catalogTracker.verifyMetaRegionLocation(timeout);
     if (!rit && !metaRegionLocation) {
-      ServerName currentMetaServer =
-        this.catalogTracker.getMetaLocationOrReadLocationFromRoot();
-      if (currentMetaServer != null
-          && !currentMetaServer.equals(currentRootServer)) {
-        splitLogAndExpireIfOnline(currentMetaServer);
-      }
-      assignmentManager.assignMeta();
+      currentMetaServer = this.catalogTracker.getMetaLocation();
+      splitLogAndExpireIfOnline(currentMetaServer);
+      this.assignmentManager.assignMeta();
       enableSSHandWaitForMeta();
+      // Make sure a .META. location is set.
+      if (!isMetaLocation()) return false;
+      // This guarantees that the transition assigning .META. has completed
+      this.assignmentManager.waitForAssignment(HRegionInfo.FIRST_META_REGIONINFO);
       assigned++;
     } else if (rit && !metaRegionLocation) {
-      // Wait until META region added to region server onlineRegions. See HBASE-5875.
-      enableSSHandWaitForMeta();
+      // Make sure a .META. location is set.
+      if (!isMetaLocation()) return false;
+      // This guarantees that the transition assigning .META. has completed
+      this.assignmentManager.waitForAssignment(HRegionInfo.FIRST_META_REGIONINFO);
       assigned++;
-    } else {
+    } else if (metaRegionLocation) {
       // Region already assigned.  We didn't assign it.  Add to in-memory state.
       this.assignmentManager.regionOnline(HRegionInfo.FIRST_META_REGIONINFO,
         this.catalogTracker.getMetaLocation());
@@ -915,7 +882,7 @@ Server {
     enableCatalogTables(Bytes.toString(HConstants.META_TABLE_NAME));
     LOG.info(".META. assigned=" + assigned + ", rit=" + rit +
       ", location=" + catalogTracker.getMetaLocation());
-    status.setStatus("META and ROOT assigned.");
+    status.setStatus("META assigned.");
     return true;
   }
 
@@ -928,17 +895,17 @@ Server {
   }
 
   /**
-   * @return True if there a root available
+   * @return True if there a meta available
    * @throws InterruptedException
    */
-  private boolean isRootLocation() throws InterruptedException {
+  private boolean isMetaLocation() throws InterruptedException {
     // Cycle up here in master rather than down in catalogtracker so we can
     // check the master stopped flag every so often.
     while (!this.stopped) {
       try {
-        if (this.catalogTracker.waitForRoot(100) != null) break;
+        if (this.catalogTracker.waitForMeta(100) != null) break;
       } catch (NotAllMetaRegionsOnlineException e) {
-        // Ignore.  I know -ROOT- is not online yet.
+        // Ignore.  I know .META. is not online yet.
       }
     }
     // We got here because we came of above loop.
@@ -948,41 +915,6 @@ Server {
   private void enableCatalogTables(String catalogTableName) {
     if (!this.assignmentManager.getZKTable().isEnabledTable(catalogTableName)) {
       this.assignmentManager.setEnabledTable(catalogTableName);
-    }
-  }
-
-  void fixupDaughters(final MonitoredTask status) throws IOException {
-    final Map<HRegionInfo, Result> offlineSplitParents =
-      new HashMap<HRegionInfo, Result>();
-    // This visitor collects offline split parents in the .META. table
-    MetaReader.Visitor visitor = new MetaReader.Visitor() {
-      @Override
-      public boolean visit(Result r) throws IOException {
-        if (r == null || r.isEmpty()) return true;
-        HRegionInfo info =
-          HRegionInfo.getHRegionInfo(r);
-        if (info == null) return true; // Keep scanning
-        if (info.isOffline() && info.isSplit()) {
-          offlineSplitParents.put(info, r);
-        }
-        // Returning true means "keep scanning"
-        return true;
-      }
-    };
-    // Run full scan of .META. catalog table passing in our custom visitor
-    MetaReader.fullScan(this.catalogTracker, visitor);
-    // Now work on our list of found parents. See if any we can clean up.
-    int fixups = 0;
-    for (Map.Entry<HRegionInfo, Result> e : offlineSplitParents.entrySet()) {
-      ServerName sn = HRegionInfo.getServerName(e.getValue());
-      if (!serverManager.isServerDead(sn)) { // Otherwise, let SSH take care of it
-        fixups += ServerShutdownHandler.fixupDaughters(
-          e.getValue(), assignmentManager, catalogTracker);
-      }
-    }
-    if (fixups != 0) {
-      LOG.info("Scanned the catalog and fixed up " + fixups +
-        " missing daughter region(s)");
     }
   }
 
@@ -1587,8 +1519,7 @@ Server {
   }
 
   private static boolean isCatalogTable(final byte [] tableName) {
-    return Bytes.equals(tableName, HConstants.ROOT_TABLE_NAME) ||
-           Bytes.equals(tableName, HConstants.META_TABLE_NAME);
+    return Bytes.equals(tableName, HConstants.META_TABLE_NAME);
   }
 
   @Override
@@ -1978,7 +1909,7 @@ Server {
    * 1. Create a new ZK session. (since our current one is expired)
    * 2. Try to become a primary master again
    * 3. Initialize all ZK based system trackers.
-   * 4. Assign root and meta. (they are already assigned, but we need to update our
+   * 4. Assign meta. (they are already assigned, but we need to update our
    * internal memory state to reflect it)
    * 5. Process any RIT if any during the process of our recovery.
    *
@@ -2196,8 +2127,8 @@ Server {
 
   /**
    * ServerShutdownHandlerEnabled is set false before completing
-   * assignRootAndMeta to prevent processing of ServerShutdownHandler.
-   * @return true if assignRootAndMeta has completed;
+   * assignMeta to prevent processing of ServerShutdownHandler.
+   * @return true if assignMeta has completed;
    */
   public boolean isServerShutdownHandlerEnabled() {
     return this.serverShutdownHandlerEnabled;
@@ -2613,7 +2544,7 @@ Server {
    * No exceptions are thrown if the restore is not running, the result will be "done".
    *
    * @return done <tt>true</tt> if the restore/clone operation is completed.
-   * @throws RestoreSnapshotExcepton if the operation failed.
+   * @throws ServiceException if the operation failed.
    */
   @Override
   public IsRestoreSnapshotDoneResponse isRestoreSnapshotDone(RpcController controller,

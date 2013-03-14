@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import com.google.common.base.Preconditions;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -72,7 +73,7 @@ import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.KeyLocker;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.Threads;
-import org.apache.hadoop.hbase.zookeeper.RootRegionTracker;
+import org.apache.hadoop.hbase.zookeeper.MetaRegionTracker;
 import org.apache.hadoop.hbase.zookeeper.ZKAssign;
 import org.apache.hadoop.hbase.zookeeper.ZKTable;
 import org.apache.hadoop.hbase.zookeeper.ZKUtil;
@@ -106,9 +107,9 @@ public class AssignmentManager extends ZooKeeperListener {
 
   private CatalogTracker catalogTracker;
 
-  final TimeoutMonitor timeoutMonitor;
+  protected final TimeoutMonitor timeoutMonitor;
 
-  private TimerUpdater timerUpdater;
+  private final TimerUpdater timerUpdater;
 
   private LoadBalancer balancer;
 
@@ -141,8 +142,7 @@ public class AssignmentManager extends ZooKeeperListener {
    * Contains the server which need to update timer, these servers will be
    * handled by {@link TimerUpdater}
    */
-  private final ConcurrentSkipListSet<ServerName> serversInUpdatingTimer =
-    new ConcurrentSkipListSet<ServerName>();
+  private final ConcurrentSkipListSet<ServerName> serversInUpdatingTimer;
 
   private final ExecutorService executorService;
 
@@ -182,6 +182,9 @@ public class AssignmentManager extends ZooKeeperListener {
    */
   protected final AtomicBoolean failoverCleanupDone = new AtomicBoolean(false);
 
+  /** Is the TimeOutManagement activated **/
+  private final boolean tomActivated;
+
   /**
    * Constructs a new assignment manager.
    *
@@ -204,14 +207,22 @@ public class AssignmentManager extends ZooKeeperListener {
     this.regionsToReopen = Collections.synchronizedMap
                            (new HashMap<String, HRegionInfo> ());
     Configuration conf = server.getConfiguration();
-    this.timeoutMonitor = new TimeoutMonitor(
-      conf.getInt("hbase.master.assignment.timeoutmonitor.period", 30000),
-      server, serverManager,
-      conf.getInt("hbase.master.assignment.timeoutmonitor.timeout", 600000));
-    this.timerUpdater = new TimerUpdater(conf.getInt(
-      "hbase.master.assignment.timerupdater.period", 10000), server);
-    Threads.setDaemonThreadRunning(timerUpdater.getThread(),
-      server.getServerName() + ".timerUpdater");
+    this.tomActivated = conf.getBoolean("hbase.assignment.timeout.management", false);
+    if (tomActivated){
+      this.serversInUpdatingTimer =  new ConcurrentSkipListSet<ServerName>();
+      this.timeoutMonitor = new TimeoutMonitor(
+        conf.getInt("hbase.master.assignment.timeoutmonitor.period", 30000),
+        server, serverManager,
+        conf.getInt("hbase.master.assignment.timeoutmonitor.timeout", 600000));
+      this.timerUpdater = new TimerUpdater(conf.getInt(
+        "hbase.master.assignment.timerupdater.period", 10000), server);
+      Threads.setDaemonThreadRunning(timerUpdater.getThread(),
+        server.getServerName() + ".timerUpdater");
+    } else {
+      this.serversInUpdatingTimer =  null;
+      this.timeoutMonitor = null;
+      this.timerUpdater = null;
+    }
     this.zkTable = new ZKTable(this.watcher);
     this.maximumAttempts =
       this.server.getConfiguration().getInt("hbase.assignment.maximum.attempts", 10);
@@ -235,8 +246,10 @@ public class AssignmentManager extends ZooKeeperListener {
   }
 
   void startTimeOutMonitor() {
-    Threads.setDaemonThreadRunning(timeoutMonitor.getThread(), server.getServerName()
-        + ".timeoutMonitor");
+    if (tomActivated) {
+      Threads.setDaemonThreadRunning(timeoutMonitor.getThread(), server.getServerName()
+          + ".timeoutMonitor");
+    }
   }
 
   /**
@@ -488,7 +501,7 @@ public class AssignmentManager extends ZooKeeperListener {
   }
 
   /**
-   * This call is invoked only (1) master assign root and meta;
+   * This call is invoked only (1) master assign meta;
    * (2) during failover mode startup, zk assignment node processing.
    * The locker is set in the caller.
    *
@@ -1215,7 +1228,9 @@ public class AssignmentManager extends ZooKeeperListener {
    * @param sn
    */
   private void addToServersInUpdatingTimer(final ServerName sn) {
-    this.serversInUpdatingTimer.add(sn);
+    if (tomActivated){
+      this.serversInUpdatingTimer.add(sn);
+    }
   }
 
   /**
@@ -1232,6 +1247,7 @@ public class AssignmentManager extends ZooKeeperListener {
    * @param sn
    */
   private void updateTimers(final ServerName sn) {
+    Preconditions.checkState(tomActivated);
     if (sn == null) return;
 
     // This loop could be expensive.
@@ -1619,8 +1635,10 @@ public class AssignmentManager extends ZooKeeperListener {
       }
       if (plan == null) {
         LOG.warn("Unable to determine a plan to assign " + region);
-        this.timeoutMonitor.setAllRegionServersOffline(true);
-        return; // Should get reassigned later when RIT times out.
+        if (tomActivated){
+          this.timeoutMonitor.setAllRegionServersOffline(true);
+        }
+        return;
       }
       if (setOfflineInZK && versionOfOfflineNode == -1) {
         // get the version of the znode after setting it to OFFLINE.
@@ -1752,7 +1770,9 @@ public class AssignmentManager extends ZooKeeperListener {
         RegionPlan newPlan = getRegionPlan(region, true);
 
         if (newPlan == null) {
-          this.timeoutMonitor.setAllRegionServersOffline(true);
+          if (tomActivated) {
+            this.timeoutMonitor.setAllRegionServersOffline(true);
+          }
           LOG.warn("Unable to find a viable location to assign region " +
               region.getRegionNameAsString());
           return;
@@ -2126,30 +2146,17 @@ public class AssignmentManager extends ZooKeeperListener {
   }
 
   /**
-   * Assigns the ROOT region.
-   * <p>
-   * Assumes that ROOT is currently closed and is not being actively served by
-   * any RegionServer.
-   * <p>
-   * Forcibly unsets the current root region location in ZooKeeper and assigns
-   * ROOT to a random RegionServer.
-   * @throws KeeperException
-   */
-  public void assignRoot() throws KeeperException {
-    RootRegionTracker.deleteRootLocation(this.watcher);
-    assign(HRegionInfo.ROOT_REGIONINFO, true);
-  }
-
-  /**
    * Assigns the META region.
    * <p>
    * Assumes that META is currently closed and is not being actively served by
    * any RegionServer.
    * <p>
-   * Forcibly assigns META to a random RegionServer.
+   * Forcibly unsets the current meta region location in ZooKeeper and assigns
+   * META to a random RegionServer.
+   * @throws KeeperException
    */
-  public void assignMeta() {
-    // Force assignment to a random server
+  public void assignMeta() throws KeeperException {
+    MetaRegionTracker.deleteMetaLocation(this.watcher);
     assign(HRegionInfo.FIRST_META_REGIONINFO, true);
   }
 
@@ -2559,6 +2566,7 @@ public class AssignmentManager extends ZooKeeperListener {
 
     @Override
     protected void chore() {
+      Preconditions.checkState(tomActivated);
       ServerName serverToUpdateTimer = null;
       while (!serversInUpdatingTimer.isEmpty() && !stopper.isStopped()) {
         if (serverToUpdateTimer == null) {
@@ -2608,6 +2616,7 @@ public class AssignmentManager extends ZooKeeperListener {
 
     @Override
     protected void chore() {
+      Preconditions.checkState(tomActivated);
       boolean noRSAvailable = this.serverManager.createDestinationServersList().isEmpty();
 
       // Iterate all regions in transition checking for time outs
@@ -2725,10 +2734,6 @@ public class AssignmentManager extends ZooKeeperListener {
 
   private void invokeUnassign(HRegionInfo regionInfo) {
     threadPoolExecutorService.submit(new UnAssignCallable(this, regionInfo));
-  }
-
-  public boolean isCarryingRoot(ServerName serverName) {
-    return isCarryingRegion(serverName, HRegionInfo.ROOT_REGIONINFO);
   }
 
   public boolean isCarryingMeta(ServerName serverName) {
@@ -2863,8 +2868,10 @@ public class AssignmentManager extends ZooKeeperListener {
   }
 
   public void stop() {
-    this.timeoutMonitor.interrupt();
-    this.timerUpdater.interrupt();
+    if (tomActivated){
+      this.timeoutMonitor.interrupt();
+      this.timerUpdater.interrupt();
+    }
   }
 
   /**

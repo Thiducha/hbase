@@ -33,7 +33,7 @@ import org.junit.experimental.categories.Category;
 import java.util.ArrayList;
 import java.util.List;
 
-@Category(MediumTests.class)
+@Category(MediumTests.class) // Plays with the ManualEnvironmentEdge
 public class TestClusterStatusPublisher {
   private ManualEnvironmentEdge mee = new ManualEnvironmentEdge();
 
@@ -51,7 +51,6 @@ public class TestClusterStatusPublisher {
         return new ArrayList<Pair<ServerName, Long>>();
       }
     };
-
 
     Assert.assertTrue(csp.generateDeadServersListToSend().isEmpty());
   }
@@ -130,5 +129,4 @@ public class TestClusterStatusPublisher {
     }
     Assert.assertEquals(25, allSNS.size());
   }
-
 }

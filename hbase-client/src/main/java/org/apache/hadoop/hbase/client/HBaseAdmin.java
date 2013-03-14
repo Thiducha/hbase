@@ -155,7 +155,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    * @param c Configuration object. Copied internally.
    */
   public HBaseAdmin(Configuration c)
-  throws MasterNotRunningException, ZooKeeperConnectionException {
+  throws MasterNotRunningException, ZooKeeperConnectionException, IOException {
     // Will not leak connections, as the new implementation of the constructor
     // does not throw exceptions anymore.
     this(HConnectionManager.getConnection(new Configuration(c)));
@@ -1115,7 +1115,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void closeRegion(final String regionname, final String serverName)
   throws IOException {
-    closeRegion(Bytes.toBytes(regionname), serverName);
+    closeRegion(Bytes.toBytesBinary(regionname), serverName);
   }
 
   /**
@@ -1233,7 +1233,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void flush(final String tableNameOrRegionName)
   throws IOException, InterruptedException {
-    flush(Bytes.toBytes(tableNameOrRegionName));
+    flush(Bytes.toBytesBinary(tableNameOrRegionName));
   }
 
   /**
@@ -1302,7 +1302,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void compact(final String tableNameOrRegionName)
   throws IOException, InterruptedException {
-    compact(Bytes.toBytes(tableNameOrRegionName));
+    compact(Bytes.toBytesBinary(tableNameOrRegionName));
   }
 
   /**
@@ -1329,7 +1329,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void compact(String tableOrRegionName, String columnFamily)
     throws IOException,  InterruptedException {
-    compact(Bytes.toBytes(tableOrRegionName), Bytes.toBytes(columnFamily));
+    compact(Bytes.toBytesBinary(tableOrRegionName), Bytes.toBytes(columnFamily));
   }
 
   /**
@@ -1356,7 +1356,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void majorCompact(final String tableNameOrRegionName)
   throws IOException, InterruptedException {
-    majorCompact(Bytes.toBytes(tableNameOrRegionName));
+    majorCompact(Bytes.toBytesBinary(tableNameOrRegionName));
   }
 
   /**
@@ -1663,7 +1663,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void split(final String tableNameOrRegionName)
   throws IOException, InterruptedException {
-    split(Bytes.toBytes(tableNameOrRegionName));
+    split(Bytes.toBytesBinary(tableNameOrRegionName));
   }
 
   /**
@@ -1681,7 +1681,7 @@ public class HBaseAdmin implements Abortable, Closeable {
 
   public void split(final String tableNameOrRegionName,
     final String splitPoint) throws IOException, InterruptedException {
-    split(Bytes.toBytes(tableNameOrRegionName), Bytes.toBytes(splitPoint));
+    split(Bytes.toBytesBinary(tableNameOrRegionName), Bytes.toBytesBinary(splitPoint));
   }
 
   /**
@@ -1901,7 +1901,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    * @throws ZooKeeperConnectionException if unable to connect to zookeeper
    */
   public static void checkHBaseAvailable(Configuration conf)
-    throws MasterNotRunningException, ZooKeeperConnectionException, ServiceException {
+    throws MasterNotRunningException, ZooKeeperConnectionException, ServiceException, IOException {
     Configuration copyOfConf = HBaseConfiguration.create(conf);
 
     // We set it to make it fail as soon as possible if HBase is not available
@@ -2402,7 +2402,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    * Execute Restore/Clone snapshot and wait for the server to complete (blocking).
    * To check if the cloned table exists, use {@link #isTableAvailable} -- it is not safe to
    * create an HTable instance to this table before it is available.
-   * @param snapshot snapshot to restore
+   * @param snapshotName snapshot to restore
    * @param tableName table name to restore the snapshot on
    * @throws IOException if a remote or network exception occurs
    * @throws RestoreSnapshotException if snapshot failed to be restored

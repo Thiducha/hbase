@@ -22,7 +22,6 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.hbase.util.Addressing;
 
-
 /**
  * Data structure to hold HRegionInfo and the address for the hosting
  * HRegionServer.  Immutable.  Comparable, but we compare the 'location' only:

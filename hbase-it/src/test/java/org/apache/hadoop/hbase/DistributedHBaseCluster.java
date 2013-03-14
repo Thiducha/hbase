@@ -225,7 +225,6 @@ public class DistributedHBaseCluster extends HBaseCluster {
     return ProtobufUtil.toServerName(info.getServerName());
   }
 
-  @Override
   public void waitForDatanodesRegistered(int minDatanodes) throws Exception {
     DistributedFileSystem fs = (DistributedFileSystem) FileSystem.get(conf);
     while (fs.getDataNodeStats().length < minDatanodes) {
@@ -233,7 +232,6 @@ public class DistributedHBaseCluster extends HBaseCluster {
     }
   }
 
-  @Override
   public void waitForNamenodeAvailable() throws InterruptedException {
     int nbLoop = 0;
     boolean ok = false;
