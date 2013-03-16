@@ -982,9 +982,9 @@ public class HBaseAdmin implements Abortable, Closeable {
    * splitkeys which was used while creating the given table.
    * Note : If this api is used after a table's region gets splitted, the api may return
    * false.
-   * @param table
+   * @param tableName
    *          name of table to check
-   * @param split
+   * @param splitKeys
    *          keys to check if the table has been created with all split keys
    * @throws IOException
    *           if a remote or network excpetion occurs
@@ -998,9 +998,9 @@ public class HBaseAdmin implements Abortable, Closeable {
    * splitkeys which was used while creating the given table.
    * Note : If this api is used after a table's region gets splitted, the api may return
    * false.
-   * @param table
+   * @param tableName
    *          name of table to check
-   * @param split
+   * @param splitKeys
    *          keys to check if the table has been created with all split keys
    * @throws IOException
    *           if a remote or network excpetion occurs
@@ -1148,7 +1148,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void closeRegion(final String regionname, final String serverName)
   throws IOException {
-    closeRegion(Bytes.toBytesBinary(regionname), serverName);
+    closeRegion(Bytes.toBytes(regionname), serverName);
   }
 
   /**
@@ -1266,7 +1266,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void flush(final String tableNameOrRegionName)
   throws IOException, InterruptedException {
-    flush(Bytes.toBytesBinary(tableNameOrRegionName));
+    flush(Bytes.toBytes(tableNameOrRegionName));
   }
 
   /**
@@ -1335,7 +1335,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void compact(final String tableNameOrRegionName)
   throws IOException, InterruptedException {
-    compact(Bytes.toBytesBinary(tableNameOrRegionName));
+    compact(Bytes.toBytes(tableNameOrRegionName));
   }
 
   /**
@@ -1350,7 +1350,7 @@ public class HBaseAdmin implements Abortable, Closeable {
   throws IOException, InterruptedException {
     compact(tableNameOrRegionName, null, false);
   }
-  
+
   /**
    * Compact a column family within a table or region.
    * Asynchronous operation.
@@ -1362,7 +1362,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void compact(String tableOrRegionName, String columnFamily)
     throws IOException,  InterruptedException {
-    compact(Bytes.toBytesBinary(tableOrRegionName), Bytes.toBytes(columnFamily));
+    compact(Bytes.toBytes(tableOrRegionName), Bytes.toBytes(columnFamily));
   }
 
   /**
@@ -1389,7 +1389,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void majorCompact(final String tableNameOrRegionName)
   throws IOException, InterruptedException {
-    majorCompact(Bytes.toBytesBinary(tableNameOrRegionName));
+    majorCompact(Bytes.toBytes(tableNameOrRegionName));
   }
 
   /**
@@ -1404,7 +1404,7 @@ public class HBaseAdmin implements Abortable, Closeable {
   throws IOException, InterruptedException {
     compact(tableNameOrRegionName, null, true);
   }
-  
+
   /**
    * Major compact a column family within a table or region.
    * Asynchronous operation.
@@ -1696,7 +1696,7 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void split(final String tableNameOrRegionName)
   throws IOException, InterruptedException {
-    split(Bytes.toBytesBinary(tableNameOrRegionName));
+    split(Bytes.toBytes(tableNameOrRegionName));
   }
 
   /**
@@ -1714,7 +1714,7 @@ public class HBaseAdmin implements Abortable, Closeable {
 
   public void split(final String tableNameOrRegionName,
     final String splitPoint) throws IOException, InterruptedException {
-    split(Bytes.toBytesBinary(tableNameOrRegionName), Bytes.toBytesBinary(splitPoint));
+    split(Bytes.toBytes(tableNameOrRegionName), Bytes.toBytes(splitPoint));
   }
 
   /**
