@@ -1540,11 +1540,6 @@
         <activeByDefault>false</activeByDefault>
       </activation>
       <properties>
-        <surefire.part1.reuseForks>true</surefire.part1.reuseForks>
-        <surefire.part2.reuseForks>false</surefire.part2.reuseForks>
-        <surefire.part1.skip>false</surefire.part1.skip>
-        <surefire.part2.skip>false</surefire.part2.skip>
-        <surefire.part1.groups>org.apache.hadoop.hbase.SmallTests</surefire.part1.groups>
         <surefire.part2.groups>org.apache.hadoop.hbase.MediumTests,org.apache.hadoop.hbase.LargeTests</surefire.part2.groups>
 	<surefire.part1.forkCount>6</surefire.part1.forkCount>
         <surefire.part2.forkCount>5</surefire.part2.forkCount>
@@ -1561,7 +1556,6 @@
       <properties>
         <surefire.part1.forkCount>1</surefire.part1.forkCount>
         <surefire.part1.reuseForks>false</surefire.part1.reuseForks>
-        <surefire.part1.skip>false</surefire.part1.skip>
         <surefire.part2.skip>true</surefire.part2.skip>
         <surefire.part1.groups>org.apache.hadoop.hbase.SmallTests,org.apache.hadoop.hbase.MediumTests,org.apache.hadoop.hbase.LargeTests</surefire.part1.groups>
       </properties>
