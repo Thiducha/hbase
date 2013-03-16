@@ -495,7 +495,7 @@
             <failIfNoTests>false</failIfNoTests>
             <skip>${surefire.part1.skip}</skip>
             <reuseForks>true</reuseForks>
-            <forkCount>8</forkCount>
+            <forkCount>3</forkCount>
             <threadCount>${surefire.part1.forkCount}</threadCount>
             <testFailureIgnore>false</testFailureIgnore>
             <forkedProcessTimeoutInSeconds>${surefire.timeout}</forkedProcessTimeoutInSeconds>
@@ -511,7 +511,6 @@
                 <goal>test</goal>
               </goals>
               <configuration>
-                <forkMode>perthread</forkMode>
                 <skip>${surefire.part2.skip}</skip>
                 <testFailureIgnore>false</testFailureIgnore>
                 <reuseForks>false</reuseForks>
