@@ -120,6 +120,12 @@ limitations under the License.
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-common</artifactId>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-client</artifactId>
       <version>${hadoop-two.version}</version>
@@ -161,7 +167,7 @@ limitations under the License.
                 </property>
             </activation>
             <properties>
-                <surefire.skipFirstPart>true</surefire.skipFirstPart>
+                <surefire.part1.skip>true</surefire.part1.skip>
             </properties>
         </profile>
   </profiles>

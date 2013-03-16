@@ -63,6 +63,12 @@
         <groupId>commons-logging</groupId>
         <artifactId>commons-logging</artifactId>
       </dependency>
+      <dependency>
+        <groupId>org.apache.hbase</groupId>
+        <artifactId>hbase-common</artifactId>
+        <scope>test</scope>
+        <type>test-jar</type>
+      </dependency>
     </dependencies>
 
     <profiles>
@@ -75,7 +81,7 @@
                 </property>
             </activation>
             <properties>
-                <surefire.skipFirstPart>true</surefire.skipFirstPart>
+                <surefire.part1.skip>true</surefire.part1.skip>
             </properties>
         </profile>
     </profiles>

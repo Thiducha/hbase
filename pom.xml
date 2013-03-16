@@ -480,23 +480,13 @@
         <plugin>
           <artifactId>maven-surefire-plugin</artifactId>
           <version>${surefire.version}</version>
-          <dependencies>
-            <!-- by default surefire selects dynamically the connector to the unit tests
-              tool. We want to use always the same as the different connectors can have different
-              bugs and behaviour. -->
-            <dependency>
-              <groupId>org.apache.maven.surefire</groupId>
-              <artifactId>${surefire.provider}</artifactId>
-              <version>${surefire.version}</version>
-            </dependency>
-          </dependencies>
           <!-- Generic testing configuration for all packages -->
           <configuration>
             <failIfNoTests>false</failIfNoTests>
             <skip>${surefire.part1.skip}</skip>
-            <reuseForks>true</reuseForks>
-            <forkCount>3</forkCount>
-            <threadCount>${surefire.part1.forkCount}</threadCount>
+            <reuseForks>${surefire.part1.reuseForks}</reuseForks>
+            <forkCount>${surefire.part1.forkCount}</forkCount>
+	    <groups>${surefire.part1.groups}</groups>
             <testFailureIgnore>false</testFailureIgnore>
             <forkedProcessTimeoutInSeconds>${surefire.timeout}</forkedProcessTimeoutInSeconds>
             <argLine>-enableassertions -Xmx1900m
@@ -510,12 +500,10 @@
               <goals>
                 <goal>test</goal>
               </goals>
-              <configuration>
+              <configuration>		
                 <skip>${surefire.part2.skip}</skip>
-                <testFailureIgnore>false</testFailureIgnore>
-                <reuseForks>false</reuseForks>
-                <forkCount>8</forkCount>
-		<threadCount>8</threadCount>
+                <reuseForks>${surefire.part2.reuseForks}</reuseForks>
+                <forkCount>${surefire.part2.forkCount}</forkCount>
                 <groups>${surefire.part2.groups}</groups>
               </configuration>
             </execution>
@@ -921,13 +909,12 @@
     <common.test.jar>hbase-common-${project.version}-tests.jar</common.test.jar>
     <it.test.jar>hbase-it-${project.version}-tests.jar</it.test.jar>
     <surefire.version>2.14</surefire.version>
-    <surefire.provider>surefire-junit47</surefire.provider>
     <!-- default: run small & medium, medium with 2 threads -->
     <surefire.part1.skip>false</surefire.part1.skip>
     <surefire.part2.skip>false</surefire.part2.skip>
     <surefire.part1.reuseForks>true</surefire.part1.reuseForks>
     <surefire.part2.reuseForks>false</surefire.part2.reuseForks>
-    <surefire.part1.forkCount>2</surefire.part1.forkCount>
+    <surefire.part1.forkCount>4</surefire.part1.forkCount>
     <surefire.part2.forkCount>2</surefire.part2.forkCount>
     <surefire.part1.groups>org.apache.hadoop.hbase.SmallTests</surefire.part1.groups>
     <surefire.part2.groups>org.apache.hadoop.hbase.MediumTests</surefire.part2.groups>
@@ -1559,7 +1546,7 @@
         <surefire.part2.skip>false</surefire.part2.skip>
         <surefire.part1.groups>org.apache.hadoop.hbase.SmallTests</surefire.part1.groups>
         <surefire.part2.groups>org.apache.hadoop.hbase.MediumTests,org.apache.hadoop.hbase.LargeTests</surefire.part2.groups>
-	<surefire.part1.forkCount>8</surefire.part1.forkCount>
+	<surefire.part1.forkCount>6</surefire.part1.forkCount>
         <surefire.part2.forkCount>5</surefire.part2.forkCount>
       </properties>
     </profile>
