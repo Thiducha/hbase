@@ -976,6 +976,38 @@ public class HBaseAdmin implements Abortable, Closeable {
   public boolean isTableAvailable(String tableName) throws IOException {
     return connection.isTableAvailable(Bytes.toBytes(tableName));
   }
+  
+  /**
+   * Use this api to check if the table has been created with the specified number of 
+   * splitkeys which was used while creating the given table.
+   * Note : If this api is used after a table's region gets splitted, the api may return
+   * false.
+   * @param tableName
+   *          name of table to check
+   * @param splitKeys
+   *          keys to check if the table has been created with all split keys
+   * @throws IOException
+   *           if a remote or network excpetion occurs
+   */
+  public boolean isTableAvailable(String tableName, byte[][] splitKeys) throws IOException {
+    return connection.isTableAvailable(Bytes.toBytes(tableName), splitKeys);
+  }
+  
+  /**
+   * Use this api to check if the table has been created with the specified number of 
+   * splitkeys which was used while creating the given table.
+   * Note : If this api is used after a table's region gets splitted, the api may return
+   * false.
+   * @param tableName
+   *          name of table to check
+   * @param splitKeys
+   *          keys to check if the table has been created with all split keys
+   * @throws IOException
+   *           if a remote or network excpetion occurs
+   */
+  public boolean isTableAvailable(byte[] tableName, byte[][] splitKeys) throws IOException {
+    return connection.isTableAvailable(tableName, splitKeys);
+  }
 
   /**
    * Get the status of alter command - indicates how many regions have received
@@ -1318,7 +1350,7 @@ public class HBaseAdmin implements Abortable, Closeable {
   throws IOException, InterruptedException {
     compact(tableNameOrRegionName, null, false);
   }
-  
+
   /**
    * Compact a column family within a table or region.
    * Asynchronous operation.
@@ -1372,7 +1404,7 @@ public class HBaseAdmin implements Abortable, Closeable {
   throws IOException, InterruptedException {
     compact(tableNameOrRegionName, null, true);
   }
-  
+
   /**
    * Major compact a column family within a table or region.
    * Asynchronous operation.

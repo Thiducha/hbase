@@ -36,15 +36,14 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HDFSBlocksDistribution;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.KeyValue.KVComparator;
+import org.apache.hadoop.hbase.KeyValue.MetaKeyComparator;
 import org.apache.hadoop.hbase.client.Scan;
-import org.apache.hadoop.hbase.io.Reference;
 import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
 import org.apache.hadoop.hbase.io.hfile.BlockType;
@@ -241,13 +240,6 @@ public class StoreFile {
    */
   public Path getPath() {
     return this.fileInfo.getPath();
-  }
-
-  /**
-   * @return The Store/ColumnFamily this file belongs to.
-   */
-  byte [] getFamily() {
-    return Bytes.toBytes(this.getPath().getParent().getName());
   }
 
   /**
@@ -520,28 +512,6 @@ public class StoreFile {
     return sb.toString();
   }
 
-  /**
-   * Utility to help with rename.
-   * @param fs
-   * @param src
-   * @param tgt
-   * @return True if succeeded.
-   * @throws IOException
-   */
-  public static Path rename(final FileSystem fs,
-                            final Path src,
-                            final Path tgt)
-      throws IOException {
-
-    if (!fs.exists(src)) {
-      throw new FileNotFoundException(src.toString());
-    }
-    if (!fs.rename(src, tgt)) {
-      throw new IOException("Failed rename of " + src + " to " + tgt);
-    }
-    return tgt;
-  }
-
   public static class WriterBuilder {
     private final Configuration conf;
     private final CacheConfig cacheConf;
@@ -693,38 +663,6 @@ public class StoreFile {
         " to be a directory");
     }
     return new Path(dir, UUID.randomUUID().toString().replaceAll("-", ""));
-  }
-
-  /**
-   * Write out a split reference. Package local so it doesnt leak out of
-   * regionserver.
-   * @param fs
-   * @param splitDir Presumes path format is actually
-   *          <code>SOME_DIRECTORY/REGIONNAME/FAMILY</code>.
-   * @param f File to split.
-   * @param splitRow
-   * @param top True if we are referring to the top half of the hfile.
-   * @return Path to created reference.
-   * @throws IOException
-   */
-  static Path split(final FileSystem fs,
-                    final Path splitDir,
-                    final StoreFile f,
-                    final byte [] splitRow,
-                    final boolean top)
-      throws IOException {
-    // A reference to the bottom half of the hsf store file.
-    Reference r =
-      top? Reference.createTopReference(splitRow): Reference.createBottomReference(splitRow);
-    // Add the referred-to regions name as a dot separated suffix.
-    // See REF_NAME_REGEX regex above.  The referred-to regions name is
-    // up in the path of the passed in <code>f</code> -- parentdir is family,
-    // then the directory above is the region name.
-    String parentRegionName = f.getPath().getParent().getParent().getName();
-    // Write reference with same file id only with the other region name as
-    // suffix and into the new region location (under same family).
-    Path p = new Path(splitDir, f.getPath().getName() + "." + parentRegionName);
-    return r.write(fs, p);
   }
 
   public Long getMinimumTimestamp() {
@@ -1401,6 +1339,28 @@ public class StoreFile {
       return true;
     }
 
+    /**
+     * Checks whether the given scan rowkey range overlaps with the current storefile's
+     * @param scan the scan specification. Used to determine the rowkey range.
+     * @return true if there is overlap, false otherwise
+     */
+    boolean passesKeyRangeFilter(Scan scan) {
+      if (this.getFirstKey() == null || this.getLastKey() == null) {
+        // the file is empty
+        return false;
+      }
+      if (Bytes.equals(scan.getStartRow(), HConstants.EMPTY_START_ROW)
+          && Bytes.equals(scan.getStopRow(), HConstants.EMPTY_END_ROW)) {
+        return true;
+      }
+      KeyValue startKeyValue = KeyValue.createFirstOnRow(scan.getStartRow());
+      KeyValue stopKeyValue = KeyValue.createLastOnRow(scan.getStopRow());
+      boolean nonOverLapping = (getComparator().compare(this.getFirstKey(),
+        stopKeyValue.getKey()) > 0 && !Bytes.equals(scan.getStopRow(), HConstants.EMPTY_END_ROW))
+          || getComparator().compare(this.getLastKey(), startKeyValue.getKey()) < 0;
+      return !nonOverLapping;
+    }
+
     public Map<byte[], byte[]> loadFileInfo() throws IOException {
       Map<byte [], byte []> fi = reader.loadFileInfo();
 
@@ -1570,7 +1530,7 @@ public class StoreFile {
     }
 
     public long getMaxTimestamp() {
-      return timeRangeTracker.maximumTimestamp;
+      return timeRangeTracker == null ? Long.MAX_VALUE : timeRangeTracker.maximumTimestamp;
     }
   }
 
