@@ -36,7 +36,6 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HConstants;
@@ -45,7 +44,6 @@ import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.KeyValue.KVComparator;
 import org.apache.hadoop.hbase.KeyValue.MetaKeyComparator;
 import org.apache.hadoop.hbase.client.Scan;
-import org.apache.hadoop.hbase.io.Reference;
 import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
 import org.apache.hadoop.hbase.io.hfile.BlockType;
@@ -107,9 +105,6 @@ public class StoreFile {
   public static final byte[] DELETE_FAMILY_COUNT =
       Bytes.toBytes("DELETE_FAMILY_COUNT");
 
-  /** See {@link #getEstimatedDiskDataSize()}. */
-  public static final byte[] DISK_DATA_SIZE_KEY = Bytes.toBytes("DISK_DATA_SIZE");
-
   /** Last Bloom filter key in FileInfo */
   private static final byte[] LAST_BLOOM_KEY = Bytes.toBytes("LAST_BLOOM_KEY");
 
@@ -151,12 +146,6 @@ public class StoreFile {
   // If true, this file was product of a major compaction.  Its then set
   // whenever you get a Reader.
   private AtomicBoolean majorCompaction = null;
-
-  /** See {@link #getEstimatedDiskDataSize()}. */
-  private long diskDataSize;
-
-  /** See {@link #getEstimatedDiskDataSize()}. */
-  private static double DATA_SIZE_FRACTION_ESTIMATE = 0.98;
 
   // If true, this file should not be included in minor compactions.
   // It's set whenever you get a Reader.
@@ -254,13 +243,6 @@ public class StoreFile {
   }
 
   /**
-   * @return The Store/ColumnFamily this file belongs to.
-   */
-  byte [] getFamily() {
-    return Bytes.toBytes(this.getPath().getParent().getName());
-  }
-
-  /**
    * @return True if this is a StoreFile Reference; call after {@link #open()}
    * else may get wrong answer.
    */
@@ -294,15 +276,6 @@ public class StoreFile {
 
   public long getModificationTimeStamp() {
     return modificationTimeStamp;
-  }
-
-  /**
-   * @return Estimated number of bytes taken by the data blocks of this file. Either the exact
-   * number written into the file metadata ({@link #DISK_DATA_SIZE_KEY}); or estimated as
-   * {@link #DATA_SIZE_FRACTION_ESTIMATE} of the file, if there's no such field (old files).
-   */
-  public long getEstimatedDiskDataSize() {
-    return diskDataSize;
   }
 
   /**
@@ -464,12 +437,6 @@ public class StoreFile {
           "proceeding without", e);
       this.reader.timeRangeTracker = null;
     }
-
-    b = metadataMap.get(DISK_DATA_SIZE_KEY);
-    // Estimate which fraction of the file is data if the file doesn't have this field.
-    this.diskDataSize = (b != null)
-        ? Bytes.toLong(b) : (long)(this.reader.length() * DATA_SIZE_FRACTION_ESTIMATE);
-
     return this.reader;
   }
 
@@ -543,28 +510,6 @@ public class StoreFile {
     sb.append(", majorCompaction=").append(isMajorCompaction());
 
     return sb.toString();
-  }
-
-  /**
-   * Utility to help with rename.
-   * @param fs
-   * @param src
-   * @param tgt
-   * @return True if succeeded.
-   * @throws IOException
-   */
-  public static Path rename(final FileSystem fs,
-                            final Path src,
-                            final Path tgt)
-      throws IOException {
-
-    if (!fs.exists(src)) {
-      throw new FileNotFoundException(src.toString());
-    }
-    if (!fs.rename(src, tgt)) {
-      throw new IOException("Failed rename of " + src + " to " + tgt);
-    }
-    return tgt;
   }
 
   public static class WriterBuilder {
@@ -718,38 +663,6 @@ public class StoreFile {
         " to be a directory");
     }
     return new Path(dir, UUID.randomUUID().toString().replaceAll("-", ""));
-  }
-
-  /**
-   * Write out a split reference. Package local so it doesnt leak out of
-   * regionserver.
-   * @param fs
-   * @param splitDir Presumes path format is actually
-   *          <code>SOME_DIRECTORY/REGIONNAME/FAMILY</code>.
-   * @param f File to split.
-   * @param splitRow
-   * @param top True if we are referring to the top half of the hfile.
-   * @return Path to created reference.
-   * @throws IOException
-   */
-  static Path split(final FileSystem fs,
-                    final Path splitDir,
-                    final StoreFile f,
-                    final byte [] splitRow,
-                    final boolean top)
-      throws IOException {
-    // A reference to the bottom half of the hsf store file.
-    Reference r =
-      top? Reference.createTopReference(splitRow): Reference.createBottomReference(splitRow);
-    // Add the referred-to regions name as a dot separated suffix.
-    // See REF_NAME_REGEX regex above.  The referred-to regions name is
-    // up in the path of the passed in <code>f</code> -- parentdir is family,
-    // then the directory above is the region name.
-    String parentRegionName = f.getPath().getParent().getParent().getName();
-    // Write reference with same file id only with the other region name as
-    // suffix and into the new region location (under same family).
-    Path p = new Path(splitDir, f.getPath().getName() + "." + parentRegionName);
-    return r.write(fs, p);
   }
 
   public Long getMinimumTimestamp() {
@@ -1097,12 +1010,6 @@ public class StoreFile {
     }
 
     public void close() throws IOException {
-      // Estimate data size in this file before blooms and the HFile tail blocks.
-      long currentSize = writer.getCurrentSize();
-      if (currentSize >= 0) {
-        writer.appendFileInfo(DISK_DATA_SIZE_KEY, Bytes.toBytes(currentSize));
-      }
-
       boolean hasGeneralBloom = this.closeGeneralBloomFilter();
       boolean hasDeleteFamilyBloom = this.closeDeleteFamilyBloomFilter();
 
@@ -1124,10 +1031,6 @@ public class StoreFile {
      */
     HFile.Writer getHFileWriter() {
       return writer;
-    }
-
-    public long getCurrentSize() throws IOException {
-      return writer.getCurrentSize();
     }
   }
 
