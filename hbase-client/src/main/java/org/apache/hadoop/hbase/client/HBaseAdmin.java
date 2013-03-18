@@ -1349,7 +1349,7 @@ public class HBaseAdmin implements Abortable, Closeable {
   throws IOException, InterruptedException {
     compact(tableNameOrRegionName, null, false);
   }
-  
+
   /**
    * Compact a column family within a table or region.
    * Asynchronous operation.
@@ -1403,7 +1403,7 @@ public class HBaseAdmin implements Abortable, Closeable {
   throws IOException, InterruptedException {
     compact(tableNameOrRegionName, null, true);
   }
-  
+
   /**
    * Major compact a column family within a table or region.
    * Asynchronous operation.
