@@ -172,13 +172,15 @@ public class HBaseClusterManager extends ClusterManager {
     }
 
 
+
     private static String getHBaseHome() {
       return getEnvNotNull("HBASE_HOME");
     }
 
     private static String getConfigDir() {
-      if (System.getenv("HBASE_CONFIG_HOME") != null) {
-        return System.getenv("HBASE_CONFIG_HOME");
+      if (System.getenv("HBASE_CONF_HOME") != null) {
+        return System.getenv("HBASE_CONF" +
+            "_HOME");
       }
 
       return new File(getHBaseHome(), "conf").getAbsolutePath();
@@ -212,7 +214,7 @@ public class HBaseClusterManager extends ClusterManager {
 
 
   /**
-   * CommandProvider to manage the service using bin/hbase-* scripts
+   * CommandProvider to manage the service using bin scripts
    */
   static class HadoopShellCommandProvider extends CommandProvider {
 
