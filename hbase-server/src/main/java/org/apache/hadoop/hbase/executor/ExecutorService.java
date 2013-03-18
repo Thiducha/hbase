@@ -86,7 +86,7 @@ public class ExecutorService {
    * started with the same name, this throws a RuntimeException.
    * @param name Name of the service to start.
    */
-  synchronized void startExecutorService(String name, int maxThreads) {
+  void startExecutorService(String name, int maxThreads) {
     if (this.executorMap.get(name) != null) {
       throw new RuntimeException("An executor service with the name " + name +
         " is already running!");
@@ -105,7 +105,7 @@ public class ExecutorService {
     return this.executorMap.containsKey(name);
   }
 
-  public synchronized void shutdown() {
+  public void shutdown() {
     for(Entry<String, Executor> entry: this.executorMap.entrySet()) {
       List<Runnable> wasRunning =
         entry.getValue().threadPoolExecutor.shutdownNow();
@@ -126,7 +126,7 @@ public class ExecutorService {
   }
 
 
-  public synchronized void startExecutorService(final ExecutorType type, final int maxThreads) {
+  public void startExecutorService(final ExecutorType type, final int maxThreads) {
     String name = type.getExecutorName(this.servername);
     if (isExecutorServiceRunning(name)) {
       LOG.debug("Executor service " + toString() + " already running on " +

@@ -1919,8 +1919,8 @@ public class AssignmentManager extends ZooKeeperListener {
         " so generated a random one; " + randomPlan + "; " +
         serverManager.countOfRegionServers() +
                " (online=" + serverManager.getOnlineServers().size() +
-               ", available=" + destServers.size() + ") available servers, " +
-          "forceNewPlan="+forceNewPlan);
+               ", available=" + destServers.size() + ") available servers" +
+               ", forceNewPlan=" + forceNewPlan);
         return randomPlan;
       }
     LOG.debug("Using pre-existing plan for region " +

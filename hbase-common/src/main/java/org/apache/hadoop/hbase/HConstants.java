@@ -811,6 +811,8 @@ public final class HConstants {
 
   /**
    * IP to use for the multicast status messages between the master and the clients.
+   * The default address is chosen as one among others within the ones suitable for multicast
+   * messages.
    */
   public static final String STATUS_MULTICAST_ADDRESS = "hbase.status.multicast.address.ip";
   public static final String DEFAULT_STATUS_MULTICAST_ADDRESS = "226.1.1.3";

@@ -45,6 +45,7 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionLocation;
 import org.apache.hadoop.hbase.MediumTests;
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.Waiter;
 import org.apache.hadoop.hbase.client.HConnectionManager.HConnectionImplementation;
 import org.apache.hadoop.hbase.client.HConnectionManager.HConnectionKey;
 import org.apache.hadoop.hbase.exceptions.RegionServerStoppedException;
@@ -126,23 +127,23 @@ public class TestHCM {
   }
 
   @Test(expected = RegionServerStoppedException.class)
-  public void testClusterStatus() throws IOException, InterruptedException {
+  public void testClusterStatus() throws Exception {
     byte[] tn = "testClusterStatus".getBytes();
     byte[] cf = "cf".getBytes();
     byte[] rk = "rk1".getBytes();
 
     JVMClusterUtil.RegionServerThread rs = TEST_UTIL.getHBaseCluster().startRegionServer();
     rs.waitForServerOnline();
-    ServerName sn = rs.getRegionServer().getServerName();
-
+    final ServerName sn = rs.getRegionServer().getServerName();
 
     HTable t = TEST_UTIL.createTable(tn, cf);
-    TEST_UTIL.waitTableAvailable(tn, 20000);
+    TEST_UTIL.waitTableAvailable(tn);
 
-    while(TEST_UTIL.getHBaseCluster().getMaster().getAssignmentManager().getRegionStates().isRegionsInTransition()){
+    while(TEST_UTIL.getHBaseCluster().getMaster().getAssignmentManager().
+        getRegionStates().isRegionsInTransition()){
       Thread.sleep(1);
     }
-    HConnectionImplementation hci =  (HConnectionImplementation)t.getConnection();
+    final HConnectionImplementation hci =  (HConnectionImplementation)t.getConnection();
     while (t.getRegionLocation(rk).getPort() != sn.getPort()){
       TEST_UTIL.getHBaseAdmin().move(t.getRegionLocation(rk).getRegionInfo().
           getEncodedNameAsBytes(), sn.getVersionedBytes());
@@ -161,11 +162,21 @@ public class TestHCM {
 
     rs.getRegionServer().abort("I'm dead");
 
-    Thread.sleep(40000); // We want the status to be updated. That's a least 10 second
-    Assert.assertTrue(TEST_UTIL.getHBaseCluster().getMaster().getServerManager().
-        getDeadServers().isDeadServer(sn));
+    // We want the status to be updated. That's a least 10 second
+    TEST_UTIL.waitFor(40000, 1000, true, new Waiter.Predicate<Exception>() {
+      @Override
+      public boolean evaluate() throws Exception {
+        return TEST_UTIL.getHBaseCluster().getMaster().getServerManager().
+            getDeadServers().isDeadServer(sn);
+      }
+    });
 
-    Assert.assertTrue(hci.clusterStatusListener.isDeadServer(sn));
+    TEST_UTIL.waitFor(40000, 1000, true, new Waiter.Predicate<Exception>() {
+      @Override
+      public boolean evaluate() throws Exception {
+        return hci.clusterStatusListener.isDeadServer(sn);
+      }
+    });
 
     hci.getClient(sn);  // will throw an exception: RegionServerStoppedException
   }
