@@ -21,6 +21,7 @@
 package org.apache.hadoop.hbase.master;
 
 
+import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Chore;
 import org.apache.hadoop.hbase.ClusterStatus;
@@ -53,10 +54,17 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/**
+ * Class to publish the cluster status to the client. This allows them to know immediately
+ *  the dead region servers, hence to cut the connection they have with them, eventually stop
+ *  waiting on the socket. This improves the mean time to recover, and as well allows to increase
+ *  on the client the different timeouts, as the dead servers will be detected separately.
+ */
+@InterfaceAudience.Private
 public class ClusterStatusPublisher extends Chore {
   /**
-   * The implementation class to use to publish the status. Default is null (no publish).
-   * Use g.apache.hadoop.hbase.master.ClusterStatusPublisher.MulticastPublisher to multicast the
+   * The implementation class used to publish the status. Default is null (no publish).
+   * Use org.apache.hadoop.hbase.master.ClusterStatusPublisher.MulticastPublisher to multicast the
    * status.
    */
   public static final String STATUS_PUBLISHER_CLASS = "hbase.status.publisher.class";
@@ -197,7 +205,7 @@ public class ClusterStatusPublisher extends Chore {
   }
 
   /**
-   * Get the servers dies since a given timestamp.
+   * Get the servers which died since a given timestamp.
    * protected because it can be subclassed by the tests.
    */
   protected List<Pair<ServerName, Long>> getDeadServers(long since) {

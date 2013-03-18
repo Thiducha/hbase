@@ -59,7 +59,7 @@ import java.util.concurrent.Executors;
  * The class is abstract to allow multiple implementations, from ZooKeeper to multicast based.
  */
 @InterfaceAudience.Private
-public class ClusterStatusListener implements Closeable {
+class ClusterStatusListener implements Closeable {
   private static final Log LOG = LogFactory.getLog(ClusterStatusListener.class);
   private final List<ServerName> deadServers = new ArrayList<ServerName>();
   private final DeadServerHandler deadServerHandler;
@@ -85,7 +85,11 @@ public class ClusterStatusListener implements Closeable {
     public void newDead(ServerName sn);
   }
 
-  public static interface Listener extends Closeable {
+
+  /**
+   * The interface to be implented by a listener of a cluster status event.
+   */
+  static interface Listener extends Closeable {
     /**
      * Called to close the resources, if any. Cannot throw an exception.
      */
@@ -109,9 +113,9 @@ public class ClusterStatusListener implements Closeable {
           listenerClass.getConstructor(ClusterStatusListener.class);
       this.listener = ctor.newInstance(this);
     } catch (InstantiationException e) {
-      throw new IOException("Can't create publisher " + listenerClass.getName(), e);
+      throw new IOException("Can't create listener " + listenerClass.getName(), e);
     } catch (IllegalAccessException e) {
-      throw new IOException("Can't create publisher " + listenerClass.getName(), e);
+      throw new IOException("Can't create listener " + listenerClass.getName(), e);
     } catch (NoSuchMethodException e) {
       throw new IllegalStateException();
     } catch (InvocationTargetException e) {
@@ -171,10 +175,10 @@ public class ClusterStatusListener implements Closeable {
   /**
    * An implementation using a multicast message between the master & the client.
    */
-  public class MultiCastListener implements Listener {
+  class MultiCastListener implements Listener {
     private DatagramChannel channel;
     private final ExecutorService service = Executors.newSingleThreadExecutor(
-        Threads.newDaemonThreadFactory("hbase-client-clusterStatus"));
+        Threads.newDaemonThreadFactory("hbase-client-clusterStatus-multiCastListener"));
 
 
     public MultiCastListener() {
@@ -210,6 +214,7 @@ public class ClusterStatusListener implements Closeable {
     public void close() {
       if (channel != null) {
         channel.close();
+        channel = null;
       }
       service.shutdown();
     }
