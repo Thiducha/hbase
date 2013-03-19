@@ -177,12 +177,12 @@ public class ServerManager {
    * @throws ZooKeeperConnectionException
    */
   public ServerManager(final Server master, final MasterServices services)
-      throws ZooKeeperConnectionException {
+      throws IOException {
     this(master, services, true);
   }
 
   ServerManager(final Server master, final MasterServices services,
-      final boolean connect) throws ZooKeeperConnectionException {
+      final boolean connect) throws IOException {
     this.master = master;
     this.services = services;
     Configuration c = master.getConfiguration();
@@ -487,7 +487,7 @@ public class ServerManager {
     boolean carryingMeta = services.getAssignmentManager().isCarryingMeta(serverName);
     if (carryingMeta) {
       this.services.getExecutorService().submit(new MetaServerShutdownHandler(this.master,
-        this.services, this.deadservers, serverName, carryingMeta));
+        this.services, this.deadservers, serverName));
     } else {
       this.services.getExecutorService().submit(new ServerShutdownHandler(this.master,
         this.services, this.deadservers, serverName, true));

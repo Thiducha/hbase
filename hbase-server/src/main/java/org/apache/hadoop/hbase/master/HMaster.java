@@ -305,6 +305,7 @@ Server {
   private LoadBalancer balancer;
   private Thread balancerChore;
   private Thread clusterStatusChore;
+  private ClusterStatusPublisher clusterStatusPublisherChore = null;
 
   private CatalogJanitor catalogJanitorChore;
   private LogCleaner logCleaner;
@@ -429,12 +430,23 @@ Server {
     if (isHealthCheckerConfigured()) {
       healthCheckChore = new HealthCheckChore(sleepTime, this, getConfiguration());
     }
+
+    // Do we publish the status?
+    Class<? extends ClusterStatusPublisher.Publisher> publisherClass =
+        conf.getClass(ClusterStatusPublisher.STATUS_PUBLISHER_CLASS,
+            ClusterStatusPublisher.DEFAULT_STATUS_PUBLISHER_CLASS,
+            ClusterStatusPublisher.Publisher.class);
+
+    if (publisherClass != null) {
+      clusterStatusPublisherChore = new ClusterStatusPublisher(this, conf, publisherClass);
+      Threads.setDaemonThreadRunning(clusterStatusPublisherChore.getThread());
+    }
   }
 
   /**
    * Stall startup if we are designated a backup master; i.e. we want someone
    * else to become the master before proceeding.
-   * @param c
+   * @param c configuration
    * @param amm
    * @throws InterruptedException
    */
@@ -691,6 +703,13 @@ Server {
       this.serverManager = createServerManager(this, this);
     }
 
+    //Initialize table lock manager, and ensure that all write locks held previously
+    //are invalidated
+    this.tableLockManager = TableLockManager.createTableLockManager(conf, zooKeeper, serverName);
+    if (!masterRecovery) {
+      this.tableLockManager.reapAllTableWriteLocks();
+    }
+
     status.setStatus("Initializing ZK system trackers");
     initializeZKBasedSystemTrackers();
 
@@ -705,13 +724,6 @@ Server {
       // start up all service threads.
       status.setStatus("Initializing master service threads");
       startServiceThreads();
-    }
-
-    //Initialize table lock manager, and ensure that all write locks held previously
-    //are invalidated
-    this.tableLockManager = TableLockManager.createTableLockManager(conf, zooKeeper, serverName);
-    if (!masterRecovery) {
-      this.tableLockManager.reapAllTableWriteLocks();
     }
 
     // Wait for region servers to report in.
@@ -841,7 +853,7 @@ Server {
     // Work on .META. region.  Is it in zk in transition?
     status.setStatus("Assigning META region");
     assignmentManager.getRegionStates().createRegionState(
-      HRegionInfo.FIRST_META_REGIONINFO);
+        HRegionInfo.FIRST_META_REGIONINFO);
     boolean rit = this.assignmentManager.
       processRegionInTransitionAndBlockUntilAssigned(HRegionInfo.FIRST_META_REGIONINFO);
     ServerName currentMetaServer = null;
@@ -1079,6 +1091,9 @@ Server {
     }
     if (this.catalogJanitorChore != null) {
       this.catalogJanitorChore.interrupt();
+    }
+    if (this.clusterStatusPublisherChore != null){
+      clusterStatusPublisherChore.interrupt();
     }
   }
 
@@ -2252,7 +2267,11 @@ Server {
   }
 
   /**
-   * Special method, only used by hbck.
+   * Offline specified region from master's in-memory state. It will not attempt to
+   * reassign the region as in unassign.
+   *  
+   * This is a special method that should be used by experts or hbck.
+   * 
    */
   @Override
   public OfflineRegionResponse offlineRegion(RpcController controller, OfflineRegionRequest request)
@@ -2269,7 +2288,13 @@ Server {
         MetaReader.getRegion(this.catalogTracker, regionName);
       if (pair == null) throw new UnknownRegionException(Bytes.toStringBinary(regionName));
       HRegionInfo hri = pair.getFirst();
+      if (cpHost != null) {
+        cpHost.preRegionOffline(hri);
+      }
       this.assignmentManager.regionOffline(hri);
+      if (cpHost != null) {
+        cpHost.postRegionOffline(hri);
+      }
     } catch (IOException ioe) {
       throw new ServiceException(ioe);
     }
@@ -2529,7 +2554,7 @@ Server {
    * No exceptions are thrown if the restore is not running, the result will be "done".
    *
    * @return done <tt>true</tt> if the restore/clone operation is completed.
-   * @throws RestoreSnapshotExcepton if the operation failed.
+   * @throws ServiceException if the operation failed.
    */
   @Override
   public IsRestoreSnapshotDoneResponse isRestoreSnapshotDone(RpcController controller,

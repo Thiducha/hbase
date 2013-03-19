@@ -74,8 +74,8 @@ public class DeadServer {
   }
 
   /**
-   * @param serverName
-   * @return true if this server is on the dead servers list.
+   * @param serverName server name.
+   * @return true if this server is on the dead servers list false otherwise
    */
   public synchronized boolean isDeadServer(final ServerName serverName) {
     return deadServers.containsKey(serverName);
@@ -98,9 +98,15 @@ public class DeadServer {
     return clone;
   }
 
-  public synchronized boolean add(ServerName e) {
+  /**
+   * Adds the server to the dead server list if it's not there already.
+   * @param sn the server name
+   */
+  public synchronized void add(ServerName sn) {
     this.numProcessing++;
-    return deadServers.put(e, EnvironmentEdgeManager.currentTimeMillis()) != null;
+    if (!deadServers.containsKey(sn)){
+      deadServers.put(sn, EnvironmentEdgeManager.currentTimeMillis());
+    }
   }
 
   @SuppressWarnings("UnusedParameters")
