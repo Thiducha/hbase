@@ -92,7 +92,6 @@ import org.apache.hadoop.hbase.master.handler.DeleteTableHandler;
 import org.apache.hadoop.hbase.master.handler.DisableTableHandler;
 import org.apache.hadoop.hbase.master.handler.EnableTableHandler;
 import org.apache.hadoop.hbase.master.handler.ModifyTableHandler;
-import org.apache.hadoop.hbase.master.handler.ServerShutdownHandler;
 import org.apache.hadoop.hbase.master.handler.TableAddFamilyHandler;
 import org.apache.hadoop.hbase.master.handler.TableDeleteFamilyHandler;
 import org.apache.hadoop.hbase.master.handler.TableModifyFamilyHandler;
@@ -294,8 +293,11 @@ Server {
   private volatile boolean abort = false;
   // flag set after we become the active master (used for testing)
   private volatile boolean isActiveMaster = false;
-  // flag set after we complete initialization once active (used for testing)
-  private volatile boolean initialized = false;
+
+  // flag set after we complete initialization once active,
+  // it is not private since it's used in unit tests
+  volatile boolean initialized = false;
+
   // flag set after we complete assignMeta.
   private volatile boolean serverShutdownHandlerEnabled = false;
 
@@ -368,17 +370,25 @@ Server {
       conf.get("hbase.master.dns.interface", "default"),
       conf.get("hbase.master.dns.nameserver", "default")));
     int port = conf.getInt(HConstants.MASTER_PORT, HConstants.DEFAULT_MASTER_PORT);
-    // Creation of a ISA will force a resolve.
+    // Test that the hostname is reachable
     InetSocketAddress initialIsa = new InetSocketAddress(hostname, port);
     if (initialIsa.getAddress() == null) {
-      throw new IllegalArgumentException("Failed resolve of " + initialIsa);
+      throw new IllegalArgumentException("Failed resolve of hostname " + initialIsa);
+    }
+    // Verify that the bind address is reachable if set
+    String bindAddress = conf.get("hbase.master.ipc.address");
+    if (bindAddress != null) {
+      initialIsa = new InetSocketAddress(bindAddress, port);
+      if (initialIsa.getAddress() == null) {
+        throw new IllegalArgumentException("Failed resolve of bind address " + initialIsa);
+      }
     }
     int numHandlers = conf.getInt("hbase.master.handler.count",
       conf.getInt("hbase.regionserver.handler.count", 25));
     this.rpcServer = HBaseServerRPC.getServer(MasterMonitorProtocol.class, this,
         new Class<?>[]{MasterMonitorProtocol.class,
             MasterAdminProtocol.class, RegionServerStatusProtocol.class},
-        initialIsa.getHostName(), // BindAddress is IP we got for this server.
+        initialIsa.getHostName(), // This is bindAddress if set else it's hostname
         initialIsa.getPort(),
         numHandlers,
         0, // we dont use high priority handlers in master
@@ -386,7 +396,7 @@ Server {
         0); // this is a DNC w/o high priority handlers
     // Set our address.
     this.isa = this.rpcServer.getListenerAddress();
-    this.serverName = new ServerName(this.isa.getHostName(),
+    this.serverName = new ServerName(hostname,
       this.isa.getPort(), System.currentTimeMillis());
     this.rsFatals = new MemoryBoundedLogMessageBuffer(
         conf.getLong("hbase.master.buffer.for.rs.fatals", 1*1024*1024));
@@ -1398,11 +1408,21 @@ Server {
       LOG.warn("moveRegion specifier type: expected: " + RegionSpecifierType.ENCODED_REGION_NAME
         + " actual: " + type);
     }
+
+    try {
+      move(encodedRegionName, destServerName);
+    } catch (IOException ioe) {
+      throw new ServiceException(ioe);
+    }
+    return mrr;
+  }
+
+  void move(final byte[] encodedRegionName,
+      final byte[] destServerName) throws UnknownRegionException {
     RegionState regionState = assignmentManager.getRegionStates().
       getRegionState(Bytes.toString(encodedRegionName));
     if (regionState == null) {
-      throw new ServiceException(
-        new UnknownRegionException(Bytes.toStringBinary(encodedRegionName)));
+      throw new UnknownRegionException(Bytes.toStringBinary(encodedRegionName));
     }
 
     HRegionInfo hri = regionState.getRegion();
@@ -1418,7 +1438,7 @@ Server {
       if (dest.equals(regionState.getServerName())) {
         LOG.debug("Skipping move of region " + hri.getRegionNameAsString()
           + " because region already assigned to the same server " + dest + ".");
-        return mrr;
+        return;
       }
     }
 
@@ -1426,9 +1446,10 @@ Server {
     RegionPlan rp = new RegionPlan(hri, regionState.getServerName(), dest);
 
     try {
+      checkInitialized();
       if (this.cpHost != null) {
         if (this.cpHost.preMove(hri, rp.getSource(), rp.getDestination())) {
-          return mrr;
+          return;
         }
       }
       LOG.info("Added move plan " + rp + ", running balancer");
@@ -1440,9 +1461,8 @@ Server {
       UnknownRegionException ure = new UnknownRegionException(
         Bytes.toStringBinary(encodedRegionName));
       ure.initCause(ioe);
-      throw new ServiceException(ure);
+      throw ure;
     }
-    return mrr;
   }
 
   @Override
