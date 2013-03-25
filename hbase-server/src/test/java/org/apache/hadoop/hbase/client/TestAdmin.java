@@ -38,9 +38,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.commons.logging.impl.Log4JLogger;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.catalog.CatalogTracker;
+import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.exceptions.InvalidFamilyOperationException;
 import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
 import org.apache.hadoop.hbase.exceptions.NotServingRegionException;
@@ -50,6 +52,8 @@ import org.apache.hadoop.hbase.exceptions.TableNotEnabledException;
 import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
 import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.executor.EventHandler;
+import org.apache.hadoop.hbase.ipc.HBaseClient;
+import org.apache.hadoop.hbase.ipc.HBaseServer;
 import org.apache.hadoop.hbase.master.AssignmentManager;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
@@ -60,6 +64,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.zookeeper.ZKTableReadOnly;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
+import org.apache.log4j.Level;
 import org.junit.*;
 import org.junit.experimental.categories.Category;
 
@@ -79,6 +84,9 @@ public class TestAdmin {
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
+    ((Log4JLogger)HBaseServer.LOG).getLogger().setLevel(Level.ALL);
+    ((Log4JLogger)HBaseClient.LOG).getLogger().setLevel(Level.ALL);
+    ((Log4JLogger)ScannerCallable.LOG).getLogger().setLevel(Level.ALL);
     TEST_UTIL.getConfiguration().setBoolean("hbase.online.schema.update.enable", true);
     TEST_UTIL.getConfiguration().setInt("hbase.regionserver.msginterval", 100);
     TEST_UTIL.getConfiguration().setInt("hbase.client.pause", 250);
@@ -535,6 +543,55 @@ public class TestAdmin {
     for (List<HRegionInfo> regionList : server2Regions.values()) {
       assertTrue(regionList.size() == min || regionList.size() == max);
     }
+  }
+
+  @Test
+  public void testCreateTableNumberOfRegions() throws IOException, InterruptedException {
+    byte[] tableName = Bytes.toBytes("testCreateTableNumberOfRegions");
+    HTableDescriptor desc = new HTableDescriptor(tableName);
+    desc.addFamily(new HColumnDescriptor(HConstants.CATALOG_FAMILY));
+    admin.createTable(desc);
+    HTable ht = new HTable(TEST_UTIL.getConfiguration(), tableName);
+    Map<HRegionInfo, ServerName> regions = ht.getRegionLocations();
+    assertEquals("Table should have only 1 region", 1, regions.size());
+    ht.close();
+
+    byte [] TABLE_2 = Bytes.add(tableName, Bytes.toBytes("_2"));
+    desc = new HTableDescriptor(TABLE_2);
+    desc.addFamily(new HColumnDescriptor(HConstants.CATALOG_FAMILY));
+    admin.createTable(desc, new byte[][]{new byte[]{42}});
+    HTable ht2 = new HTable(TEST_UTIL.getConfiguration(), TABLE_2);
+    regions = ht2.getRegionLocations();
+    assertEquals("Table should have only 2 region", 2, regions.size());
+    ht2.close();
+
+    byte [] TABLE_3 = Bytes.add(tableName, Bytes.toBytes("_3"));
+    desc = new HTableDescriptor(TABLE_3);
+    desc.addFamily(new HColumnDescriptor(HConstants.CATALOG_FAMILY));
+    admin.createTable(desc, "a".getBytes(), "z".getBytes(), 3);
+    HTable ht3 = new HTable(TEST_UTIL.getConfiguration(), TABLE_3);
+    regions = ht3.getRegionLocations();
+    assertEquals("Table should have only 3 region", 3, regions.size());
+    ht3.close();
+
+    byte [] TABLE_4 = Bytes.add(tableName, Bytes.toBytes("_4"));
+    desc = new HTableDescriptor(TABLE_4);
+    desc.addFamily(new HColumnDescriptor(HConstants.CATALOG_FAMILY));
+    try {
+      admin.createTable(desc, "a".getBytes(), "z".getBytes(), 2);
+      fail("Should not be able to create a table with only 2 regions using this API.");
+    } catch (IllegalArgumentException eae) {
+    // Expected
+    }
+
+    byte [] TABLE_5 = Bytes.add(tableName, Bytes.toBytes("_5"));
+    desc = new HTableDescriptor(TABLE_5);
+    desc.addFamily(new HColumnDescriptor(HConstants.CATALOG_FAMILY));
+    admin.createTable(desc, new byte[] {1}, new byte[] {127}, 16);
+    HTable ht5 = new HTable(TEST_UTIL.getConfiguration(), TABLE_5);
+    regions = ht5.getRegionLocations();
+    assertEquals("Table should have 16 region", 16, regions.size());
+    ht5.close();
   }
 
   @Test

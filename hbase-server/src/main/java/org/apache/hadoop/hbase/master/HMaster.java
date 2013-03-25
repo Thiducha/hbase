@@ -48,7 +48,6 @@ import org.apache.hadoop.hbase.Abortable;
 import org.apache.hadoop.hbase.Chore;
 import org.apache.hadoop.hbase.ClusterId;
 import org.apache.hadoop.hbase.ClusterStatus;
-import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
@@ -56,17 +55,11 @@ import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.HealthCheckChore;
 import org.apache.hadoop.hbase.MasterAdminProtocol;
 import org.apache.hadoop.hbase.MasterMonitorProtocol;
-import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
-import org.apache.hadoop.hbase.exceptions.NotAllMetaRegionsOnlineException;
-import org.apache.hadoop.hbase.exceptions.PleaseHoldException;
 import org.apache.hadoop.hbase.RegionServerStatusProtocol;
 import org.apache.hadoop.hbase.Server;
 import org.apache.hadoop.hbase.ServerLoad;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.TableDescriptors;
-import org.apache.hadoop.hbase.exceptions.TableNotDisabledException;
-import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
-import org.apache.hadoop.hbase.exceptions.UnknownRegionException;
 import org.apache.hadoop.hbase.catalog.CatalogTracker;
 import org.apache.hadoop.hbase.catalog.MetaReader;
 import org.apache.hadoop.hbase.client.HConnectionManager;
@@ -75,13 +68,21 @@ import org.apache.hadoop.hbase.client.MetaScanner.MetaScannerVisitor;
 import org.apache.hadoop.hbase.client.MetaScanner.MetaScannerVisitorBase;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.coprocessor.CoprocessorHost;
+import org.apache.hadoop.hbase.exceptions.DeserializationException;
+import org.apache.hadoop.hbase.exceptions.HBaseIOException;
+import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
+import org.apache.hadoop.hbase.exceptions.NotAllMetaRegionsOnlineException;
+import org.apache.hadoop.hbase.exceptions.PleaseHoldException;
+import org.apache.hadoop.hbase.exceptions.TableNotDisabledException;
+import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
+import org.apache.hadoop.hbase.exceptions.UnknownProtocolException;
+import org.apache.hadoop.hbase.exceptions.UnknownRegionException;
 import org.apache.hadoop.hbase.executor.ExecutorService;
 import org.apache.hadoop.hbase.executor.ExecutorType;
 import org.apache.hadoop.hbase.ipc.HBaseServer;
 import org.apache.hadoop.hbase.ipc.HBaseServerRPC;
 import org.apache.hadoop.hbase.ipc.RpcServer;
 import org.apache.hadoop.hbase.ipc.ServerRpcController;
-import org.apache.hadoop.hbase.exceptions.UnknownProtocolException;
 import org.apache.hadoop.hbase.master.balancer.BalancerChore;
 import org.apache.hadoop.hbase.master.balancer.ClusterStatusChore;
 import org.apache.hadoop.hbase.master.balancer.LoadBalancerFactory;
@@ -90,9 +91,9 @@ import org.apache.hadoop.hbase.master.cleaner.LogCleaner;
 import org.apache.hadoop.hbase.master.handler.CreateTableHandler;
 import org.apache.hadoop.hbase.master.handler.DeleteTableHandler;
 import org.apache.hadoop.hbase.master.handler.DisableTableHandler;
+import org.apache.hadoop.hbase.master.handler.DispatchMergingRegionHandler;
 import org.apache.hadoop.hbase.master.handler.EnableTableHandler;
 import org.apache.hadoop.hbase.master.handler.ModifyTableHandler;
-import org.apache.hadoop.hbase.master.handler.ServerShutdownHandler;
 import org.apache.hadoop.hbase.master.handler.TableAddFamilyHandler;
 import org.apache.hadoop.hbase.master.handler.TableDeleteFamilyHandler;
 import org.apache.hadoop.hbase.master.handler.TableModifyFamilyHandler;
@@ -126,6 +127,8 @@ import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DeleteTableR
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DeleteTableResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DisableTableRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DisableTableResponse;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DispatchMergingRegionsRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DispatchMergingRegionsResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.EnableCatalogJanitorRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.EnableCatalogJanitorResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.EnableTableRequest;
@@ -294,8 +297,11 @@ Server {
   private volatile boolean abort = false;
   // flag set after we become the active master (used for testing)
   private volatile boolean isActiveMaster = false;
-  // flag set after we complete initialization once active (used for testing)
-  private volatile boolean initialized = false;
+
+  // flag set after we complete initialization once active,
+  // it is not private since it's used in unit tests
+  volatile boolean initialized = false;
+
   // flag set after we complete assignMeta.
   private volatile boolean serverShutdownHandlerEnabled = false;
 
@@ -368,17 +374,25 @@ Server {
       conf.get("hbase.master.dns.interface", "default"),
       conf.get("hbase.master.dns.nameserver", "default")));
     int port = conf.getInt(HConstants.MASTER_PORT, HConstants.DEFAULT_MASTER_PORT);
-    // Creation of a ISA will force a resolve.
+    // Test that the hostname is reachable
     InetSocketAddress initialIsa = new InetSocketAddress(hostname, port);
     if (initialIsa.getAddress() == null) {
-      throw new IllegalArgumentException("Failed resolve of " + initialIsa);
+      throw new IllegalArgumentException("Failed resolve of hostname " + initialIsa);
+    }
+    // Verify that the bind address is reachable if set
+    String bindAddress = conf.get("hbase.master.ipc.address");
+    if (bindAddress != null) {
+      initialIsa = new InetSocketAddress(bindAddress, port);
+      if (initialIsa.getAddress() == null) {
+        throw new IllegalArgumentException("Failed resolve of bind address " + initialIsa);
+      }
     }
     int numHandlers = conf.getInt("hbase.master.handler.count",
       conf.getInt("hbase.regionserver.handler.count", 25));
     this.rpcServer = HBaseServerRPC.getServer(MasterMonitorProtocol.class, this,
         new Class<?>[]{MasterMonitorProtocol.class,
             MasterAdminProtocol.class, RegionServerStatusProtocol.class},
-        initialIsa.getHostName(), // BindAddress is IP we got for this server.
+        initialIsa.getHostName(), // This is bindAddress if set else it's hostname
         initialIsa.getPort(),
         numHandlers,
         0, // we dont use high priority handlers in master
@@ -386,7 +400,7 @@ Server {
         0); // this is a DNC w/o high priority handlers
     // Set our address.
     this.isa = this.rpcServer.getListenerAddress();
-    this.serverName = new ServerName(this.isa.getHostName(),
+    this.serverName = new ServerName(hostname,
       this.isa.getPort(), System.currentTimeMillis());
     this.rsFatals = new MemoryBoundedLogMessageBuffer(
         conf.getLong("hbase.master.buffer.for.rs.fatals", 1*1024*1024));
@@ -1386,6 +1400,57 @@ Server {
   }
 
   @Override
+  public DispatchMergingRegionsResponse dispatchMergingRegions(
+      RpcController controller, DispatchMergingRegionsRequest request)
+      throws ServiceException {
+    final byte[] encodedNameOfRegionA = request.getRegionA().getValue()
+        .toByteArray();
+    final byte[] encodedNameOfRegionB = request.getRegionB().getValue()
+        .toByteArray();
+    final boolean forcible = request.getForcible();
+    if (request.getRegionA().getType() != RegionSpecifierType.ENCODED_REGION_NAME
+        || request.getRegionB().getType() != RegionSpecifierType.ENCODED_REGION_NAME) {
+      LOG.warn("mergeRegions specifier type: expected: "
+          + RegionSpecifierType.ENCODED_REGION_NAME + " actual: region_a="
+          + request.getRegionA().getType() + ", region_b="
+          + request.getRegionB().getType());
+    }
+    RegionState regionStateA = assignmentManager.getRegionStates()
+        .getRegionState(Bytes.toString(encodedNameOfRegionA));
+    RegionState regionStateB = assignmentManager.getRegionStates()
+        .getRegionState(Bytes.toString(encodedNameOfRegionB));
+    if (regionStateA == null || regionStateB == null) {
+      throw new ServiceException(new UnknownRegionException(
+          Bytes.toStringBinary(regionStateA == null ? encodedNameOfRegionA
+              : encodedNameOfRegionB)));
+    }
+
+    if (!forcible && !HRegionInfo.areAdjacent(regionStateA.getRegion(),
+            regionStateB.getRegion())) {
+      throw new ServiceException("Unable to merge not adjacent regions "
+          + regionStateA.getRegion().getRegionNameAsString() + ", "
+          + regionStateB.getRegion().getRegionNameAsString()
+          + " where forcible = " + forcible);
+    }
+
+    try {
+      dispatchMergingRegions(regionStateA.getRegion(), regionStateB.getRegion(), forcible);
+    } catch (IOException ioe) {
+      throw new ServiceException(ioe);
+    }
+
+    return DispatchMergingRegionsResponse.newBuilder().build();
+  }
+
+  @Override
+  public void dispatchMergingRegions(final HRegionInfo region_a,
+      final HRegionInfo region_b, final boolean forcible) throws IOException {
+    checkInitialized();
+    this.executorService.submit(new DispatchMergingRegionHandler(this,
+        this.catalogJanitorChore, region_a, region_b, forcible));
+  }
+
+  @Override
   public MoveRegionResponse moveRegion(RpcController controller, MoveRegionRequest req)
   throws ServiceException {
     final byte [] encodedRegionName = req.getRegion().getValue().toByteArray();
@@ -1398,11 +1463,21 @@ Server {
       LOG.warn("moveRegion specifier type: expected: " + RegionSpecifierType.ENCODED_REGION_NAME
         + " actual: " + type);
     }
+
+    try {
+      move(encodedRegionName, destServerName);
+    } catch (HBaseIOException ioe) {
+      throw new ServiceException(ioe);
+    }
+    return mrr;
+  }
+
+  void move(final byte[] encodedRegionName,
+      final byte[] destServerName) throws HBaseIOException {
     RegionState regionState = assignmentManager.getRegionStates().
       getRegionState(Bytes.toString(encodedRegionName));
     if (regionState == null) {
-      throw new ServiceException(
-        new UnknownRegionException(Bytes.toStringBinary(encodedRegionName)));
+      throw new UnknownRegionException(Bytes.toStringBinary(encodedRegionName));
     }
 
     HRegionInfo hri = regionState.getRegion();
@@ -1418,7 +1493,7 @@ Server {
       if (dest.equals(regionState.getServerName())) {
         LOG.debug("Skipping move of region " + hri.getRegionNameAsString()
           + " because region already assigned to the same server " + dest + ".");
-        return mrr;
+        return;
       }
     }
 
@@ -1426,9 +1501,10 @@ Server {
     RegionPlan rp = new RegionPlan(hri, regionState.getServerName(), dest);
 
     try {
+      checkInitialized();
       if (this.cpHost != null) {
         if (this.cpHost.preMove(hri, rp.getSource(), rp.getDestination())) {
-          return mrr;
+          return;
         }
       }
       LOG.info("Added move plan " + rp + ", running balancer");
@@ -1437,12 +1513,11 @@ Server {
         this.cpHost.postMove(hri, rp.getSource(), rp.getDestination());
       }
     } catch (IOException ioe) {
-      UnknownRegionException ure = new UnknownRegionException(
-        Bytes.toStringBinary(encodedRegionName));
-      ure.initCause(ioe);
-      throw new ServiceException(ure);
+      if (ioe instanceof HBaseIOException) {
+        throw (HBaseIOException)ioe;
+      }
+      throw new HBaseIOException(ioe);
     }
-    return mrr;
   }
 
   @Override

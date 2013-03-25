@@ -424,7 +424,7 @@ public class TestHCM {
     assertNotNull(location);
 
     HRegionLocation anySource = new HRegionLocation(location.getRegionInfo(), new ServerName(
-        location.getHostname(), location.getPort() - 1, 0L), HConstants.NO_SEQNUM);
+        location.getHostname(), location.getPort() - 1, 0L));
 
     // Same server as already in cache reporting - overwrites any value despite seqNum.
     int nextPort = location.getPort() + 1;
@@ -660,6 +660,8 @@ public class TestHCM {
       }
     }
     assertNotNull(otherRow);
+    // If empty row, set it to first row.-f
+    if (otherRow.length <= 0) otherRow = Bytes.toBytes("aaa");
     Put put2 = new Put(otherRow);
     put2.add(FAM_NAM, otherRow, otherRow);
     table.put(put2); //cache put2's location

@@ -54,6 +54,7 @@ public class HFileReaderV2 extends AbstractHFileReader {
   private static int KEY_VALUE_LEN_SIZE = 2 * Bytes.SIZEOF_INT;
 
   private boolean includesMemstoreTS = false;
+  private boolean decodeMemstoreTS = false;
 
   private boolean shouldIncludeMemstoreTS() {
     return includesMemstoreTS;
@@ -79,7 +80,10 @@ public class HFileReaderV2 extends AbstractHFileReader {
   /** Maximum minor version supported by this HFile format */
   // We went to version 2 when we moved to pb'ing fileinfo and the trailer on
   // the file. This version can read Writables version 1.
-  static final int MAX_MINOR_VERSION = 2;
+  static final int MAX_MINOR_VERSION = 3;
+
+  /** Minor versions starting with this number have faked index key */
+  static final int MINOR_VERSION_WITH_FAKED_KEY = 3;
 
   /**
    * Opens a HFile. You must load the index before you can use it by calling
@@ -147,6 +151,9 @@ public class HFileReaderV2 extends AbstractHFileReader {
         Bytes.toInt(keyValueFormatVersion) ==
             HFileWriterV2.KEY_VALUE_VER_WITH_MEMSTORE;
     fsBlockReaderV2.setIncludesMemstoreTS(includesMemstoreTS);
+    if (includesMemstoreTS) {
+      decodeMemstoreTS = Bytes.toLong(fileInfo.get(HFileWriterV2.MAX_MEMSTORE_TS_KEY)) > 0;
+    }
 
     // Read data block encoding algorithm name from file info.
     dataBlockEncoder = HFileDataBlockEncoderImpl.createFromFileInfo(fileInfo,
@@ -454,7 +461,9 @@ public class HFileReaderV2 extends AbstractHFileReader {
      *        doing the seek. If this is false, we are assuming we never go
      *        back, otherwise the result is undefined.
      * @return -1 if the key is earlier than the first key of the file,
-     *         0 if we are at the given key, and 1 if we are past the given key
+     *         0 if we are at the given key, 1 if we are past the given key
+     *         -2 if the key is earlier than the first key of the file while
+     *         using a faked index key
      * @throws IOException
      */
     protected int seekTo(byte[] key, int offset, int length, boolean rewind)
@@ -769,15 +778,20 @@ public class HFileReaderV2 extends AbstractHFileReader {
       currValueLen = blockBuffer.getInt();
       blockBuffer.reset();
       if (this.reader.shouldIncludeMemstoreTS()) {
-        try {
-          int memstoreTSOffset = blockBuffer.arrayOffset()
-              + blockBuffer.position() + KEY_VALUE_LEN_SIZE + currKeyLen
-              + currValueLen;
-          currMemstoreTS = Bytes.readVLong(blockBuffer.array(),
-              memstoreTSOffset);
-          currMemstoreTSLen = WritableUtils.getVIntSize(currMemstoreTS);
-        } catch (Exception e) {
-          throw new RuntimeException("Error reading memstore timestamp", e);
+        if (this.reader.decodeMemstoreTS) {
+          try {
+            int memstoreTSOffset = blockBuffer.arrayOffset()
+                + blockBuffer.position() + KEY_VALUE_LEN_SIZE + currKeyLen
+                + currValueLen;
+            currMemstoreTS = Bytes.readVLong(blockBuffer.array(),
+                memstoreTSOffset);
+            currMemstoreTSLen = WritableUtils.getVIntSize(currMemstoreTS);
+          } catch (Exception e) {
+            throw new RuntimeException("Error reading memstore timestamp", e);
+          }
+        } else {
+          currMemstoreTS = 0;
+          currMemstoreTSLen = 1;
         }
       }
 
@@ -802,7 +816,9 @@ public class HFileReaderV2 extends AbstractHFileReader {
      * @param key the key to find
      * @param seekBefore find the key before the given key in case of exact
      *          match.
-     * @return 0 in case of an exact key match, 1 in case of an inexact match
+     * @return 0 in case of an exact key match, 1 in case of an inexact match,
+     *         -2 in case of an inexact match and furthermore, the input key less
+     *         than the first key of current block(e.g. using a faked index key)
      */
     private int blockSeek(byte[] key, int offset, int length,
         boolean seekBefore) {
@@ -816,14 +832,19 @@ public class HFileReaderV2 extends AbstractHFileReader {
         vlen = blockBuffer.getInt();
         blockBuffer.reset();
         if (this.reader.shouldIncludeMemstoreTS()) {
-          try {
-            int memstoreTSOffset = blockBuffer.arrayOffset()
-                + blockBuffer.position() + KEY_VALUE_LEN_SIZE + klen + vlen;
-            memstoreTS = Bytes.readVLong(blockBuffer.array(),
-                memstoreTSOffset);
-            memstoreTSLen = WritableUtils.getVIntSize(memstoreTS);
-          } catch (Exception e) {
-            throw new RuntimeException("Error reading memstore timestamp", e);
+          if (this.reader.decodeMemstoreTS) {
+            try {
+              int memstoreTSOffset = blockBuffer.arrayOffset()
+                  + blockBuffer.position() + KEY_VALUE_LEN_SIZE + klen + vlen;
+              memstoreTS = Bytes.readVLong(blockBuffer.array(),
+                  memstoreTSOffset);
+              memstoreTSLen = WritableUtils.getVIntSize(memstoreTS);
+            } catch (Exception e) {
+              throw new RuntimeException("Error reading memstore timestamp", e);
+            }
+          } else {
+            memstoreTS = 0;
+            memstoreTSLen = 1;
           }
         }
 
@@ -852,12 +873,14 @@ public class HFileReaderV2 extends AbstractHFileReader {
             currMemstoreTSLen = memstoreTSLen;
           }
           return 0; // indicate exact match
-        }
-
-        if (comp < 0) {
+        } else if (comp < 0) {
           if (lastKeyValueSize > 0)
             blockBuffer.position(blockBuffer.position() - lastKeyValueSize);
           readKeyValueLen();
+          if (lastKeyValueSize == -1 && blockBuffer.position() == 0
+              && this.reader.trailer.getMinorVersion() >= MINOR_VERSION_WITH_FAKED_KEY) {
+            return HConstants.INDEX_KEY_MAGIC;
+          }
           return 1;
         }
 
