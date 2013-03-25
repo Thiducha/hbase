@@ -143,10 +143,11 @@ public interface Store extends HeapSize, StoreConfigInformation {
    * @param maxKeyCount
    * @param compression Compression algorithm to use
    * @param isCompaction whether we are creating a new file in a compaction
+   * @param includeMVCCReadpoint whether we should out the MVCC readpoint
    * @return Writer for a new StoreFile in the tmp dir.
    */
-  public StoreFile.Writer createWriterInTmp(long maxKeyCount,
-    Compression.Algorithm compression, boolean isCompaction) throws IOException;
+  public StoreFile.Writer createWriterInTmp(long maxKeyCount, Compression.Algorithm compression,
+      boolean isCompaction, boolean includeMVCCReadpoint) throws IOException;
 
   // Compaction oriented methods
 
@@ -314,4 +315,9 @@ public interface Store extends HeapSize, StoreConfigInformation {
    * @param o Observer no longer interested in changes in set of Readers.
    */
   public void deleteChangedReaderObserver(ChangedReadersObserver o);
+
+  /**
+   * @return Whether this store has too many store files.
+   */
+  public boolean hasTooManyStoreFiles();
 }

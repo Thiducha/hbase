@@ -47,6 +47,9 @@ public final class HConstants {
    * Default block size for an HFile.
    */
   public final static int DEFAULT_BLOCKSIZE = 64 * 1024;
+
+  /** Used as a magic return value while optimized index key feature enabled(HBASE-7845) */
+  public final static int INDEX_KEY_MAGIC = -2;
   /*
      * Name of directory that holds recovered edits written by the wal log
      * splitting code, one per region
@@ -377,6 +380,12 @@ public final class HConstants {
 
   /** The upper-half split region column qualifier */
   public static final byte [] SPLITB_QUALIFIER = Bytes.toBytes("splitB");
+
+  /** The lower-half merge region column qualifier */
+  public static final byte[] MERGEA_QUALIFIER = Bytes.toBytes("mergeA");
+
+  /** The upper-half merge region column qualifier */
+  public static final byte[] MERGEB_QUALIFIER = Bytes.toBytes("mergeB");
 
   /**
    * The meta table version column qualifier.
