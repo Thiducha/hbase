@@ -72,6 +72,7 @@ import org.apache.hadoop.hbase.client.coprocessor.Batch;
 import org.apache.hadoop.hbase.exceptions.DoNotRetryIOException;
 import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
 import org.apache.hadoop.hbase.exceptions.RegionMovedException;
+import org.apache.hadoop.hbase.exceptions.RegionOpeningException;
 import org.apache.hadoop.hbase.exceptions.RegionServerStoppedException;
 import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
 import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
@@ -86,11 +87,11 @@ import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDe
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.util.Addressing;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.SoftValueSortedMap;
 import org.apache.hadoop.hbase.util.Triple;
 import org.apache.hadoop.hbase.zookeeper.*;
-import org.apache.hadoop.hbase.zookeeper.MetaRegionTracker;
 import org.apache.hadoop.ipc.RemoteException;
 import org.apache.zookeeper.KeeperException;
 
@@ -523,7 +524,6 @@ public class HConnectionManager {
     // package protected for the tests
     ClusterStatusListener clusterStatusListener;
 
-    private final Object metaRegionLock = new Object();
     private final Object userRegionLock = new Object();
 
     // We have a single lock for master & zk to prevent deadlocks. Having
@@ -645,7 +645,7 @@ public class HConnectionManager {
      * @return
      */
     public String toString(){
-      return "hconnection 0x" + Integer.toHexString( hashCode() );
+      return "hconnection-0x" + Integer.toHexString(hashCode());
     }
 
     private String clusterId = null;
@@ -882,7 +882,7 @@ public class HConnectionManager {
       MetaScanner.metaScan(conf, visitor, tableName);
       return available.get() && (regionCount.get() > 0);
     }
-    
+
     @Override
     public boolean isTableAvailable(final byte[] tableName, final byte[][] splitKeys)
         throws IOException {
@@ -1011,13 +1011,16 @@ public class HConnectionManager {
       if (Bytes.equals(tableName, HConstants.META_TABLE_NAME)) {
         ZooKeeperKeepAliveConnection zkw = getKeepAliveZooKeeperWatcher();
         try {
-          LOG.debug("Looking up meta region location in ZK," +
-            " connection=" + this);
+          if (LOG.isTraceEnabled()) {
+            LOG.trace("Looking up meta region location in ZK," + " connection=" + this);
+          }
           ServerName servername =
             MetaRegionTracker.blockUntilAvailable(zkw, this.rpcTimeout);
 
-          LOG.debug("Looked up meta region location, connection=" + this +
-            "; serverName=" + ((servername == null) ? "null" : servername));
+          if (LOG.isTraceEnabled()) {
+            LOG.debug("Looked up meta region location, connection=" + this +
+              "; serverName=" + ((servername == null) ? "null" : servername));
+          }
           if (servername == null) return null;
           return new HRegionLocation(HRegionInfo.FIRST_META_REGIONINFO, servername, 0);
         } catch (InterruptedException e) {
@@ -1064,8 +1067,8 @@ public class HConnectionManager {
               return true; // don't cache it
             }
             // instantiate the location
-            HRegionLocation loc = new HRegionLocation(regionInfo, serverName,
-                HRegionInfo.getSeqNumDuringOpen(result));
+            long seqNum = HRegionInfo.getSeqNumDuringOpen(result);
+            HRegionLocation loc = new HRegionLocation(regionInfo, serverName, seqNum);
             // cache this meta entry
             cacheLocation(tableName, null, loc);
             return true;
@@ -1195,7 +1198,7 @@ public class HConnectionManager {
 
           // Instantiate the location
           location = new HRegionLocation(regionInfo, serverName,
-              HRegionInfo.getSeqNumDuringOpen(regionInfoRow));
+            HRegionInfo.getSeqNumDuringOpen(regionInfoRow));
           cacheLocation(tableName, null, location);
           return location;
         } catch (TableNotFoundException e) {
@@ -1291,8 +1294,7 @@ public class HConnectionManager {
     void forceDeleteCachedLocation(final byte [] tableName, final byte [] row) {
       HRegionLocation rl = null;
       synchronized (this.cachedRegionLocations) {
-        Map<byte[], HRegionLocation> tableLocations =
-            getTableLocations(tableName);
+        Map<byte[], HRegionLocation> tableLocations = getTableLocations(tableName);
         // start to examine the cache. we can only do cache actions
         // if there's something in the cache for this table.
         if (!tableLocations.isEmpty()) {
@@ -1821,26 +1823,17 @@ public class HConnectionManager {
     }
 
     @Deprecated
-    private <R> Callable<MultiResponse> createCallable(
-      final HRegionLocation loc, final MultiAction<R> multi,
-      final byte [] tableName) {
-      // TODO: This does not belong in here!!! St.Ack  HConnections should
+    private <R> Callable<MultiResponse> createCallable(final HRegionLocation loc,
+        final MultiAction<R> multi, final byte[] tableName) {
+      // TODO: This does not belong in here!!! St.Ack HConnections should
       // not be dealing in Callables; Callables have HConnections, not other
       // way around.
       final HConnection connection = this;
       return new Callable<MultiResponse>() {
-        public MultiResponse call() throws IOException {
+        @Override
+        public MultiResponse call() throws Exception {
           ServerCallable<MultiResponse> callable =
-            new ServerCallable<MultiResponse>(connection, tableName, null) {
-              public MultiResponse call() throws IOException {
-                return ProtobufUtil.multi(server, multi);
-              }
-
-              @Override
-              public void connect(boolean reload) throws IOException {
-                server = connection.getClient(loc.getServerName());
-              }
-            };
+            new MultiServerCallable<R>(connection, tableName, loc, multi);
           return callable.withoutRetries();
         }
       };
@@ -1861,7 +1854,7 @@ public class HConnectionManager {
     */
     void deleteCachedLocation(HRegionInfo hri, HRegionLocation source) {
       boolean isStaleDelete = false;
-      HRegionLocation oldLocation;
+      HRegionLocation oldLocation = null;
       synchronized (this.cachedRegionLocations) {
         Map<byte[], HRegionLocation> tableLocations =
           getTableLocations(hri.getTableName());
@@ -1910,6 +1903,9 @@ public class HConnectionManager {
           rme.getHostname() + ":" + rme.getPort() + " according to " + source.getHostnamePort());
         updateCachedLocation(
             regionInfo, source, rme.getServerName(), rme.getLocationSeqNum());
+      } else if (RegionOpeningException.find(exception) != null) {
+        LOG.info("Region " + regionInfo.getRegionNameAsString() + " is being opened on "
+          + source.getHostnamePort() + "; not deleting the cache entry");
       } else {
         deleteCachedLocation(regionInfo, source);
       }
@@ -2162,8 +2158,7 @@ public class HConnectionManager {
                 } else // success
                   if (callback != null) {
                     this.callback.update(resultsForRS.getKey(),
-                      this.rows.get(regionResult.getFirst()).getRow(),
-                      (R) result);
+                      this.rows.get(regionResult.getFirst()).getRow(), (R) result);
                 }
               }
             }
@@ -2172,13 +2167,11 @@ public class HConnectionManager {
           // Retry all actions in toReplay then clear it.
           if (!noRetry && !toReplay.isEmpty()) {
             if (isTraceEnabled) {
-              LOG.trace("Retrying due to errors: " + retriedErrors.getDescriptionAndClear());
+              LOG.trace("Retrying due to errors" + (lastRetry ? " (one last time)" : "")
+                   + ": " + retriedErrors.getDescriptionAndClear());
             }
             doRetry();
             if (lastRetry) {
-              if (isTraceEnabled) {
-                LOG.trace("No more retries");
-              }
               noRetry = true;
             }
           }
@@ -2210,7 +2203,7 @@ public class HConnectionManager {
           if (exceptions.isEmpty()) {
             return "";
           }
-          String result = makeException().getMessage();
+          String result = makeException().getExhaustiveDescription();
           exceptions.clear();
           actions.clear();
           addresses.clear();
@@ -2221,8 +2214,6 @@ public class HConnectionManager {
           return new RetriesExhaustedWithDetailsException(exceptions, actions, addresses);
         }
       }
-
-
 
       /**
        * Put the action that has to be retried in the Replay list.
@@ -2304,9 +2295,7 @@ public class HConnectionManager {
     int getNumberOfCachedRegionLocations(final byte[] tableName) {
       Integer key = Bytes.mapKey(tableName);
       synchronized (this.cachedRegionLocations) {
-        Map<byte[], HRegionLocation> tableLocs =
-          this.cachedRegionLocations.get(key);
-
+        Map<byte[], HRegionLocation> tableLocs = this.cachedRegionLocations.get(key);
         if (tableLocs == null) {
           return 0;
         }

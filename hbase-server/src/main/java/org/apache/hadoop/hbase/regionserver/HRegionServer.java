@@ -25,7 +25,6 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryUsage;
 import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
 import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -56,31 +55,21 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.CellScannable;
+import org.apache.hadoop.hbase.CellScanner;
+import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.Chore;
-import org.apache.hadoop.hbase.exceptions.ClockOutOfSyncException;
-import org.apache.hadoop.hbase.exceptions.DoNotRetryIOException;
-import org.apache.hadoop.hbase.exceptions.FailedSanityCheckException;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.HealthCheckChore;
 import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.exceptions.LeaseException;
-import org.apache.hadoop.hbase.exceptions.NoSuchColumnFamilyException;
-import org.apache.hadoop.hbase.exceptions.NotServingRegionException;
-import org.apache.hadoop.hbase.exceptions.OutOfOrderScannerNextException;
-import org.apache.hadoop.hbase.exceptions.RegionAlreadyInTransitionException;
-import org.apache.hadoop.hbase.exceptions.RegionMovedException;
 import org.apache.hadoop.hbase.RegionServerStatusProtocol;
 import org.apache.hadoop.hbase.RemoteExceptionHandler;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.Stoppable;
 import org.apache.hadoop.hbase.TableDescriptors;
-import org.apache.hadoop.hbase.exceptions.RegionServerRunningException;
-import org.apache.hadoop.hbase.exceptions.RegionServerStoppedException;
-import org.apache.hadoop.hbase.exceptions.UnknownScannerException;
-import org.apache.hadoop.hbase.exceptions.YouAreDeadException;
 import org.apache.hadoop.hbase.ZNodeClearer;
 import org.apache.hadoop.hbase.catalog.CatalogTracker;
 import org.apache.hadoop.hbase.catalog.MetaEditor;
@@ -98,6 +87,21 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.RowMutations;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.coprocessor.CoprocessorHost;
+import org.apache.hadoop.hbase.exceptions.ClockOutOfSyncException;
+import org.apache.hadoop.hbase.exceptions.DoNotRetryIOException;
+import org.apache.hadoop.hbase.exceptions.FailedSanityCheckException;
+import org.apache.hadoop.hbase.exceptions.LeaseException;
+import org.apache.hadoop.hbase.exceptions.NoSuchColumnFamilyException;
+import org.apache.hadoop.hbase.exceptions.NotServingRegionException;
+import org.apache.hadoop.hbase.exceptions.OutOfOrderScannerNextException;
+import org.apache.hadoop.hbase.exceptions.RegionAlreadyInTransitionException;
+import org.apache.hadoop.hbase.exceptions.RegionMovedException;
+import org.apache.hadoop.hbase.exceptions.RegionOpeningException;
+import org.apache.hadoop.hbase.exceptions.RegionServerRunningException;
+import org.apache.hadoop.hbase.exceptions.RegionServerStoppedException;
+import org.apache.hadoop.hbase.exceptions.ServerNotRunningYetException;
+import org.apache.hadoop.hbase.exceptions.UnknownScannerException;
+import org.apache.hadoop.hbase.exceptions.YouAreDeadException;
 import org.apache.hadoop.hbase.executor.ExecutorService;
 import org.apache.hadoop.hbase.executor.ExecutorType;
 import org.apache.hadoop.hbase.filter.ByteArrayComparable;
@@ -107,11 +111,12 @@ import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.ipc.HBaseClientRPC;
 import org.apache.hadoop.hbase.ipc.HBaseRPCErrorHandler;
 import org.apache.hadoop.hbase.ipc.HBaseServerRPC;
+import org.apache.hadoop.hbase.ipc.PayloadCarryingRpcController;
 import org.apache.hadoop.hbase.ipc.ProtobufRpcClientEngine;
 import org.apache.hadoop.hbase.ipc.RpcClientEngine;
 import org.apache.hadoop.hbase.ipc.RpcServer;
-import org.apache.hadoop.hbase.exceptions.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.ipc.ServerRpcController;
+import org.apache.hadoop.hbase.master.TableLockManager;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.ReplicationProtbufUtil;
 import org.apache.hadoop.hbase.protobuf.RequestConverter;
@@ -130,6 +135,8 @@ import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoReque
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoResponse;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetStoreFileRequest;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetStoreFileResponse;
+import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.MergeRegionsRequest;
+import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.MergeRegionsResponse;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.OpenRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.OpenRegionRequest.RegionOpenInfo;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.OpenRegionResponse;
@@ -156,10 +163,10 @@ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiGetRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiGetResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate.MutateType;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutateRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutateResponse;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutationProto;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutationProto.MutationType;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ScanRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ScanResponse;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos;
@@ -168,7 +175,6 @@ import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.NameStringPair;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionLoad;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionSpecifier;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionSpecifier.RegionSpecifierType;
-import org.apache.hadoop.hbase.protobuf.generated.RPCProtos.RpcRequestBody;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.GetLastFlushedSequenceIdRequest;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerReportRequest;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupRequest;
@@ -199,11 +205,11 @@ import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.util.VersionInfo;
 import org.apache.hadoop.hbase.zookeeper.ClusterStatusTracker;
 import org.apache.hadoop.hbase.zookeeper.MasterAddressTracker;
+import org.apache.hadoop.hbase.zookeeper.MetaRegionTracker;
 import org.apache.hadoop.hbase.zookeeper.ZKClusterId;
 import org.apache.hadoop.hbase.zookeeper.ZKUtil;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperNodeTracker;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
-import org.apache.hadoop.hbase.zookeeper.MetaRegionTracker;
 import org.apache.hadoop.ipc.RemoteException;
 import org.apache.hadoop.metrics.util.MBeanUtil;
 import org.apache.hadoop.net.DNS;
@@ -212,11 +218,11 @@ import org.apache.hadoop.util.StringUtils;
 import org.apache.zookeeper.KeeperException;
 import org.cliffc.high_scale_lib.Counter;
 
-import com.google.common.base.Function;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
+import com.google.protobuf.TextFormat;
 
 /**
  * HRegionServer makes a set of HRegions available to clients. It checks in with
@@ -435,6 +441,9 @@ public class HRegionServer implements ClientProtocol,
   /** Handle all the snapshot requests to this server */
   RegionServerSnapshotManager snapshotManager;
 
+  // Table level lock manager for locking for region operations
+  private TableLockManager tableLockManager;
+
   /**
    * Starts a HRegionServer at the default location
    *
@@ -458,8 +467,7 @@ public class HRegionServer implements ClientProtocol,
 
     // Config'ed params
     this.numRetries = conf.getInt("hbase.client.retries.number", 10);
-    this.threadWakeFrequency = conf.getInt(HConstants.THREAD_WAKE_FREQUENCY,
-      10 * 1000);
+    this.threadWakeFrequency = conf.getInt(HConstants.THREAD_WAKE_FREQUENCY, 10 * 1000);
     this.msgInterval = conf.getInt("hbase.regionserver.msginterval", 3 * 1000);
 
     this.sleeper = new Sleeper(this.msgInterval, this);
@@ -482,9 +490,10 @@ public class HRegionServer implements ClientProtocol,
       HConstants.DEFAULT_HBASE_CLIENT_SCANNER_TIMEOUT_PERIOD);
 
     // Server to handle client requests.
-    String hostname = Strings.domainNamePointerToHostName(DNS.getDefaultHost(
-      conf.get("hbase.regionserver.dns.interface", "default"),
-      conf.get("hbase.regionserver.dns.nameserver", "default")));
+    String hostname = conf.get("hbase.regionserver.ipc.address",
+      Strings.domainNamePointerToHostName(DNS.getDefaultHost(
+        conf.get("hbase.regionserver.dns.interface", "default"),
+        conf.get("hbase.regionserver.dns.nameserver", "default"))));
     int port = conf.getInt(HConstants.REGIONSERVER_PORT,
       HConstants.DEFAULT_REGIONSERVER_PORT);
     // Creation of a HSA will force a resolve.
@@ -507,7 +516,7 @@ public class HRegionServer implements ClientProtocol,
     this.isa = this.rpcServer.getListenerAddress();
 
     this.rpcServer.setErrorHandler(this);
-    this.rpcServer.setQosFunction((qosFunction = new QosFunction()));
+    this.rpcServer.setQosFunction((qosFunction = new QosFunction(this)));
     this.startcode = System.currentTimeMillis();
 
     // login the zookeeper client principal (if using security)
@@ -564,152 +573,6 @@ public class HRegionServer implements ClientProtocol,
       return scannerHolder.s;
     }
     return null;
-  }
-
-  /**
-   * Utility used ensuring higher quality of service for priority rpcs; e.g.
-   * rpcs to .META., etc.
-   */
-  class QosFunction implements Function<RpcRequestBody,Integer> {
-    private final Map<String, Integer> annotatedQos;
-    //We need to mock the regionserver instance for some unit tests (set via
-    //setRegionServer method.
-    //The field value is initially set to the enclosing instance of HRegionServer.
-    private HRegionServer hRegionServer = HRegionServer.this;
-
-    //The logic for figuring out high priority RPCs is as follows:
-    //1. if the method is annotated with a QosPriority of QOS_HIGH,
-    //   that is honored
-    //2. parse out the protobuf message and see if the request is for meta
-    //   region, and if so, treat it as a high priority RPC
-    //Some optimizations for (2) are done here -
-    //Clients send the argument classname as part of making the RPC. The server
-    //decides whether to deserialize the proto argument message based on the
-    //pre-established set of argument classes (knownArgumentClasses below).
-    //This prevents the server from having to deserialize all proto argument
-    //messages prematurely.
-    //All the argument classes declare a 'getRegion' method that returns a
-    //RegionSpecifier object. Methods can be invoked on the returned object
-    //to figure out whether it is a meta region or not.
-    @SuppressWarnings("unchecked")
-    private final Class<? extends Message>[] knownArgumentClasses = new Class[]{
-        GetRegionInfoRequest.class,
-        GetStoreFileRequest.class,
-        CloseRegionRequest.class,
-        FlushRegionRequest.class,
-        SplitRegionRequest.class,
-        CompactRegionRequest.class,
-        GetRequest.class,
-        MutateRequest.class,
-        ScanRequest.class,
-        MultiRequest.class
-    };
-
-    //Some caches for helping performance
-    private final Map<String, Class<? extends Message>> argumentToClassMap =
-        new HashMap<String, Class<? extends Message>>();
-    private final Map<String, Map<Class<? extends Message>, Method>>
-      methodMap = new HashMap<String, Map<Class<? extends Message>, Method>>();
-
-    public QosFunction() {
-      Map<String, Integer> qosMap = new HashMap<String, Integer>();
-      for (Method m : HRegionServer.class.getMethods()) {
-        QosPriority p = m.getAnnotation(QosPriority.class);
-        if (p != null) {
-          qosMap.put(m.getName(), p.priority());
-        }
-      }
-
-      annotatedQos = qosMap;
-      if (methodMap.get("parseFrom") == null) {
-        methodMap.put("parseFrom",
-            new HashMap<Class<? extends Message>, Method>());
-      }
-      if (methodMap.get("getRegion") == null) {
-        methodMap.put("getRegion",
-            new HashMap<Class<? extends Message>, Method>());
-      }
-      for (Class<? extends Message> cls : knownArgumentClasses) {
-        argumentToClassMap.put(cls.getCanonicalName(), cls);
-        try {
-          methodMap.get("parseFrom").put(cls,
-                          cls.getDeclaredMethod("parseFrom",ByteString.class));
-          methodMap.get("getRegion").put(cls, cls.getDeclaredMethod("getRegion"));
-        } catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }
-    }
-
-    void setRegionServer(HRegionServer server) {
-      this.hRegionServer = server;
-    }
-
-    public boolean isMetaRegion(byte[] regionName) {
-      HRegion region;
-      try {
-        region = hRegionServer.getRegion(regionName);
-      } catch (NotServingRegionException ignored) {
-        return false;
-      }
-      return region.getRegionInfo().isMetaRegion();
-    }
-
-    @Override
-    public Integer apply(RpcRequestBody from) {
-      String methodName = from.getMethodName();
-      Class<? extends Message> rpcArgClass = null;
-      if (from.hasRequestClassName()) {
-        String cls = from.getRequestClassName();
-        rpcArgClass = argumentToClassMap.get(cls);
-      }
-
-      Integer priorityByAnnotation = annotatedQos.get(methodName);
-      if (priorityByAnnotation != null) {
-        return priorityByAnnotation;
-      }
-
-      if (rpcArgClass == null || from.getRequest().isEmpty()) {
-        return HConstants.NORMAL_QOS;
-      }
-      Object deserializedRequestObj;
-      //check whether the request has reference to Meta region
-      try {
-        Method parseFrom = methodMap.get("parseFrom").get(rpcArgClass);
-        deserializedRequestObj = parseFrom.invoke(null, from.getRequest());
-        Method getRegion = methodMap.get("getRegion").get(rpcArgClass);
-        RegionSpecifier regionSpecifier =
-            (RegionSpecifier)getRegion.invoke(deserializedRequestObj,
-                (Object[])null);
-        HRegion region = hRegionServer.getRegion(regionSpecifier);
-        if (region.getRegionInfo().isMetaTable()) {
-          if (LOG.isDebugEnabled()) {
-            LOG.debug("High priority: " + from.toString());
-          }
-          return HConstants.HIGH_QOS;
-        }
-      } catch (Exception ex) {
-        throw new RuntimeException(ex);
-      }
-
-      if (methodName.equals("scan")) { // scanner methods...
-        ScanRequest request = (ScanRequest)deserializedRequestObj;
-        if (!request.hasScannerId()) {
-          return HConstants.NORMAL_QOS;
-        }
-        RegionScanner scanner = hRegionServer.getScanner(request.getScannerId());
-        if (scanner != null && scanner.getRegionInfo().isMetaTable()) {
-          if (LOG.isDebugEnabled()) {
-            LOG.debug("High priority scanner request: " + request.getScannerId());
-          }
-          return HConstants.HIGH_QOS;
-        }
-      }
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Low priority: " + from.toString());
-      }
-      return HConstants.NORMAL_QOS;
-    }
   }
 
   /**
@@ -779,6 +642,8 @@ public class HRegionServer implements ClientProtocol,
     } catch (KeeperException e) {
       this.abort("Failed to reach zk cluster when creating snapshot handler.");
     }
+    this.tableLockManager = TableLockManager.createTableLockManager(conf, zooKeeper,
+        new ServerName(isa.getHostName(), isa.getPort(), startcode));
   }
 
   /**
@@ -1275,6 +1140,11 @@ public class HRegionServer implements ClientProtocol,
     return regionServerAccounting;
   }
 
+  @Override
+  public TableLockManager getTableLockManager() {
+    return tableLockManager;
+  }
+
   /*
    * @param r Region to get RegionLoad for.
    *
@@ -1448,8 +1318,8 @@ public class HRegionServer implements ClientProtocol,
       Path logdir = new Path(rootDir, logName);
       if (LOG.isDebugEnabled()) LOG.debug("logdir=" + logdir);
 
-      this.hlogForMeta = HLogFactory.createMetaHLog(this.fs.getBackingFs(), 
-          rootDir, logName, this.conf, getMetaWALActionListeners(), 
+      this.hlogForMeta = HLogFactory.createMetaHLog(this.fs.getBackingFs(),
+          rootDir, logName, this.conf, getMetaWALActionListeners(),
           this.serverNameFromMasterPOV.toString());
     }
     return this.hlogForMeta;
@@ -1551,7 +1421,7 @@ public class HRegionServer implements ClientProtocol,
       ".compactionChecker", uncaughtExceptionHandler);
     if (this.healthCheckChore != null) {
     Threads
-        .setDaemonThreadRunning(this.healthCheckChore.getThread(), n + ".healthChecker", 
+        .setDaemonThreadRunning(this.healthCheckChore.getThread(), n + ".healthChecker",
             uncaughtExceptionHandler);
     }
 
@@ -1645,17 +1515,17 @@ public class HRegionServer implements ClientProtocol,
       return getWAL(null);
     } catch (IOException e) {
       LOG.warn("getWAL threw exception " + e);
-      return null; 
+      return null;
     }
   }
 
   @Override
   public HLog getWAL(HRegionInfo regionInfo) throws IOException {
     //TODO: at some point this should delegate to the HLogFactory
-    //currently, we don't care about the region as much as we care about the 
+    //currently, we don't care about the region as much as we care about the
     //table.. (hence checking the tablename below)
-    //_ROOT_ and .META. regions have separate WAL. 
-    if (regionInfo != null && 
+    //_ROOT_ and .META. regions have separate WAL.
+    if (regionInfo != null &&
         regionInfo.isMetaTable()) {
       return getMetaWAL();
     }
@@ -1749,15 +1619,15 @@ public class HRegionServer implements ClientProtocol,
       if (cause != null) {
         msg += "\nCause:\n" + StringUtils.stringifyException(cause);
       }
-      if (hbaseMaster != null) {
+      // Report to the master but only if we have already registered with the master.
+      if (hbaseMaster != null && this.serverNameFromMasterPOV != null) {
         ReportRSFatalErrorRequest.Builder builder =
           ReportRSFatalErrorRequest.newBuilder();
         ServerName sn =
           ServerName.parseVersionedServerName(this.serverNameFromMasterPOV.getVersionedBytes());
         builder.setServer(ProtobufUtil.toServerName(sn));
         builder.setErrorMessage(msg);
-        hbaseMaster.reportRSFatalError(
-          null,builder.build());
+        hbaseMaster.reportRSFatalError(null, builder.build());
       }
     } catch (Throwable t) {
       LOG.warn("Unable to report fatal error to master", t);
@@ -2543,9 +2413,12 @@ public class HRegionServer implements ClientProtocol,
       MovedRegionInfo moveInfo = getMovedRegion(encodedRegionName);
       if (moveInfo != null) {
         throw new RegionMovedException(moveInfo.getServerName(), moveInfo.getSeqNum());
-      } else {
-        throw new NotServingRegionException("Region is not online: " + encodedRegionName);
       }
+      Boolean isOpening = this.regionsInTransitionInRS.get(Bytes.toBytes(encodedRegionName));
+      if (isOpening != null && isOpening.booleanValue()) {
+        throw new RegionOpeningException("Region is being opened: " + encodedRegionName);
+      }
+      throw new NotServingRegionException("Region is not online: " + encodedRegionName);
     }
     return region;
   }
@@ -2805,33 +2678,39 @@ public class HRegionServer implements ClientProtocol,
   /**
    * Mutate data in a table.
    *
-   * @param controller the RPC controller
+   * @param rpcc the RPC controller
    * @param request the mutate request
    * @throws ServiceException
    */
   @Override
-  public MutateResponse mutate(final RpcController controller,
+  public MutateResponse mutate(final RpcController rpcc,
       final MutateRequest request) throws ServiceException {
+    // rpc controller is how we bring in data via the back door;  it is unprotobuf'ed data.
+    // It is also the conduit via which we pass back data.
+    PayloadCarryingRpcController controller = (PayloadCarryingRpcController)rpcc;
+    CellScanner cellScanner = controller != null? controller.cellScanner(): null;
+    // Clear scanner so we are not holding on to reference across call.
+    controller.setCellScanner(null);
     try {
       requestCount.increment();
       HRegion region = getRegion(request.getRegion());
       MutateResponse.Builder builder = MutateResponse.newBuilder();
-      Mutate mutate = request.getMutate();
+      MutationProto mutation = request.getMutation();
       if (!region.getRegionInfo().isMetaTable()) {
         cacheFlusher.reclaimMemStoreMemory();
       }
       Result r = null;
       Boolean processed = null;
-      MutateType type = mutate.getMutateType();
+      MutationType type = mutation.getMutateType();
       switch (type) {
       case APPEND:
-        r = append(region, mutate);
+        r = append(region, mutation, cellScanner);
         break;
       case INCREMENT:
-        r = increment(region, mutate);
+        r = increment(region, mutation, cellScanner);
         break;
       case PUT:
-        Put put = ProtobufUtil.toPut(mutate);
+        Put put = ProtobufUtil.toPut(mutation, cellScanner);
         if (request.hasCondition()) {
           Condition condition = request.getCondition();
           byte[] row = condition.getRow().toByteArray();
@@ -2859,7 +2738,7 @@ public class HRegionServer implements ClientProtocol,
         }
         break;
       case DELETE:
-        Delete delete = ProtobufUtil.toDelete(mutate);
+        Delete delete = ProtobufUtil.toDelete(mutation, cellScanner);
         if (request.hasCondition()) {
           Condition condition = request.getCondition();
           byte[] row = condition.getRow().toByteArray();
@@ -2890,10 +2769,15 @@ public class HRegionServer implements ClientProtocol,
           throw new DoNotRetryIOException(
             "Unsupported mutate type: " + type.name());
       }
+      CellScannable cellsToReturn = null;
       if (processed != null) {
         builder.setProcessed(processed.booleanValue());
       } else if (r != null) {
-        builder.setResult(ProtobufUtil.toResult(r));
+        builder.setResult(ProtobufUtil.toResultNoData(r));
+        cellsToReturn = r;
+      }
+      if (cellsToReturn != null) {
+        controller.setCellScanner(cellsToReturn.cellScanner());
       }
       return builder.build();
     } catch (IOException ie) {
@@ -3006,7 +2890,8 @@ public class HRegionServer implements ClientProtocol,
             if (rsh != null) {
               if (request.getNextCallSeq() != rsh.nextCallSeq) {
                 throw new OutOfOrderScannerNextException("Expected nextCallSeq: " + rsh.nextCallSeq
-                    + " But the nextCallSeq got from client: " + request.getNextCallSeq());
+                  + " But the nextCallSeq got from client: " + request.getNextCallSeq() +
+                  "; request=" + TextFormat.shortDebugString(request));
               }
               // Increment the nextCallSeq value which is the next expected from client.
               rsh.nextCallSeq++;
@@ -3208,47 +3093,61 @@ public class HRegionServer implements ClientProtocol,
   /**
    * Execute multiple actions on a table: get, mutate, and/or execCoprocessor
    *
-   * @param controller the RPC controller
+   * @param rpcc the RPC controller
    * @param request the multi request
    * @throws ServiceException
    */
   @Override
-  public MultiResponse multi(final RpcController controller,
-      final MultiRequest request) throws ServiceException {
+  public MultiResponse multi(final RpcController rpcc, final MultiRequest request)
+  throws ServiceException {
+    // rpc controller is how we bring in data via the back door;  it is unprotobuf'ed data.
+    // It is also the conduit via which we pass back data.
+    PayloadCarryingRpcController controller = (PayloadCarryingRpcController)rpcc;
+    CellScanner cellScanner = controller != null? controller.cellScanner(): null;
+    // Clear scanner so we are not holding on to reference across call.
+    controller.setCellScanner(null);
+    List<CellScannable> cellsToReturn = null;
     try {
       HRegion region = getRegion(request.getRegion());
       MultiResponse.Builder builder = MultiResponse.newBuilder();
+      List<MutationProto> mutations = new ArrayList<MutationProto>(request.getActionCount());
+      // Do a bunch of mutations atomically.  Mutations are Puts and Deletes.  NOT Gets.
       if (request.hasAtomic() && request.getAtomic()) {
-        List<Mutate> mutates = new ArrayList<Mutate>();
+        // MultiAction is union type.  Has a Get or a Mutate.
         for (ClientProtos.MultiAction actionUnion : request.getActionList()) {
-          if (actionUnion.hasMutate()) {
-            mutates.add(actionUnion.getMutate());
+          if (actionUnion.hasMutation()) {
+            mutations.add(actionUnion.getMutation());
           } else {
-            throw new DoNotRetryIOException(
-              "Unsupported atomic action type: " + actionUnion);
+            throw new DoNotRetryIOException("Unsupported atomic action type: " + actionUnion);
           }
         }
-        mutateRows(region, mutates);
+        // TODO: We are not updating a metric here.  Should we up requestCount?
+        if (!mutations.isEmpty()) mutateRows(region, mutations, cellScanner);
       } else {
+        // Do a bunch of Actions.
         ActionResult.Builder resultBuilder = null;
-        List<Mutate> mutates = new ArrayList<Mutate>();
+        cellsToReturn = new ArrayList<CellScannable>(request.getActionCount());
         for (ClientProtos.MultiAction actionUnion : request.getActionList()) {
-          requestCount.increment();
+          this.requestCount.increment();
+          ClientProtos.Result result = null;
           try {
-            ClientProtos.Result result = null;
             if (actionUnion.hasGet()) {
               Get get = ProtobufUtil.toGet(actionUnion.getGet());
               Result r = region.get(get);
               if (r != null) {
-                result = ProtobufUtil.toResult(r);
+                // Get a result with no data.  The data will be carried alongside pbs, not as pbs.
+                result = ProtobufUtil.toResultNoData(r);
+                // Add the Result to controller so it gets serialized apart from pb.  Get
+                // Results could be big so good if they are not serialized as pb.
+                cellsToReturn.add(r);
               }
-            } else if (actionUnion.hasMutate()) {
-              Mutate mutate = actionUnion.getMutate();
-              MutateType type = mutate.getMutateType();
-              if (type != MutateType.PUT && type != MutateType.DELETE) {
-                if (!mutates.isEmpty()) {
-                  doBatchOp(builder, region, mutates);
-                  mutates.clear();
+            } else if (actionUnion.hasMutation()) {
+              MutationProto mutation = actionUnion.getMutation();
+              MutationType type = mutation.getMutateType();
+              if (type != MutationType.PUT && type != MutationType.DELETE) {
+                if (!mutations.isEmpty()) {
+                  doBatchOp(builder, region, mutations, cellScanner);
+                  mutations.clear();
                 } else if (!region.getRegionInfo().isMetaTable()) {
                   cacheFlusher.reclaimMemStoreMemory();
                 }
@@ -3256,22 +3155,23 @@ public class HRegionServer implements ClientProtocol,
               Result r = null;
               switch (type) {
               case APPEND:
-                r = append(region, mutate);
+                r = append(region, mutation, cellScanner);
                 break;
               case INCREMENT:
-                r = increment(region, mutate);
+                r = increment(region, mutation, cellScanner);
                 break;
               case PUT:
-                mutates.add(mutate);
-                break;
               case DELETE:
-                mutates.add(mutate);
+                mutations.add(mutation);
                 break;
               default:
                 throw new DoNotRetryIOException("Unsupported mutate type: " + type.name());
               }
               if (r != null) {
-                result = ProtobufUtil.toResult(r);
+                // Put the data into the cellsToReturn and the metadata about the result is all that
+                // we will pass back in the protobuf result.
+                result = ProtobufUtil.toResultNoData(r);
+                cellsToReturn.add(r);
               }
             } else {
               LOG.warn("Error: invalid action: " + actionUnion + ". "
@@ -3292,9 +3192,13 @@ public class HRegionServer implements ClientProtocol,
             builder.addResult(ResponseConverter.buildActionResult(ie));
           }
         }
-        if (!mutates.isEmpty()) {
-          doBatchOp(builder, region, mutates);
+        if (!mutations.isEmpty()) {
+          doBatchOp(builder, region, mutations, cellScanner);
         }
+      }
+      // Load the controller with the Cells to return.
+      if (cellsToReturn != null && !cellsToReturn.isEmpty()) {
+        controller.setCellScanner(CellUtil.createCellScanner(cellsToReturn));
       }
       return builder.build();
     } catch (IOException ie) {
@@ -3601,6 +3505,35 @@ public class HRegionServer implements ClientProtocol,
   }
 
   /**
+   * Merge regions on the region server.
+   *
+   * @param controller the RPC controller
+   * @param request the request
+   * @return merge regions response
+   * @throws ServiceException
+   */
+  @Override
+  @QosPriority(priority = HConstants.HIGH_QOS)
+  public MergeRegionsResponse mergeRegions(final RpcController controller,
+      final MergeRegionsRequest request) throws ServiceException {
+    try {
+      checkOpen();
+      requestCount.increment();
+      HRegion regionA = getRegion(request.getRegionA());
+      HRegion regionB = getRegion(request.getRegionB());
+      boolean forcible = request.getForcible();
+      LOG.info("Receiving merging request for  " + regionA + ", " + regionB
+          + ",forcible=" + forcible);
+      regionA.flushcache();
+      regionB.flushcache();
+      compactSplitThread.requestRegionsMerge(regionA, regionB, forcible);
+      return MergeRegionsResponse.newBuilder().build();
+    } catch (IOException ie) {
+      throw new ServiceException(ie);
+    }
+  }
+
+  /**
    * Compact a region on the region server.
    *
    * @param controller the RPC controller
@@ -3758,15 +3691,16 @@ public class HRegionServer implements ClientProtocol,
    * Execute an append mutation.
    *
    * @param region
-   * @param mutate
+   * @param m
+   * @param cellScanner
    * @return result to return to client if default operation should be
    * bypassed as indicated by RegionObserver, null otherwise
    * @throws IOException
    */
   protected Result append(final HRegion region,
-      final Mutate mutate) throws IOException {
+      final MutationProto m, final CellScanner cellScanner) throws IOException {
     long before = EnvironmentEdgeManager.currentTimeMillis();
-    Append append = ProtobufUtil.toAppend(mutate);
+    Append append = ProtobufUtil.toAppend(m, cellScanner);
     Result r = null;
     if (region.getCoprocessorHost() != null) {
       r = region.getCoprocessorHost().preAppend(append);
@@ -3785,14 +3719,15 @@ public class HRegionServer implements ClientProtocol,
    * Execute an increment mutation.
    *
    * @param region
-   * @param mutate
+   * @param mutation
    * @return the Result
    * @throws IOException
    */
-  protected Result increment(final HRegion region,
-      final Mutate mutate) throws IOException {
+  protected Result increment(final HRegion region, final MutationProto mutation,
+      final CellScanner cells)
+  throws IOException {
     long before = EnvironmentEdgeManager.currentTimeMillis();
-    Increment increment = ProtobufUtil.toIncrement(mutate);
+    Increment increment = ProtobufUtil.toIncrement(mutation, cells);
     Result r = null;
     if (region.getCoprocessorHost() != null) {
       r = region.getCoprocessorHost().preIncrement(increment);
@@ -3812,12 +3747,12 @@ public class HRegionServer implements ClientProtocol,
    *
    * @param builder
    * @param region
-   * @param mutates
+   * @param mutations
    */
-  protected void doBatchOp(final MultiResponse.Builder builder,
-      final HRegion region, final List<Mutate> mutates) {
+  protected void doBatchOp(final MultiResponse.Builder builder, final HRegion region,
+      final List<MutationProto> mutations, final CellScanner cells) {
     @SuppressWarnings("unchecked")
-    Pair<Mutation, Integer>[] mutationsWithLocks = new Pair[mutates.size()];
+    Pair<Mutation, Integer>[] mutationsWithLocks = new Pair[mutations.size()];
     long before = EnvironmentEdgeManager.currentTimeMillis();
     boolean batchContainsPuts = false, batchContainsDelete = false;
     try {
@@ -3825,21 +3760,20 @@ public class HRegionServer implements ClientProtocol,
       resultBuilder.setValue(ClientProtos.Result.newBuilder().build());
       ActionResult result = resultBuilder.build();
       int i = 0;
-      for (Mutate m : mutates) {
+      for (MutationProto m : mutations) {
         Mutation mutation;
-        if (m.getMutateType() == MutateType.PUT) {
-          mutation = ProtobufUtil.toPut(m);
+        if (m.getMutateType() == MutationType.PUT) {
+          mutation = ProtobufUtil.toPut(m, cells);
           batchContainsPuts = true;
         } else {
-          mutation = ProtobufUtil.toDelete(m);
+          mutation = ProtobufUtil.toDelete(m, cells);
           batchContainsDelete = true;
         }
         mutationsWithLocks[i++] = new Pair<Mutation, Integer>(mutation, null);
         builder.addResult(result);
       }
 
-
-      requestCount.add(mutates.size());
+      requestCount.add(mutations.size());
       if (!region.getRegionInfo().isMetaTable()) {
         cacheFlusher.reclaimMemStoreMemory();
       }
@@ -3871,7 +3805,7 @@ public class HRegionServer implements ClientProtocol,
       }
     } catch (IOException ie) {
       ActionResult result = ResponseConverter.buildActionResult(ie);
-      for (int i = 0, n = mutates.size(); i < n; i++) {
+      for (int i = 0; i < mutations.size(); i++) {
         builder.setResult(i, result);
       }
     }
@@ -3888,25 +3822,27 @@ public class HRegionServer implements ClientProtocol,
    * Mutate a list of rows atomically.
    *
    * @param region
-   * @param mutates
+   * @param mutations
+ * @param cellScanner if non-null, the mutation data -- the Cell content.
    * @throws IOException
    */
-  protected void mutateRows(final HRegion region,
-      final List<Mutate> mutates) throws IOException {
-    Mutate firstMutate = mutates.get(0);
+  protected void mutateRows(final HRegion region, final List<MutationProto> mutations,
+      final CellScanner cellScanner)
+  throws IOException {
+    MutationProto firstMutate = mutations.get(0);
     if (!region.getRegionInfo().isMetaTable()) {
       cacheFlusher.reclaimMemStoreMemory();
     }
-    byte[] row = firstMutate.getRow().toByteArray();
+    byte [] row = firstMutate.getRow().toByteArray();
     RowMutations rm = new RowMutations(row);
-    for (Mutate mutate: mutates) {
-      MutateType type = mutate.getMutateType();
+    for (MutationProto mutate: mutations) {
+      MutationType type = mutate.getMutateType();
       switch (mutate.getMutateType()) {
       case PUT:
-        rm.add(ProtobufUtil.toPut(mutate));
+        rm.add(ProtobufUtil.toPut(mutate, cellScanner));
         break;
       case DELETE:
-        rm.add(ProtobufUtil.toDelete(mutate));
+        rm.add(ProtobufUtil.toDelete(mutate, cellScanner));
         break;
         default:
           throw new DoNotRetryIOException(

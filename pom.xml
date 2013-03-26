@@ -418,6 +418,14 @@
     <pluginManagement>
       <plugins>
         <plugin>
+          <!--Intentionally, this is not bound to a phase because it is an
+           'aggregating' plugin; it expects to be run from the top-level only; see
+           http://www.sonatype.com/books/mvnref-book/reference/assemblies-sect-basics.html.
+           When it was bound to pre-site, we were descending into modules expecting
+           dependencies like hbase-*.jar to be already built.  It was messing us up,
+           particular on clean checkouts.  To get javadoc into your site, you must
+           precede site build by invocation of javadoc:aggregate expplicitly.
+           -->
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-javadoc-plugin</artifactId>
           <version>${javadoc.version}</version>
@@ -427,7 +435,6 @@
               <goals>
                 <goal>aggregate</goal>
               </goals>
-              <phase>pre-site</phase>
             </execution>
           </executions>
           <configuration>
@@ -696,7 +703,7 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>xml-maven-plugin</artifactId>
-        <version>1.0-beta-3</version>
+        <version>1.0</version>
         <inherited>false</inherited>
         <executions>
           <execution>
@@ -710,12 +717,12 @@
           <transformationSets>
             <transformationSet>
               <!--Reaching down into sub-module for docs-->
-              <dir>${basedir}/hbase-server/src/main/resources/</dir>
+              <dir>${basedir}/hbase-common/src/main/resources/</dir>
               <includes>
                 <include>hbase-default.xml</include>
               </includes>
               <stylesheet>${basedir}/src/xslt/configuration_to_docbook_section.xsl</stylesheet>
-              <outputDir>${basedir}/target/site</outputDir>
+              <outputDir>${basedir}/target/docbkx</outputDir>
             </transformationSet>
           </transformationSets>
         </configuration>
@@ -784,7 +791,7 @@
             <goals>
               <goal>copy-resources</goal>
             </goals>
-            <phase>pre-site</phase>
+            <phase>site</phase>
             <configuration>
               <outputDirectory>target/site/apidocs</outputDirectory>
               <resources>
@@ -802,7 +809,7 @@
             <goals>
               <goal>copy-resources</goal>
             </goals>
-            <phase>pre-site</phase>
+            <phase>site</phase>
             <configuration>
               <outputDirectory>target/site</outputDirectory>
               <resources>

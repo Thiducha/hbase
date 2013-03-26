@@ -36,11 +36,11 @@ import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.util.PerformanceChecker;
 import org.apache.hadoop.hbase.util.RegionSplitter;
+import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
-
-import java.io.IOException;
 
 /**
  * An integration test to measure the time needed to recover when we lose a regionserver.
@@ -106,13 +106,22 @@ public abstract class AbstractIntegrationTestRecovery {
   protected ClusterManager hcm;
   protected static PerformanceChecker performanceChecker;
 
+  /**
+   * This boolean allows to set the test as destructive (it will remove the data) or not.
+   * When not destructive, the test will no touch the data on the cluster (it will kill nodes
+   * however, so if there is a bug in the recovery you may lose data).
+   */
+  protected static boolean destructiveTest = true;
 
+
+  /**
+   * Default constructor, creates a table with 10 regions.
+   */
   protected AbstractIntegrationTestRecovery() {
     this(10);
   }
 
   /**
-   *
    * @param regCount the number of regions of the table created.
    */
   protected AbstractIntegrationTestRecovery(int regCount) {
@@ -130,6 +139,11 @@ public abstract class AbstractIntegrationTestRecovery {
     util = new IntegrationTestingUtility(c);
 
     performanceChecker = new PerformanceChecker(c);
+
+    String s = System.getenv("HBASE_IT_DESTRUCTIVE_TEST");
+    if (s != null && Boolean.parseBoolean(s)){
+      destructiveTest = true;
+    }
   }
 
   private void createTable() throws Exception {
@@ -181,15 +195,20 @@ public abstract class AbstractIntegrationTestRecovery {
     hcm.killAllServices(willSurviveBox);
     hcm.killAllServices(lateBox);
 
-    hcm.rmHDFSDataDir(mainBox);
-    hcm.rmHDFSDataDir(willDieBox);
-    hcm.rmHDFSDataDir(willSurviveBox);
-    hcm.rmHDFSDataDir(lateBox);
+    if (destructiveTest) {
+      hcm.rmHDFSDataDir(mainBox);
+      hcm.rmHDFSDataDir(willDieBox);
+      hcm.rmHDFSDataDir(willSurviveBox);
+      hcm.rmHDFSDataDir(lateBox);
+    }
 
     // Let's start ZK immediately, it will initialize itself while the NN and the DN are starting
     hcm.start(ClusterManager.ServiceType.ZOOKEEPER, mainBox);
 
-    hcm.formatNameNode(mainBox); // synchronous
+    if (destructiveTest) {
+      hcm.formatNameNode(mainBox); // synchronous
+    }
+
     hcm.start(ClusterManager.ServiceType.HADOOP_NAMENODE, mainBox);
     dhc.waitForNamenodeAvailable();
 
@@ -227,23 +246,6 @@ public abstract class AbstractIntegrationTestRecovery {
 
   public long getMttrLargeTime() {
     return hcm.getConf().getLong(MTTR_LARGE_TIME_KEY, MTTR_LARGE_TIME_DEFAULT);
-  }
-
-
-  /**
-   * Kills all processes and delete the data dir. It's often better to not do that, as it allows
-   * inspecting the cluster manually if something is strange.
-   */
-  protected void genericStop() throws IOException {
-    hcm.killAllServices(mainBox);
-    hcm.killAllServices(willDieBox);
-    hcm.killAllServices(willSurviveBox);
-    hcm.killAllServices(lateBox);
-
-    hcm.rmHDFSDataDir(mainBox);
-    hcm.rmHDFSDataDir(willDieBox);
-    hcm.rmHDFSDataDir(willSurviveBox);
-    hcm.rmHDFSDataDir(lateBox);
   }
 
 
@@ -323,7 +325,7 @@ public abstract class AbstractIntegrationTestRecovery {
         try {
           htable.get(get);
           ok = true;
-        } catch (Throwable ignored){
+        } catch (Throwable ignored) {
         }
       } while (!ok);
 
@@ -340,6 +342,10 @@ public abstract class AbstractIntegrationTestRecovery {
 
 
     validate((failureDetectedTime - startTime), (failureFixedTime - failureDetectedTime));
+
+    if (!destructiveTest){
+      util.getHBaseAdmin().deleteTable(tableName);
+    }
   }
 
   /**

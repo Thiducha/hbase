@@ -29,15 +29,16 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.catalog.CatalogTracker;
 import org.apache.hadoop.hbase.client.AdminProtocol;
 import org.apache.hadoop.hbase.client.ClientProtocol;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.executor.ExecutorService;
 import org.apache.hadoop.hbase.ipc.RpcServer;
+import org.apache.hadoop.hbase.master.TableLockManager.NullTableLockManager;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CloseRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CloseRegionResponse;
@@ -53,6 +54,8 @@ import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoReque
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoResponse;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetStoreFileRequest;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetStoreFileResponse;
+import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.MergeRegionsRequest;
+import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.MergeRegionsResponse;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.OpenRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.OpenRegionResponse;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryRequest;
@@ -148,7 +151,7 @@ class MockRegionServer implements AdminProtocol, ClientProtocol, RegionServerSer
 
   /**
    * @param sn Name of this mock regionserver
-   * @throws IOException 
+   * @throws IOException
    * @throws org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException
    */
   MockRegionServer(final Configuration conf, final ServerName sn)
@@ -288,6 +291,10 @@ class MockRegionServer implements AdminProtocol, ClientProtocol, RegionServerSer
   public RegionServerAccounting getRegionServerAccounting() {
     // TODO Auto-generated method stub
     return null;
+  }
+
+  public TableLockManager getTableLockManager() {
+    return new NullTableLockManager();
   }
 
   @Override
@@ -444,6 +451,13 @@ class MockRegionServer implements AdminProtocol, ClientProtocol, RegionServerSer
   @Override
   public SplitRegionResponse splitRegion(RpcController controller,
       SplitRegionRequest request) throws ServiceException {
+    // TODO Auto-generated method stub
+    return null;
+  }
+
+  @Override
+  public MergeRegionsResponse mergeRegions(RpcController controller,
+      MergeRegionsRequest request) throws ServiceException {
     // TODO Auto-generated method stub
     return null;
   }
