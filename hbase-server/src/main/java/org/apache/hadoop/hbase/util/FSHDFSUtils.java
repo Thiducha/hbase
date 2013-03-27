@@ -60,10 +60,6 @@ public class FSHDFSUtils extends FSUtils{
   @Override
   public void recoverFileLease(final FileSystem fs, final Path p, Configuration conf)
   throws IOException{
-    if (!isAppendSupported(conf)) {
-      LOG.warn("Running on HDFS without append enabled may result in data loss");
-      return;
-    }
     // lease recovery not needed for local file system case.
     // currently, local file system doesn't implement append either.
     if (!(fs instanceof DistributedFileSystem)) {
@@ -86,25 +82,30 @@ public class FSHDFSUtils extends FSUtils{
           try {
             recovered = (Boolean) DistributedFileSystem.class.getMethod(
               "recoverLease", new Class[] { Path.class }).invoke(dfs, p);
-            if (!recovered) LOG.debug("recoverLease returned false");
+            LOG.info("recoverLease returned " + recovered + " for file " + p);
           } catch (InvocationTargetException ite) {
             // function was properly called, but threw it's own exception
             throw (IOException) ite.getCause();
           }
         } catch (Exception e) {
-          LOG.debug("Failed fs.recoverLease invocation, " + e.toString() +
-              ", trying fs.append instead");
+          LOG.info("Failed fs.recoverLease invocation, " + e.toString() +
+              ", trying fs.append instead for file " + p);
           ex = e;
         }
+        if (recovered) break;
         if (ex != null || System.currentTimeMillis() - startWaiting > recoveryTimeout) {
-          LOG.debug("trying fs.append for " + p + " with " + ex);
+          if (!isAppendSupported(conf)) {
+            LOG.warn("Running on HDFS without append. Can't recover the lease with append.");
+            break;
+          }
+          LOG.info("trying fs.append for " + p + " with " + ex + " for file " + p);
           ex = null; // assume the following append() call would succeed
           FSDataOutputStream out = fs.append(p);
           out.close();
           recovered = true;
-          LOG.debug("fs.append passed");
+          LOG.info("fs.append passed for file " + p);
+          break;
         }
-        if (recovered) break;
       } catch (IOException e) {
         e = RemoteExceptionHandler.checkIOException(e);
         if (e instanceof AlreadyBeingCreatedException) {

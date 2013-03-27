@@ -51,7 +51,7 @@
 
   <property>
     <name>dfs.namenode.stale.datanode.interval</name>
-    <value>20000</value>
+    <value>30000</value>
   </property>
 
 

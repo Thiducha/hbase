@@ -61,6 +61,8 @@ public class IntegrationTestRecoveryHDFSStaleMode extends AbstractIntegrationTes
         t.put(p);
       }
     }
+    t.close();
+    Thread.sleep(30000);
 
     // Start a new one. This ensure that there will be enough DN to write.
     hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, mainBox);

@@ -254,12 +254,7 @@ public class HBaseClusterManager extends ClusterManager {
         return System.getenv("HADOOP_HDFS_HOME");
       }
 
-      if (isHadoopOne()) {
-        return getHadoopCommonHome();
-      } else {
-        return getHadoopHome() +
-            "/hadoop-hdfs-project/hadoop-hdfs/target/hadoop-hdfs-" + getHadoopVersion();
-      }
+      return getHadoopCommonHome();
     }
 
     @Override
