@@ -3,6 +3,7 @@
 #!/bin/bash
 ORIG_HBASE_DIR=`readlink -f ..`
 ORIG_HDFS_DIR=`readlink -f $ORIG_HBASE_DIR/../hadoop-common`
+ORIG_HDFS_DIR=`readlink -f ~/cluster/hadoop-1.1.2`
 
 ORIG_CONF=$ORIG_HBASE_DIR/hbase-it/src/test/resources/
 
@@ -53,6 +54,8 @@ sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/hdfs-site.xml > $C
 sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/core-site.xml  > $HBASE_REP/conf/core-site.xml
 sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/hbase-site.xml > $HBASE_REP/conf/hbase-site.xml
 
+cp $ORIG_CONF/mttr/*.properties $HBASE_REP/conf/
+cp $ORIG_CONF/mttr/*.properties $CONF_DIR/conf-hadoop/
 
 echo "Copying the libs we need locally"
 mkdir -p ~/tmp-recotest/hbase
@@ -89,6 +92,7 @@ for CBOX in $*; do
 done
 
 echo ""        >> ~/tmp-recotest/local.env.tosource
+
 
 echo "export HBASE_HOME=$HOME/tmp-recotest/hbase"   >> ~/tmp-recotest/local.env.tosource
 echo "export HADOOP_HOME=$HOME/tmp-recotest/hadoop-common"   >> ~/tmp-recotest/local.env.tosource

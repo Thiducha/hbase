@@ -24,7 +24,6 @@ import org.apache.hadoop.hbase.IntegrationTests;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.MultiThreadedWriter;
 import org.apache.hadoop.hbase.util.test.LoadTestDataGenerator;
-import org.apache.hadoop.hbase.util.test.LoadTestKVGenerator;
 import org.junit.experimental.categories.Category;
 
 import java.io.IOException;
@@ -57,7 +56,7 @@ public class IntegrationTestRecoveryWALFewRegionsKill9 extends AbstractIntegrati
 
     @Override
     public byte[][] getColumnFamilies() {
-      return new byte[][]{COLUMN_NAME.getBytes()};
+      return new byte[][]{CF.getBytes()};
     }
 
     @Override

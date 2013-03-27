@@ -46,7 +46,7 @@
   <!-- stale mode - branch 1.1.1 -->
   <property>
     <name>dfs.namenode.check.stale.datanode</name>
-    <value>false</value>
+    <value>true</value>
   </property>
 
   <property>

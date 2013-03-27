@@ -18,7 +18,6 @@
 package org.apache.hadoop.hbase;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.HashMap;
 
 import org.apache.hadoop.classification.InterfaceAudience;

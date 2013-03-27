@@ -85,7 +85,7 @@ public class TestHCM {
     TEST_UTIL.getConfiguration().setClass(ClusterStatusPublisher.STATUS_PUBLISHER_CLASS,
         ClusterStatusPublisher.MulticastPublisher.class, ClusterStatusPublisher.Publisher.class);
     TEST_UTIL.getConfiguration().setClass(ClusterStatusListener.STATUS_LISTENER_CLASS,
-        ClusterStatusListener.MultiCastListener.class, ClusterStatusListener.Listener.class);
+        ClusterStatusListener.MulticastListener.class, ClusterStatusListener.Listener.class);
     TEST_UTIL.startMiniCluster(2);
   }
 

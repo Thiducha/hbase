@@ -36,8 +36,6 @@ import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.util.PerformanceChecker;
 import org.apache.hadoop.hbase.util.RegionSplitter;
-import org.junit.After;
-import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -97,7 +95,7 @@ public abstract class AbstractIntegrationTestRecovery {
    * Table used for the tests.
    */
   protected final String tableName = this.getClass().getSimpleName();
-  protected static final String COLUMN_NAME = "f";
+  protected static final String CF = "f";
   protected final int regionCount;
 
 
@@ -141,7 +139,7 @@ public abstract class AbstractIntegrationTestRecovery {
     performanceChecker = new PerformanceChecker(c);
 
     String s = System.getenv("HBASE_IT_DESTRUCTIVE_TEST");
-    if (s != null && Boolean.parseBoolean(s)){
+    if (s != null && Boolean.parseBoolean(s)) {
       destructiveTest = true;
     }
   }
@@ -149,7 +147,7 @@ public abstract class AbstractIntegrationTestRecovery {
   private void createTable() throws Exception {
     long startTime, endTime;
     HTableDescriptor desc = new HTableDescriptor(tableName);
-    desc.addFamily(new HColumnDescriptor(COLUMN_NAME));
+    desc.addFamily(new HColumnDescriptor(CF));
     RegionSplitter.SplitAlgorithm algo = new RegionSplitter.HexStringSplit();
     byte[][] splits = algo.split(regionCount);
 
@@ -158,7 +156,7 @@ public abstract class AbstractIntegrationTestRecovery {
     HBaseAdmin admin = util.getHBaseAdmin();
     admin.createTable(desc, splits);
 
-    while (util.getHBaseAdmin().getClusterStatus().getRegionsCount() != regionCount + 2) {
+    while (util.getHBaseAdmin().getClusterStatus().getRegionsCount() != regionCount + 1) {
       Thread.sleep(1000);
     }
     waitForNoTransition();
@@ -168,16 +166,22 @@ public abstract class AbstractIntegrationTestRecovery {
     LOG.info("Pre-split table created successfully in " + (endTime - startTime) + "ms");
   }
 
-  private void waitForNoTransition() throws Exception {
+  protected void waitForNoTransition() throws Exception {
     HBaseAdmin admin = util.getHBaseAdmin();
 
-    while (!admin.getClusterStatus().getRegionsInTransition().isEmpty()) {
+    do {
       Thread.sleep(200);
-    }
+    } while (!admin.getClusterStatus().getRegionsInTransition().isEmpty());
   }
 
-  protected void genericStart() throws Exception {
-    // Initialize an empty cluster. We will start all services where we want to start them.
+
+  /**
+   * Initialize an empty cluster. We will start all services where we want to start them.
+   * Check that we can connect to the servers
+   * Kill the services running on them
+   * if the 'destructive test' flag is set, delete the existing data
+   */
+  protected void prepareCluster() throws Exception{
     util.initializeCluster(0);
     dhc = util.getHBaseClusterInterface();
     hcm = util.createClusterManager();
@@ -201,7 +205,17 @@ public abstract class AbstractIntegrationTestRecovery {
       hcm.rmHDFSDataDir(willSurviveBox);
       hcm.rmHDFSDataDir(lateBox);
     }
+  }
 
+  /**
+   * Do the following tasks, in this order:
+   * start the cluster, with:
+   *  main box: 1 ZooKeeper, 1 Namenode, 1 Master, 1 Region Server, 1 Datanode
+   *  willDieBox: 1 1 region server
+   *  willSurviveBox: 1 datanode
+   *  lateBox: 1 datanode
+   */
+  protected void genericStart() throws Exception {
     // Let's start ZK immediately, it will initialize itself while the NN and the DN are starting
     hcm.start(ClusterManager.ServiceType.ZOOKEEPER, mainBox);
 
@@ -223,7 +237,7 @@ public abstract class AbstractIntegrationTestRecovery {
     // We want meta & root on the main server, so we start only one RS at the beginning
 
     while (!dhc.waitForActiveAndReadyMaster() ||
-        util.getHBaseAdmin().getClusterStatus().getRegionsCount() != 2) {
+        util.getHBaseAdmin().getClusterStatus().getRegionsCount() != 1) {
       Thread.sleep(200);
     }
 
@@ -232,7 +246,7 @@ public abstract class AbstractIntegrationTestRecovery {
 
     // We can now start the second rs
     hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, willDieBox);
-    while (util.getHBaseAdmin().getClusterStatus().getServersSize() != 2) {
+    while (util.getHBaseAdmin().getClusterStatus().getServersSize() != 1) {
       Thread.sleep(200);
     }
 
@@ -252,10 +266,12 @@ public abstract class AbstractIntegrationTestRecovery {
   protected void moveToSecondRSSync() throws Exception {
     HBaseAdmin admin = util.getHBaseAdmin();
     ServerName mainSN = dhc.getServerHoldingMeta();
+    int toMove = 0;
 
     for (HRegionInfo hri : admin.getTableRegions(tableName.getBytes())) {
       if (dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
         admin.move(hri.getEncodedNameAsBytes(), null);
+        toMove++;
       }
     }
 
@@ -263,6 +279,7 @@ public abstract class AbstractIntegrationTestRecovery {
     waitForNoTransition();
 
     // Check that the regions have been moved
+    admin.getConnection().clearRegionCache();
     int remaining = 0;
     for (HRegionInfo hri : admin.getTableRegions(tableName.getBytes())) {
       if (dhc.getServerHoldingRegion(hri.getRegionName()).equals(mainSN)) {
@@ -270,11 +287,13 @@ public abstract class AbstractIntegrationTestRecovery {
       }
     }
 
-    assert remaining == 0 : "Some regions did not move! remaining=" + remaining;
+    assert remaining == 0 : "Some regions are still on " + mainSN.getHostAndPort() +
+        "! remaining=" + remaining + ", toMove=" + toMove;
   }
 
   @Test
   public void testKillRS() throws Exception {
+    prepareCluster();
     beforeStart();
     genericStart();
     Configuration localConf = new Configuration(util.getConfiguration());
@@ -294,6 +313,8 @@ public abstract class AbstractIntegrationTestRecovery {
     final long startTime;
     final long failureDetectedTime;
     final long failureFixedTime;
+
+    final int nbReg = dhc.getClusterStatus().getRegionsCount();
 
     kill(willDieBox);
     try {
@@ -320,13 +341,7 @@ public abstract class AbstractIntegrationTestRecovery {
       boolean ok = false;
       do {
         waitForNoTransition();
-        LOG.info("Nothing in transition");
-        Get get = new Get("nothing".getBytes());
-        try {
-          htable.get(get);
-          ok = true;
-        } catch (Throwable ignored) {
-        }
+        ok =  dhc.getClusterStatus().getRegionsCount() == nbReg;
       } while (!ok);
 
       failureFixedTime = System.currentTimeMillis();
@@ -343,7 +358,7 @@ public abstract class AbstractIntegrationTestRecovery {
 
     validate((failureDetectedTime - startTime), (failureFixedTime - failureDetectedTime));
 
-    if (!destructiveTest){
+    if (!destructiveTest) {
       util.getHBaseAdmin().deleteTable(tableName);
     }
   }

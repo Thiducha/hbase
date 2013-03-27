@@ -175,13 +175,13 @@ class ClusterStatusListener implements Closeable {
   /**
    * An implementation using a multicast message between the master & the client.
    */
-  class MultiCastListener implements Listener {
+  class MulticastListener implements Listener {
     private DatagramChannel channel;
     private final ExecutorService service = Executors.newSingleThreadExecutor(
         Threads.newDaemonThreadFactory("hbase-client-clusterStatus-multiCastListener"));
 
 
-    public MultiCastListener() {
+    public MulticastListener() {
     }
 
     public void connect(Configuration conf) throws IOException {

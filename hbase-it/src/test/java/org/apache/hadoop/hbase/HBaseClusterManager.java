@@ -274,6 +274,7 @@ public class HBaseClusterManager extends ClusterManager {
       cmd += "export HADOOP_VERSION=" + getHadoopVersion() + ";";
       cmd += "export HADOOP_HDFS_HOME=" + getHDFSHome() + ";";
       cmd += "export HADOOP_CONF_DIR=" + getConfigDir() + ";";
+      cmd += "export HADOOP_ROOT_LOGGER=INFO,DRFA;";
 
       if ("START".equals(op)) {
         op = null;
