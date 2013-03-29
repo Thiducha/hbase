@@ -31,7 +31,6 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.IntegrationTestingUtility;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.util.PerformanceChecker;
@@ -266,6 +265,7 @@ public abstract class AbstractIntegrationTestRecovery {
   protected void moveToSecondRSSync() throws Exception {
     HBaseAdmin admin = util.getHBaseAdmin();
     ServerName mainSN = dhc.getServerHoldingMeta();
+    LOG.info("Moving regions of table " + tableName + " away from " + mainSN);
     int toMove = 0;
 
     for (HRegionInfo hri : admin.getTableRegions(tableName.getBytes())) {
@@ -287,8 +287,12 @@ public abstract class AbstractIntegrationTestRecovery {
       }
     }
 
-    assert remaining == 0 : "Some regions are still on " + mainSN.getHostAndPort() +
-        "! remaining=" + remaining + ", toMove=" + toMove;
+    // This is not satisfying, but it seems that we need to redo it sometimes.
+    if (remaining != 0){
+      moveToSecondRSSync();
+    }
+
+    LOG.info("Moved " + toMove + " regions of table " + tableName + " away from " + mainSN);
   }
 
   @Test
@@ -338,7 +342,7 @@ public abstract class AbstractIntegrationTestRecovery {
       afterDetection();
 
       // Now, how long does it take to recover?
-      boolean ok = false;
+      boolean ok;
       do {
         waitForNoTransition();
         ok =  dhc.getClusterStatus().getRegionsCount() == nbReg;

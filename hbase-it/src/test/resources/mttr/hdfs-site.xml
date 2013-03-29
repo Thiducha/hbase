@@ -12,17 +12,11 @@
   </property>
 
   <property>
-    <name>dfs.replication</name>
-    <value>3</value>
-  </property>
-
-  <property>
     <name>dfs.datanode.max.xcievers</name>
     <value>4096</value>
   </property>
 
-
-  <!-- stale mode - trunk -->
+  <!-- stale mode - 2.0.3 -->
   <property>
     <name>dfs.namenode.avoid.read.stale.datanode</name>
     <value>true</value>
@@ -34,24 +28,14 @@
   </property>
 
   <property>
-    <name>dfs.namenode.stale.datanode.interval</name>
-    <value>20000</value>
-  </property>
-
-  <property>
     <name>dfs.namenode.write.stale.datanode.ratio</name>
     <value>1.0f</value>
   </property>
 
-  <!-- stale mode - branch 1.1.1 -->
+  <!-- stale mode - branch 1.1.1+ -->
   <property>
     <name>dfs.namenode.check.stale.datanode</name>
     <value>true</value>
-  </property>
-
-  <property>
-    <name>dfs.namenode.stale.datanode.interval</name>
-    <value>30000</value>
   </property>
 
 

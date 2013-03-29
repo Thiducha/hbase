@@ -880,7 +880,7 @@
     <compileSource>1.6</compileSource>
     <hbase.version>${project.version}</hbase.version>
     <!-- Dependencies -->
-    <hadoop-two.version>2.0.2-alpha</hadoop-two.version>
+    <hadoop-two.version>2.0.3-alpha</hadoop-two.version>
     <hadoop-one.version>1.1.2</hadoop-one.version>
     <commons-cli.version>1.2</commons-cli.version>
     <commons-codec.version>1.7</commons-codec.version>
@@ -1507,6 +1507,13 @@
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-client</artifactId>
             <version>${hadoop-two.version}</version>
+            <exclusions>
+              <exclusion>
+                <!-- We use a newer version of netty -->
+                <groupId>org.jboss.netty</groupId>
+                <artifactId>netty</artifactId>
+              </exclusion>
+            </exclusions>
           </dependency>
           <dependency>
             <groupId>org.apache.hadoop</groupId>
@@ -1519,6 +1526,13 @@
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-minicluster</artifactId>
             <version>${hadoop-two.version}</version>
+            <exclusions>
+              <exclusion>
+                <!-- We use a newer version of netty -->
+                <groupId>org.jboss.netty</groupId>
+                <artifactId>netty</artifactId>
+              </exclusion>
+            </exclusions>
           </dependency>
         </dependencies>
       </dependencyManagement>

@@ -59,7 +59,7 @@
 
   <property>
     <name>dfs.client.read.shortcircuit</name>
-    <value>false</value>
+    <value>true</value>
   </property>
 
   <property>

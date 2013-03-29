@@ -6,6 +6,15 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
 
+/**
+ * This tests checks that we have the expected behavior with the hdfs stale mode activated.
+ * As of March 28th 20013:
+ * With hdfs 2.0.3, recovery takes 9 seconds when the stale mode is on, 400 seconds when it's not.
+ * With hdfs 1.1.2 the recovery takes around 200 seconds in both cases. We have the same result
+ *  in both case because we don't have the write stale mode management in version 1.1, so we're
+ *  going to the  dead server. Why it takes half the time in hdfs 1 vs. 2 is another question,
+ *  unsolved.
+ */
 public class IntegrationTestRecoveryHDFSStaleMode extends AbstractIntegrationTestRecovery {
 
   /**
@@ -74,9 +83,17 @@ public class IntegrationTestRecoveryHDFSStaleMode extends AbstractIntegrationTes
     hcm.unplug(willDieBox);
   }
 
+  /**
+   * @param failureDetectedTime the time for detection
+   * @param failureFixedTime    the time for fixing the failure
+   */
   @Override
   protected void validate(long failureDetectedTime, long failureFixedTime) {
-    // Thanks to the stale mode in HDFS, the recovery will be minimal: we won't go to the dead DN
-    performanceChecker.logAndCheck(failureFixedTime, getMttrSmallTime());
+    if (ClusterManager.getEnvNotNull("HADOOP_VERSION").startsWith("1")){
+      // In hadoop 1 we can only measure the time spent, but we cannot do any real check.
+      performanceChecker.logAndCheck(failureFixedTime, getMttrLargeTime());
+    } else {
+      performanceChecker.logAndCheck(failureFixedTime, getMttrSmallTime());
+    }
   }
 }

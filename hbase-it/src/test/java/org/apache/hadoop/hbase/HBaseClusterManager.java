@@ -30,6 +30,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.Arrays;
 import java.util.Map;
 
 /**
@@ -172,7 +173,6 @@ public class HBaseClusterManager extends ClusterManager {
     }
 
 
-
     private static String getHBaseHome() {
       return getEnvNotNull("HBASE_HOME");
     }
@@ -268,8 +268,11 @@ public class HBaseClusterManager extends ClusterManager {
       cmd += "export HADOOP_COMMON_HOME=" + getHadoopCommonHome() + ";";
       cmd += "export HADOOP_VERSION=" + getHadoopVersion() + ";";
       cmd += "export HADOOP_HDFS_HOME=" + getHDFSHome() + ";";
-      cmd += "export HADOOP_CONF_DIR=" + getConfigDir() + ";";
-      cmd += "export HADOOP_ROOT_LOGGER=INFO,DRFA;";
+      if (isHadoopOne()){
+        // These two settings are not availavle in hadoop 2
+        cmd += "export HADOOP_CONF_DIR=" + getConfigDir() + ";";
+        cmd += "export HADOOP_ROOT_LOGGER=INFO,DRFA;";
+      }
 
       if ("START".equals(op)) {
         op = null;
@@ -324,7 +327,8 @@ public class HBaseClusterManager extends ClusterManager {
           Pair<Integer, String> res = exec(hostname, cmd);
           LOG.info("Returning from async command, exit code:" + res.getFirst());
         } catch (IOException e) {
-          throw new RuntimeException(e);
+          throw new RuntimeException("Host: " + hostname +
+              ": got IOException on command " + Arrays.toString(cmd), e);
         }
       }
     };
@@ -332,6 +336,7 @@ public class HBaseClusterManager extends ClusterManager {
   }
 
   private void exec(String hostname, ServiceType service, Operation op) throws IOException {
+    // hdfs commands are synchronous, while hbase ones are asynchronous
     if (service.getName().equalsIgnoreCase("namenode") ||
         service.getName().equalsIgnoreCase("datanode")) {
       execAsync(hostname, getCommandProvider(service).getCommand(service, op));
