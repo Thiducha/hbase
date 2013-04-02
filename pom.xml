@@ -118,6 +118,14 @@
   </mailingLists>
   <developers>
     <developer>
+      <id>acube123</id>
+      <name>Amitanand S. Aiyer</name>
+      <email>acube123@apache.org</email>
+      <timezone>-8</timezone>
+      <organization>Facebook</organization>
+      <organizationUrl>http://www.facebook.com</organizationUrl>
+    </developer>
+    <developer>
       <id>apurtell</id>
       <name>Andrew Purtell</name>
       <email>apurtell@apache.org</email>
@@ -631,6 +639,7 @@
           <version>0.8</version>
           <configuration>
             <excludes>
+              <exclude>**/*.versionsBackup</exclude>
               <exclude>**/*.log</exclude>
               <exclude>**/.*</exclude>
               <exclude>**/*.tgz</exclude>
@@ -1645,6 +1654,13 @@
         <version>2.3</version>
         <configuration>
           <aggregate>true</aggregate>
+          <linkJavadoc>true</linkJavadoc>
+          <javadocDir>hbase-assembly/target/site/apidocs</javadocDir>
+          <reportOutputDirectory>hbase-assembly/target/site/xref</reportOutputDirectory>
+          <destDir>hbase-assembly/target/site/xref</destDir>
+          <excludes>
+            <exclude>**/generated/**</exclude>
+          </excludes>
         </configuration>
       </plugin>
     </plugins>
