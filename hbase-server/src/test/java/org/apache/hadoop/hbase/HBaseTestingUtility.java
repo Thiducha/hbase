@@ -1920,6 +1920,46 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     closeRegion(hrl.getRegionInfo().getRegionName());
   }
 
+  /*
+   * Retrieves a splittable region randomly from tableName
+   * 
+   * @param tableName name of table
+   * @param maxAttempts maximum number of attempts, unlimited for value of -1
+   * @return the HRegion chosen, null if none was found within limit of maxAttempts
+   */
+  public HRegion getSplittableRegion(byte[] tableName, int maxAttempts) {
+    List<HRegion> regions = getHBaseCluster().getRegions(tableName);
+    int regCount = regions.size();
+    Set<Integer> attempted = new HashSet<Integer>();
+    int idx;
+    int attempts = 0;
+    do {
+      regions = getHBaseCluster().getRegions(tableName);
+      if (regCount != regions.size()) {
+        // if there was region movement, clear attempted Set
+        attempted.clear();
+      }
+      regCount = regions.size();
+      // There are chances that before we get the region for the table from an RS the region may
+      // be going for CLOSE.  This may be because online schema change is enabled 
+      if (regCount > 0) {
+        idx = random.nextInt(regCount);
+        // if we have just tried this region, there is no need to try again
+        if (attempted.contains(idx))
+          continue;
+        try {
+          regions.get(idx).checkSplit();
+          return regions.get(idx);
+        } catch (Exception ex) {
+          LOG.warn("Caught exception", ex);
+          attempted.add(idx);
+        }
+      }
+      attempts++;
+    } while (maxAttempts == -1 || attempts < maxAttempts);
+    return null;
+  }
+  
   public MiniZooKeeperCluster getZkCluster() {
     return zkCluster;
   }
@@ -2121,37 +2161,56 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     }
   }
 
-
   /**
-   * Wait until <code>countOfRegion</code> in .META. have a non-empty
-   * info:server.  This means all regions have been deployed, master has been
-   * informed and updated .META. with the regions deployed server.
-   * @param countOfRegions How many regions in .META.
+   * Wait until all regions for a table in .META. have a non-empty
+   * info:server, up to 60 seconds. This means all regions have been deployed,
+   * master has been informed and updated .META. with the regions deployed
+   * server.
+   * @param tableName the table name
    * @throws IOException
    */
-  public void waitUntilAllRegionsAssigned(final int countOfRegions)
-  throws IOException {
-    HTable meta = new HTable(getConfiguration(), HConstants.META_TABLE_NAME);
-    while (true) {
-      int rows = 0;
-      Scan scan = new Scan();
-      scan.addColumn(HConstants.CATALOG_FAMILY, HConstants.SERVER_QUALIFIER);
-      ResultScanner s = meta.getScanner(scan);
-      for (Result r = null; (r = s.next()) != null;) {
-        byte [] b =
-          r.getValue(HConstants.CATALOG_FAMILY, HConstants.SERVER_QUALIFIER);
-        if (b == null || b.length <= 0) {
-          break;
+  public void waitUntilAllRegionsAssigned(final byte[] tableName) throws IOException {
+    waitUntilAllRegionsAssigned(tableName, 60000);
+  }
+
+  /**
+   * Wait until all regions for a table in .META. have a non-empty
+   * info:server, or until timeout.  This means all regions have been deployed,
+   * master has been informed and updated .META. with the regions deployed
+   * server.
+   * @param tableName the table name
+   * @param timeout timeout, in milliseconds
+   * @throws IOException
+   */
+  public void waitUntilAllRegionsAssigned(final byte[] tableName, final long timeout)
+      throws IOException {
+    final HTable meta = new HTable(getConfiguration(), HConstants.META_TABLE_NAME);
+    try {
+      waitFor(timeout, 200, true, new Predicate<IOException>() {
+        @Override
+        public boolean evaluate() throws IOException {
+          boolean allRegionsAssigned = true;
+          Scan scan = new Scan();
+          scan.addFamily(HConstants.CATALOG_FAMILY);
+          ResultScanner s = meta.getScanner(scan);
+          try {
+            Result r;
+            while ((r = s.next()) != null) {
+              byte [] b = r.getValue(HConstants.CATALOG_FAMILY, HConstants.REGIONINFO_QUALIFIER);
+              HRegionInfo info = HRegionInfo.parseFromOrNull(b);
+              if (info != null && Bytes.equals(info.getTableName(), tableName)) {
+                b = r.getValue(HConstants.CATALOG_FAMILY, HConstants.SERVER_QUALIFIER);
+                allRegionsAssigned &= (b != null);
+              }
+            }
+          } finally {
+            s.close();
+          }
+          return allRegionsAssigned;
         }
-        rows++;
-      }
-      s.close();
-      // If I get to here and all rows have a Server, then all have been assigned.
-      if (rows == countOfRegions) {
-        break;
-      }
-      LOG.info("Found=" + rows);
-      Threads.sleep(200);
+      });
+    } finally {
+      meta.close();
     }
   }
 
@@ -2450,12 +2509,23 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     HColumnDescriptor hcd = new HColumnDescriptor(columnFamily);
     hcd.setDataBlockEncoding(dataBlockEncoding);
     hcd.setCompressionType(compression);
-    desc.addFamily(hcd);
+    return createPreSplitLoadTestTable(conf, desc, hcd);
+  }
+
+  /**
+   * Creates a pre-split table for load testing. If the table already exists,
+   * logs a warning and continues.
+   * @return the number of regions the table was split into
+   */
+  public static int createPreSplitLoadTestTable(Configuration conf,
+      HTableDescriptor desc, HColumnDescriptor hcd) throws IOException {
+    if (!desc.hasFamily(hcd.getName())) {
+      desc.addFamily(hcd);
+    }
 
     int totalNumberOfRegions = 0;
+    HBaseAdmin admin = new HBaseAdmin(conf);
     try {
-      HBaseAdmin admin = new HBaseAdmin(conf);
-
       // create a table a pre-splits regions.
       // The number of splits is set as:
       //    region servers * regions per region server).
@@ -2478,8 +2548,10 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
       LOG.error("Master not running", e);
       throw new IOException(e);
     } catch (TableExistsException e) {
-      LOG.warn("Table " + Bytes.toStringBinary(tableName) +
+      LOG.warn("Table " + Bytes.toStringBinary(desc.getName()) +
           " already exists, continuing");
+    } finally {
+      admin.close();
     }
     return totalNumberOfRegions;
   }
