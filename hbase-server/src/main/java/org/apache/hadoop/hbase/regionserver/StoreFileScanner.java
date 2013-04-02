@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.hfile.HFileScanner;
@@ -52,11 +53,6 @@ public class StoreFileScanner implements KeyValueScanner {
   private KeyValue delayedSeekKV;
 
   private boolean enforceMVCC = false;
-
-  //The variable, realSeekDone, may cheat on store file scanner for the
-  // multi-column bloom-filter optimization.
-  // So this flag shows whether this storeFileScanner could do a reseek.
-  private boolean isReseekable = false;
 
   private static final AtomicLong seekCount = new AtomicLong();
 
@@ -148,7 +144,6 @@ public class StoreFileScanner implements KeyValueScanner {
           return false;
         }
 
-        this.isReseekable = true;
         cur = hfs.getKeyValue();
 
         return skipKVsNewerThanReadpoint();
@@ -226,6 +221,10 @@ public class StoreFileScanner implements KeyValueScanner {
   throws IOException {
     int result = s.seekTo(k.getBuffer(), k.getKeyOffset(), k.getKeyLength());
     if(result < 0) {
+      if (result == HConstants.INDEX_KEY_MAGIC) {
+        // using faked key
+        return true;
+      }
       // Passed KV is smaller than first KV in file, work from start of file
       return s.seekTo();
     } else if(result > 0) {
@@ -242,12 +241,21 @@ public class StoreFileScanner implements KeyValueScanner {
     //This function is similar to seekAtOrAfter function
     int result = s.reseekTo(k.getBuffer(), k.getKeyOffset(), k.getKeyLength());
     if (result <= 0) {
+      if (result == HConstants.INDEX_KEY_MAGIC) {
+        // using faked key
+        return true;
+      }
+      // If up to now scanner is not seeked yet, this means passed KV is smaller
+      // than first KV in file, and it is the first time we seek on this file.
+      // So we also need to work from the start of file.
+      if (!s.isSeeked()) {
+        return  s.seekTo();
+      }
       return true;
-    } else {
-      // passed KV is larger than current KV in file, if there is a next
-      // it is after, if not then this scanner is done.
-      return s.next();
     }
+    // passed KV is larger than current KV in file, if there is a next
+    // it is after, if not then this scanner is done.
+    return s.next();
   }
 
   @Override
@@ -346,7 +354,7 @@ public class StoreFileScanner implements KeyValueScanner {
     if (realSeekDone)
       return;
 
-    if (delayedReseek && this.isReseekable) {
+    if (delayedReseek) {
       reseek(delayedSeekKV);
     } else {
       seek(delayedSeekKV);
@@ -369,9 +377,8 @@ public class StoreFileScanner implements KeyValueScanner {
   }
 
   @Override
-  public boolean shouldUseScanner(Scan scan, SortedSet<byte[]> columns,
-      long oldestUnexpiredTS) {
-    return reader.passesTimerangeFilter(scan, oldestUnexpiredTS) &&
-        reader.passesBloomFilter(scan, columns);
+  public boolean shouldUseScanner(Scan scan, SortedSet<byte[]> columns, long oldestUnexpiredTS) {
+    return reader.passesTimerangeFilter(scan, oldestUnexpiredTS)
+        && reader.passesKeyRangeFilter(scan) && reader.passesBloomFilter(scan, columns);
   }
 }

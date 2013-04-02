@@ -133,6 +133,24 @@ public class RegionStates {
   }
 
   /**
+   * @return True if specified region failed to open.
+   */
+  public synchronized boolean isRegionFailedToOpen(final HRegionInfo hri) {
+    RegionState regionState = getRegionTransitionState(hri);
+    State state = regionState != null ? regionState.getState() : null;
+    return state == State.FAILED_OPEN;
+  }
+
+  /**
+   * @return True if specified region failed to close.
+   */
+  public synchronized boolean isRegionFailedToClose(final HRegionInfo hri) {
+    RegionState regionState = getRegionTransitionState(hri);
+    State state = regionState != null ? regionState.getState() : null;
+    return state == State.FAILED_CLOSE;
+  }
+
+  /**
    * Wait for the state map to be updated by assignment manager.
    */
   public synchronized void waitForUpdate(
@@ -233,6 +251,10 @@ public class RegionStates {
       LOG.warn("Closed region " + hri + " still on "
         + serverName + "? Ignored, reset it to null");
       newServerName = null;
+    }
+
+    if (state == State.FAILED_CLOSE || state == State.FAILED_OPEN) {
+      LOG.warn("Failed to transition " + hri + " on " + serverName + ": " + state);
     }
 
     String regionName = hri.getEncodedName();
@@ -468,7 +490,7 @@ public class RegionStates {
       } else {
         for (Map.Entry<ServerName, Set<HRegionInfo>> e: serverHoldings.entrySet()) {
           for (HRegionInfo hri: e.getValue()) {
-            if (hri.isMetaRegion() || hri.isRootRegion()) continue;
+            if (hri.isMetaRegion()) continue;
             String tablename = hri.getTableNameAsString();
             Map<ServerName, List<HRegionInfo>> svrToRegions = result.get(tablename);
             if (svrToRegions == null) {

@@ -30,15 +30,16 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.NotAllMetaRegionsOnlineException;
-import org.apache.hadoop.hbase.TableExistsException;
 import org.apache.hadoop.hbase.errorhandling.ForeignException;
 import org.apache.hadoop.hbase.errorhandling.ForeignExceptionDispatcher;
+import org.apache.hadoop.hbase.exceptions.NotAllMetaRegionsOnlineException;
+import org.apache.hadoop.hbase.exceptions.RestoreSnapshotException;
+import org.apache.hadoop.hbase.exceptions.TableExistsException;
 import org.apache.hadoop.hbase.master.MasterServices;
 import org.apache.hadoop.hbase.master.SnapshotSentinel;
 import org.apache.hadoop.hbase.master.handler.CreateTableHandler;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.SnapshotDescription;
-import org.apache.hadoop.hbase.snapshot.RestoreSnapshotException;
+import org.apache.hadoop.hbase.snapshot.ClientSnapshotDescriptionUtils;
 import org.apache.hadoop.hbase.snapshot.RestoreSnapshotHelper;
 import org.apache.hadoop.hbase.snapshot.SnapshotDescriptionUtils;
 
@@ -75,6 +76,12 @@ public class CloneSnapshotHandler extends CreateTableHandler implements Snapshot
     this.monitor = new ForeignExceptionDispatcher();
   }
 
+  @Override
+  public CloneSnapshotHandler prepare() throws NotAllMetaRegionsOnlineException,
+      TableExistsException, IOException {
+    return (CloneSnapshotHandler) super.prepare();
+  }
+
   /**
    * Create the on-disk regions, using the tableRootDir provided by the CreateTableHandler.
    * The cloned table will be created in a temp directory, and then the CreateTableHandler
@@ -106,7 +113,7 @@ public class CloneSnapshotHandler extends CreateTableHandler implements Snapshot
       // 2. let the CreateTableHandler add the regions to meta
       return metaChanges.getRegionsToAdd();
     } catch (Exception e) {
-      String msg = "clone snapshot=" + SnapshotDescriptionUtils.toString(snapshot) + " failed";
+      String msg = "clone snapshot=" + ClientSnapshotDescriptionUtils.toString(snapshot) + " failed";
       LOG.error(msg, e);
       IOException rse = new RestoreSnapshotException(msg, e, snapshot);
 
@@ -119,6 +126,7 @@ public class CloneSnapshotHandler extends CreateTableHandler implements Snapshot
   @Override
   protected void completed(final Throwable exception) {
     this.stopped = true;
+    super.completed(exception);
   }
 
   @Override

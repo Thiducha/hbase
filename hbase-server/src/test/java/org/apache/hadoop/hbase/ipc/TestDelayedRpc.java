@@ -28,8 +28,11 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.IpcProtocol;
 import org.apache.hadoop.hbase.MediumTests;
 import org.apache.hadoop.hbase.ipc.protobuf.generated.TestDelayedRpcProtos.TestArg;
@@ -40,7 +43,8 @@ import org.apache.log4j.Logger;
 import org.apache.log4j.spi.LoggingEvent;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
-import org.mortbay.log.Log;
+
+import com.google.protobuf.ServiceException;
 
 /**
  * Test that delayed RPCs work. Fire up three calls, the first of which should
@@ -49,6 +53,8 @@ import org.mortbay.log.Log;
  */
 @Category(MediumTests.class) // Fails sometimes with small tests
 public class TestDelayedRpc {
+  private static final Log LOG = LogFactory.getLog(TestDelayedRpc.class);
+
   public static RpcServer rpcServer;
 
   public static final int UNDELAYED = 0;
@@ -73,7 +79,8 @@ public class TestDelayedRpc {
         isa.getHostName(), isa.getPort(), 1, 0, true, conf, 0);
     rpcServer.start();
 
-    ProtobufRpcClientEngine clientEngine = new ProtobufRpcClientEngine(conf);
+    ProtobufRpcClientEngine clientEngine =
+        new ProtobufRpcClientEngine(conf, HConstants.CLUSTER_ID_DEFAULT);
     try {
       TestRpc client = clientEngine.getProxy(TestRpc.class,
           rpcServer.getListenerAddress(), conf, 1000);
@@ -95,8 +102,7 @@ public class TestDelayedRpc {
 
       assertEquals(UNDELAYED, results.get(0).intValue());
       assertEquals(UNDELAYED, results.get(1).intValue());
-      assertEquals(results.get(2).intValue(), delayReturnValue ? DELAYED :
-          0xDEADBEEF);
+      assertEquals(results.get(2).intValue(), delayReturnValue ? DELAYED :  0xDEADBEEF);
     } finally {
       clientEngine.close();
     }
@@ -142,7 +148,8 @@ public class TestDelayedRpc {
         isa.getHostName(), isa.getPort(), 1, 0, true, conf, 0);
     rpcServer.start();
 
-    ProtobufRpcClientEngine clientEngine = new ProtobufRpcClientEngine(conf);
+    ProtobufRpcClientEngine clientEngine =
+        new ProtobufRpcClientEngine(conf, HConstants.CLUSTER_ID_DEFAULT);
     try {
       TestRpc client = clientEngine.getProxy(TestRpc.class,
           rpcServer.getListenerAddress(), conf, 1000);
@@ -176,7 +183,7 @@ public class TestDelayedRpc {
   }
 
   public interface TestRpc extends IpcProtocol {
-    TestResponse test(TestArg delay);
+    TestResponse test(final Object rpcController, TestArg delay) throws ServiceException;
   }
 
   private static class TestRpcImpl implements TestRpc {
@@ -195,7 +202,8 @@ public class TestDelayedRpc {
     }
 
     @Override
-    public TestResponse test(final TestArg testArg) {
+    public TestResponse test(final Object rpcController, final TestArg testArg)
+    throws ServiceException {
       boolean delay = testArg.getDelay();
       TestResponse.Builder responseBuilder = TestResponse.newBuilder();
       if (!delay) {
@@ -237,9 +245,8 @@ public class TestDelayedRpc {
     @Override
     public void run() {
       try {
-        Integer result = 
-            new Integer(server.test(TestArg.newBuilder()
-                .setDelay(delay).build()).getResponse());
+        Integer result = new Integer(server.test(null, TestArg.newBuilder().setDelay(delay).
+          build()).getResponse());
         if (results != null) {
           synchronized (results) {
             results.add(result);
@@ -261,7 +268,8 @@ public class TestDelayedRpc {
         isa.getHostName(), isa.getPort(), 1, 0, true, conf, 0);
     rpcServer.start();
 
-    ProtobufRpcClientEngine clientEngine = new ProtobufRpcClientEngine(conf);
+    ProtobufRpcClientEngine clientEngine =
+        new ProtobufRpcClientEngine(conf, HConstants.CLUSTER_ID_DEFAULT);
     try {
       TestRpc client = clientEngine.getProxy(TestRpc.class,
           rpcServer.getListenerAddress(), conf, 1000);
@@ -269,7 +277,7 @@ public class TestDelayedRpc {
       int result = 0xDEADBEEF;
 
       try {
-        result = client.test(TestArg.newBuilder().setDelay(false).build()).getResponse();
+        result = client.test(null, TestArg.newBuilder().setDelay(false).build()).getResponse();
       } catch (Exception e) {
         fail("No exception should have been thrown.");
       }
@@ -277,13 +285,13 @@ public class TestDelayedRpc {
 
       boolean caughtException = false;
       try {
-        result = client.test(TestArg.newBuilder().setDelay(true).build()).getResponse();
+        result = client.test(null, TestArg.newBuilder().setDelay(true).build()).getResponse();
       } catch(Exception e) {
         // Exception thrown by server is enclosed in a RemoteException.
         if (e.getCause().getMessage().contains(
             "java.lang.Exception: Something went wrong"))
           caughtException = true;
-        Log.warn(e);
+        LOG.warn(e);
       }
       assertTrue(caughtException);
     } finally {
@@ -296,7 +304,7 @@ public class TestDelayedRpc {
    */
   private static class FaultyTestRpc implements TestRpc {
     @Override
-    public TestResponse test(TestArg arg) {
+    public TestResponse test(Object rpcController, TestArg arg) {
       if (!arg.getDelay())
         return TestResponse.newBuilder().setResponse(UNDELAYED).build();
       Delayable call = HBaseServer.getCurrentCall();

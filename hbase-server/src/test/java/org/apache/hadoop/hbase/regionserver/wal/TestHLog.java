@@ -22,7 +22,7 @@ import static org.junit.Assert.*;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.util.HashMap;
+import java.util.TreeMap;
 import java.util.List;
 import java.util.Map;
 
@@ -37,7 +37,6 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.regionserver.wal.HLog.Reader;
-import org.apache.hadoop.hbase.regionserver.wal.HLogUtil;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.FSUtils;
 import org.apache.hadoop.hbase.Coprocessor;
@@ -49,7 +48,6 @@ import org.apache.hadoop.hdfs.MiniDFSCluster;
 import org.apache.hadoop.hdfs.protocol.FSConstants;
 import org.apache.hadoop.hdfs.server.datanode.DataNode;
 import org.apache.hadoop.hdfs.server.namenode.LeaseManager;
-import org.apache.hadoop.io.SequenceFile;
 import org.apache.log4j.Level;
 import org.junit.After;
 import org.junit.AfterClass;
@@ -79,7 +77,7 @@ public class TestHLog  {
   private final static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
   private static Path hbaseDir;
   private static Path oldLogDir;
-
+  
   @Before
   public void setUp() throws Exception {
 
@@ -99,6 +97,7 @@ public class TestHLog  {
     // Make block sizes small.
     TEST_UTIL.getConfiguration().setInt("dfs.blocksize", 1024 * 1024);
     // needed for testAppendClose()
+    TEST_UTIL.getConfiguration().setBoolean("dfs.support.broken.append", true);
     TEST_UTIL.getConfiguration().setBoolean("dfs.support.append", true);
     // quicker heartbeat interval for faster DN death notification
     TEST_UTIL.getConfiguration().setInt("heartbeat.recheck.interval", 5000);
@@ -195,7 +194,7 @@ public class TestHLog  {
       }
       log.close();
       HLogSplitter logSplitter = HLogSplitter.createLogSplitter(conf,
-          hbaseDir, logdir, this.oldLogDir, this.fs);
+          hbaseDir, logdir, oldLogDir, fs);
       List<Path> splits =
         logSplitter.splitLog();
       verifySplits(splits, howmany);
@@ -317,7 +316,7 @@ public class TestHLog  {
    */
   @Test
   public void testFindMemstoresWithEditsEqualOrOlderThan() throws IOException {
-    Map<byte [], Long> regionsToSeqids = new HashMap<byte [], Long>();
+    Map<byte [], Long> regionsToSeqids = new TreeMap<byte [], Long>(Bytes.BYTES_COMPARATOR);
     for (int i = 0; i < 10; i++) {
       Long l = Long.valueOf(i);
       regionsToSeqids.put(l.toString().getBytes(), l);
@@ -370,18 +369,22 @@ public class TestHLog  {
     }
   }
   
-  // For this test to pass, requires:
-  // 1. HDFS-200 (append support)
-  // 2. HDFS-988 (SafeMode should freeze file operations
-  //              [FSNamesystem.nextGenerationStampForBlock])
-  // 3. HDFS-142 (on restart, maintain pendingCreates)
+  /*
+   * We pass different values to recoverFileLease() so that different code paths are covered
+   * 
+   * For this test to pass, requires:
+   * 1. HDFS-200 (append support)
+   * 2. HDFS-988 (SafeMode should freeze file operations
+   *              [FSNamesystem.nextGenerationStampForBlock])
+   * 3. HDFS-142 (on restart, maintain pendingCreates)
+   */
   @Test
   public void testAppendClose() throws Exception {
     byte [] tableName = Bytes.toBytes(getName());
     HRegionInfo regioninfo = new HRegionInfo(tableName,
              HConstants.EMPTY_START_ROW, HConstants.EMPTY_END_ROW, false);
 
-    HLog wal = HLogFactory.createHLog(fs, dir, "hlogdir", 
+    HLog wal = HLogFactory.createHLog(fs, dir, "hlogdir",
         "hlogdir_archive", conf);
     final int total = 20;
 
@@ -397,7 +400,7 @@ public class TestHLog  {
     wal.sync();
      int namenodePort = cluster.getNameNodePort();
     final Path walPath = ((FSHLog) wal).computeFilename();
-    
+
 
     // Stop the cluster.  (ensure restart since we're sharing MiniDFSCluster)
     try {
@@ -440,18 +443,17 @@ public class TestHLog  {
     Method setLeasePeriod = cluster.getClass()
       .getDeclaredMethod("setLeasePeriod", new Class[]{Long.TYPE, Long.TYPE});
     setLeasePeriod.setAccessible(true);
-    setLeasePeriod.invoke(cluster,
-                          new Object[]{new Long(1000), new Long(1000)});
+    setLeasePeriod.invoke(cluster, 1000L, 1000L);
     try {
       Thread.sleep(1000);
     } catch (InterruptedException e) {
       LOG.info(e);
     }
-    
+
     // Now try recovering the log, like the HMaster would do
     final FileSystem recoveredFs = fs;
     final Configuration rlConf = conf;
-    
+
     class RecoverLogThread extends Thread {
       public Exception exception = null;
       public void run() {
@@ -487,6 +489,9 @@ public class TestHLog  {
     }
     assertEquals(total, count);
     reader.close();
+
+    // Reset the lease period
+    setLeasePeriod.invoke(cluster, new Object[]{new Long(60000), new Long(3600000)});
   }
 
   /**
@@ -699,21 +704,21 @@ public class TestHLog  {
 
   @Test
   public void testGetServerNameFromHLogDirectoryName() throws IOException {
-    String hl = conf.get(HConstants.HBASE_DIR) + "/"+
+    String hl = FSUtils.getRootDir(conf) + "/"+
         HLogUtil.getHLogDirectoryName(new ServerName("hn", 450, 1398).toString());
 
     // Must not throw exception
     Assert.assertNull(HLogUtil.getServerNameFromHLogDirectoryName(conf, null));
     Assert.assertNull(HLogUtil.getServerNameFromHLogDirectoryName(conf,
-        conf.get(HConstants.HBASE_DIR) + "/"));
+        FSUtils.getRootDir(conf).toUri().toString()));
     Assert.assertNull( HLogUtil.getServerNameFromHLogDirectoryName(conf, "") );
     Assert.assertNull( HLogUtil.getServerNameFromHLogDirectoryName(conf, "                  ") );
     Assert.assertNull( HLogUtil.getServerNameFromHLogDirectoryName(conf, hl) );
     Assert.assertNull( HLogUtil.getServerNameFromHLogDirectoryName(conf, hl+"qdf") );
     Assert.assertNull( HLogUtil.getServerNameFromHLogDirectoryName(conf, "sfqf"+hl+"qdf") );
 
-    Assert.assertNotNull( HLogUtil.getServerNameFromHLogDirectoryName(conf, conf.get(
-        HConstants.HBASE_DIR) +
+    Assert.assertNotNull( HLogUtil.getServerNameFromHLogDirectoryName(conf,
+      FSUtils.getRootDir(conf).toUri().toString() +
         "/.logs/localhost,32984,1343316388997/localhost%2C32984%2C1343316388997.1343316390417"
         ));
     Assert.assertNotNull( HLogUtil.getServerNameFromHLogDirectoryName(conf, hl+"/qdf") );

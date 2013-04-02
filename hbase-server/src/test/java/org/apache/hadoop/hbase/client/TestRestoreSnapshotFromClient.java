@@ -17,47 +17,36 @@
  */
 package org.apache.hadoop.hbase.client;
 
-import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
-import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.HRegionInfo;
-import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.LargeTests;
-import org.apache.hadoop.hbase.master.HMaster;
+import org.apache.hadoop.hbase.exceptions.NoSuchColumnFamilyException;
 import org.apache.hadoop.hbase.master.MasterFileSystem;
 import org.apache.hadoop.hbase.master.snapshot.SnapshotManager;
-import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.SnapshotDescription;
-import org.apache.hadoop.hbase.regionserver.HRegion;
-import org.apache.hadoop.hbase.regionserver.HRegionServer;
-import org.apache.hadoop.hbase.regionserver.NoSuchColumnFamilyException;
-import org.apache.hadoop.hbase.snapshot.SnapshotDescriptionUtils;
-import org.apache.hadoop.hbase.snapshot.SnapshotDoesNotExistException;
-import org.apache.hadoop.hbase.snapshot.SnapshotTestingUtils;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.hbase.util.FSTableDescriptors;
 import org.apache.hadoop.hbase.util.FSUtils;
 import org.apache.hadoop.hbase.util.MD5Hash;
-import org.junit.*;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 /**
- * Test clone/restore snapshots from the client
+ * Test restore snapshots from the client
  */
 @Category(LargeTests.class)
 public class TestRestoreSnapshotFromClient {
@@ -237,31 +226,6 @@ public class TestRestoreSnapshotFromClient {
     table.close();
   }
 
-  @Test(expected=SnapshotDoesNotExistException.class)
-  public void testCloneNonExistentSnapshot() throws IOException, InterruptedException {
-    String snapshotName = "random-snapshot-" + System.currentTimeMillis();
-    String tableName = "random-table-" + System.currentTimeMillis();
-    admin.cloneSnapshot(snapshotName, tableName);
-  }
-
-  @Test
-  public void testCloneSnapshot() throws IOException, InterruptedException {
-    byte[] clonedTableName = Bytes.toBytes("clonedtb-" + System.currentTimeMillis());
-    testCloneSnapshot(clonedTableName, snapshotName0, snapshot0Rows);
-    testCloneSnapshot(clonedTableName, snapshotName1, snapshot1Rows);
-    testCloneSnapshot(clonedTableName, emptySnapshot, 0);
-  }
-
-  private void testCloneSnapshot(final byte[] tableName, final byte[] snapshotName,
-      int snapshotRows) throws IOException, InterruptedException {
-    // create a new table from snapshot
-    admin.cloneSnapshot(snapshotName, tableName);
-    verifyRowCount(tableName, snapshotRows);
-
-    admin.disableTable(tableName);
-    admin.deleteTable(tableName);
-  }
-
   @Test
   public void testRestoreSnapshotOfCloned() throws IOException, InterruptedException {
     byte[] clonedTableName = Bytes.toBytes("clonedtb-" + System.currentTimeMillis());
@@ -276,62 +240,6 @@ public class TestRestoreSnapshotFromClient {
     verifyRowCount(clonedTableName, snapshot0Rows);
     admin.disableTable(clonedTableName);
     admin.deleteTable(clonedTableName);
-  }
-
-  /**
-   * Verify that tables created from the snapshot are still alive after source table deletion.
-   */
-  @Test
-  public void testCloneLinksAfterDelete() throws IOException, InterruptedException {
-    // Clone a table from the first snapshot
-    byte[] clonedTableName = Bytes.toBytes("clonedtb1-" + System.currentTimeMillis());
-    admin.cloneSnapshot(snapshotName0, clonedTableName);
-    verifyRowCount(clonedTableName, snapshot0Rows);
-
-    // Take a snapshot of this cloned table.
-    admin.disableTable(clonedTableName);
-    admin.snapshot(snapshotName2, clonedTableName);
-
-    // Clone the snapshot of the cloned table
-    byte[] clonedTableName2 = Bytes.toBytes("clonedtb2-" + System.currentTimeMillis());
-    admin.cloneSnapshot(snapshotName2, clonedTableName2);
-    verifyRowCount(clonedTableName2, snapshot0Rows);
-    admin.disableTable(clonedTableName2);
-
-    // Remove the original table
-    admin.disableTable(tableName);
-    admin.deleteTable(tableName);
-    waitCleanerRun();
-
-    // Verify the first cloned table
-    admin.enableTable(clonedTableName);
-    verifyRowCount(clonedTableName, snapshot0Rows);
-
-    // Verify the second cloned table
-    admin.enableTable(clonedTableName2);
-    verifyRowCount(clonedTableName2, snapshot0Rows);
-    admin.disableTable(clonedTableName2);
-
-    // Delete the first cloned table
-    admin.disableTable(clonedTableName);
-    admin.deleteTable(clonedTableName);
-    waitCleanerRun();
-
-    // Verify the second cloned table
-    admin.enableTable(clonedTableName2);
-    verifyRowCount(clonedTableName2, snapshot0Rows);
-
-    // Clone a new table from cloned
-    byte[] clonedTableName3 = Bytes.toBytes("clonedtb3-" + System.currentTimeMillis());
-    admin.cloneSnapshot(snapshotName2, clonedTableName3);
-    verifyRowCount(clonedTableName3, snapshot0Rows);
-
-    // Delete the cloned tables
-    admin.disableTable(clonedTableName2);
-    admin.deleteTable(clonedTableName2);
-    admin.disableTable(clonedTableName3);
-    admin.deleteTable(clonedTableName3);
-    admin.deleteSnapshot(snapshotName2);
   }
 
   // ==========================================================================

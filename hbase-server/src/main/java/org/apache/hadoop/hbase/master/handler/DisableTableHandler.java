@@ -27,11 +27,12 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.Server;
-import org.apache.hadoop.hbase.TableNotEnabledException;
-import org.apache.hadoop.hbase.TableNotFoundException;
+import org.apache.hadoop.hbase.exceptions.TableNotEnabledException;
+import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
 import org.apache.hadoop.hbase.catalog.CatalogTracker;
 import org.apache.hadoop.hbase.catalog.MetaReader;
 import org.apache.hadoop.hbase.executor.EventHandler;
+import org.apache.hadoop.hbase.executor.EventType;
 import org.apache.hadoop.hbase.master.AssignmentManager;
 import org.apache.hadoop.hbase.master.BulkAssigner;
 import org.apache.hadoop.hbase.master.HMaster;
@@ -201,11 +202,12 @@ public class DisableTableHandler extends EventHandler {
     protected void populatePool(ExecutorService pool) {
       RegionStates regionStates = assignmentManager.getRegionStates();
       for (HRegionInfo region: regions) {
-        if (regionStates.isRegionInTransition(region)) continue;
+        if (regionStates.isRegionInTransition(region)
+            && !regionStates.isRegionFailedToClose(region)) continue;
         final HRegionInfo hri = region;
         pool.execute(Trace.wrap(new Runnable() {
           public void run() {
-            assignmentManager.unassign(hri);
+            assignmentManager.unassign(hri, true);
           }
         }));
       }

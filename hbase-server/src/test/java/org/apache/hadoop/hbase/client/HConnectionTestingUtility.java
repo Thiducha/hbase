@@ -24,7 +24,7 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HRegionLocation;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.ZooKeeperConnectionException;
+import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.client.HConnectionManager.HConnectionImplementation;
 import org.apache.hadoop.hbase.client.HConnectionManager.HConnectionKey;
 import org.mockito.Mockito;
@@ -99,7 +99,7 @@ public class HConnectionTestingUtility {
     HConnection c = HConnectionTestingUtility.getMockedConnection(conf);
     Mockito.doNothing().when(c).close();
     // Make it so we return a particular location when asked.
-    final HRegionLocation loc = new HRegionLocation(hri, sn, HConstants.NO_SEQNUM);
+    final HRegionLocation loc = new HRegionLocation(hri, sn);
     Mockito.when(c.getRegionLocation((byte[]) Mockito.any(),
         (byte[]) Mockito.any(), Mockito.anyBoolean())).
       thenReturn(loc);
@@ -131,7 +131,7 @@ public class HConnectionTestingUtility {
    * {http://mockito.googlecode.com/svn/branches/1.6/javadoc/org/mockito/Mockito.html#spy(T)}
    */
   public static HConnection getSpiedConnection(final Configuration conf)
-  throws ZooKeeperConnectionException {
+  throws IOException {
     HConnectionKey connectionKey = new HConnectionKey(conf);
     synchronized (HConnectionManager.HBASE_INSTANCES) {
       HConnectionImplementation connection =

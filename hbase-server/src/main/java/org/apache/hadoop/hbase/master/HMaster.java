@@ -27,7 +27,6 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,7 +48,6 @@ import org.apache.hadoop.hbase.Abortable;
 import org.apache.hadoop.hbase.Chore;
 import org.apache.hadoop.hbase.ClusterId;
 import org.apache.hadoop.hbase.ClusterStatus;
-import org.apache.hadoop.hbase.DeserializationException;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
@@ -57,18 +55,11 @@ import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.HealthCheckChore;
 import org.apache.hadoop.hbase.MasterAdminProtocol;
 import org.apache.hadoop.hbase.MasterMonitorProtocol;
-import org.apache.hadoop.hbase.MasterNotRunningException;
-import org.apache.hadoop.hbase.NotAllMetaRegionsOnlineException;
-import org.apache.hadoop.hbase.PleaseHoldException;
 import org.apache.hadoop.hbase.RegionServerStatusProtocol;
 import org.apache.hadoop.hbase.Server;
 import org.apache.hadoop.hbase.ServerLoad;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.TableDescriptors;
-import org.apache.hadoop.hbase.TableNotDisabledException;
-import org.apache.hadoop.hbase.TableNotFoundException;
-import org.apache.hadoop.hbase.UnknownRegionException;
-import org.apache.hadoop.hbase.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.catalog.CatalogTracker;
 import org.apache.hadoop.hbase.catalog.MetaReader;
 import org.apache.hadoop.hbase.client.HConnectionManager;
@@ -77,13 +68,21 @@ import org.apache.hadoop.hbase.client.MetaScanner.MetaScannerVisitor;
 import org.apache.hadoop.hbase.client.MetaScanner.MetaScannerVisitorBase;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.coprocessor.CoprocessorHost;
+import org.apache.hadoop.hbase.exceptions.DeserializationException;
+import org.apache.hadoop.hbase.exceptions.HBaseIOException;
+import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
+import org.apache.hadoop.hbase.exceptions.NotAllMetaRegionsOnlineException;
+import org.apache.hadoop.hbase.exceptions.PleaseHoldException;
+import org.apache.hadoop.hbase.exceptions.TableNotDisabledException;
+import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
+import org.apache.hadoop.hbase.exceptions.UnknownProtocolException;
+import org.apache.hadoop.hbase.exceptions.UnknownRegionException;
 import org.apache.hadoop.hbase.executor.ExecutorService;
-import org.apache.hadoop.hbase.executor.ExecutorService.ExecutorType;
+import org.apache.hadoop.hbase.executor.ExecutorType;
 import org.apache.hadoop.hbase.ipc.HBaseServer;
 import org.apache.hadoop.hbase.ipc.HBaseServerRPC;
 import org.apache.hadoop.hbase.ipc.RpcServer;
 import org.apache.hadoop.hbase.ipc.ServerRpcController;
-import org.apache.hadoop.hbase.ipc.UnknownProtocolException;
 import org.apache.hadoop.hbase.master.balancer.BalancerChore;
 import org.apache.hadoop.hbase.master.balancer.ClusterStatusChore;
 import org.apache.hadoop.hbase.master.balancer.LoadBalancerFactory;
@@ -92,9 +91,9 @@ import org.apache.hadoop.hbase.master.cleaner.LogCleaner;
 import org.apache.hadoop.hbase.master.handler.CreateTableHandler;
 import org.apache.hadoop.hbase.master.handler.DeleteTableHandler;
 import org.apache.hadoop.hbase.master.handler.DisableTableHandler;
+import org.apache.hadoop.hbase.master.handler.DispatchMergingRegionHandler;
 import org.apache.hadoop.hbase.master.handler.EnableTableHandler;
 import org.apache.hadoop.hbase.master.handler.ModifyTableHandler;
-import org.apache.hadoop.hbase.master.handler.ServerShutdownHandler;
 import org.apache.hadoop.hbase.master.handler.TableAddFamilyHandler;
 import org.apache.hadoop.hbase.master.handler.TableDeleteFamilyHandler;
 import org.apache.hadoop.hbase.master.handler.TableModifyFamilyHandler;
@@ -128,6 +127,8 @@ import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DeleteTableR
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DeleteTableResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DisableTableRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DisableTableResponse;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DispatchMergingRegionsRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.DispatchMergingRegionsResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.EnableCatalogJanitorRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.EnableCatalogJanitorResponse;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.EnableTableRequest;
@@ -178,6 +179,7 @@ import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.Repor
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.ReportRSFatalErrorResponse;
 import org.apache.hadoop.hbase.replication.regionserver.Replication;
 import org.apache.hadoop.hbase.security.User;
+import org.apache.hadoop.hbase.snapshot.ClientSnapshotDescriptionUtils;
 import org.apache.hadoop.hbase.snapshot.SnapshotDescriptionUtils;
 import org.apache.hadoop.hbase.trace.SpanReceiverHost;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -295,9 +297,12 @@ Server {
   private volatile boolean abort = false;
   // flag set after we become the active master (used for testing)
   private volatile boolean isActiveMaster = false;
-  // flag set after we complete initialization once active (used for testing)
-  private volatile boolean initialized = false;
-  // flag set after we complete assignRootAndMeta.
+
+  // flag set after we complete initialization once active,
+  // it is not private since it's used in unit tests
+  volatile boolean initialized = false;
+
+  // flag set after we complete assignMeta.
   private volatile boolean serverShutdownHandlerEnabled = false;
 
   // Instance of the hbase executor service.
@@ -344,6 +349,7 @@ Server {
   /** The health check chore. */
   private HealthCheckChore healthCheckChore;
 
+
   /**
    * Initializes the HMaster. The steps are as follows:
    * <p>
@@ -368,17 +374,25 @@ Server {
       conf.get("hbase.master.dns.interface", "default"),
       conf.get("hbase.master.dns.nameserver", "default")));
     int port = conf.getInt(HConstants.MASTER_PORT, HConstants.DEFAULT_MASTER_PORT);
-    // Creation of a ISA will force a resolve.
+    // Test that the hostname is reachable
     InetSocketAddress initialIsa = new InetSocketAddress(hostname, port);
     if (initialIsa.getAddress() == null) {
-      throw new IllegalArgumentException("Failed resolve of " + initialIsa);
+      throw new IllegalArgumentException("Failed resolve of hostname " + initialIsa);
+    }
+    // Verify that the bind address is reachable if set
+    String bindAddress = conf.get("hbase.master.ipc.address");
+    if (bindAddress != null) {
+      initialIsa = new InetSocketAddress(bindAddress, port);
+      if (initialIsa.getAddress() == null) {
+        throw new IllegalArgumentException("Failed resolve of bind address " + initialIsa);
+      }
     }
     int numHandlers = conf.getInt("hbase.master.handler.count",
       conf.getInt("hbase.regionserver.handler.count", 25));
     this.rpcServer = HBaseServerRPC.getServer(MasterMonitorProtocol.class, this,
         new Class<?>[]{MasterMonitorProtocol.class,
             MasterAdminProtocol.class, RegionServerStatusProtocol.class},
-        initialIsa.getHostName(), // BindAddress is IP we got for this server.
+        initialIsa.getHostName(), // This is bindAddress if set else it's hostname
         initialIsa.getPort(),
         numHandlers,
         0, // we dont use high priority handlers in master
@@ -386,7 +400,7 @@ Server {
         0); // this is a DNC w/o high priority handlers
     // Set our address.
     this.isa = this.rpcServer.getListenerAddress();
-    this.serverName = new ServerName(this.isa.getHostName(),
+    this.serverName = new ServerName(hostname,
       this.isa.getPort(), System.currentTimeMillis());
     this.rsFatals = new MemoryBoundedLogMessageBuffer(
         conf.getLong("hbase.master.buffer.for.rs.fatals", 1*1024*1024));
@@ -431,10 +445,14 @@ Server {
       healthCheckChore = new HealthCheckChore(sleepTime, this, getConfiguration());
     }
 
-    // Do we multicast the status?
-    if (conf.get(HConstants.STATUS_MULTICAST_ADDRESS,
-        HConstants.DEFAULT_STATUS_MULTICAST_ADDRESS) != null){
-      clusterStatusPublisherChore = new ClusterStatusPublisher(this, conf);
+    // Do we publish the status?
+    Class<? extends ClusterStatusPublisher.Publisher> publisherClass =
+        conf.getClass(ClusterStatusPublisher.STATUS_PUBLISHER_CLASS,
+            ClusterStatusPublisher.DEFAULT_STATUS_PUBLISHER_CLASS,
+            ClusterStatusPublisher.Publisher.class);
+
+    if (publisherClass != null) {
+      clusterStatusPublisherChore = new ClusterStatusPublisher(this, conf, publisherClass);
       Threads.setDaemonThreadRunning(clusterStatusPublisherChore.getThread());
     }
   }
@@ -442,7 +460,7 @@ Server {
   /**
    * Stall startup if we are designated a backup master; i.e. we want someone
    * else to become the master before proceeding.
-   * @param c
+   * @param c configuration
    * @param amm
    * @throws InterruptedException
    */
@@ -660,7 +678,7 @@ Server {
    * <li>Set cluster as UP in ZooKeeper</li>
    * <li>Wait for RegionServers to check-in</li>
    * <li>Split logs and perform data recovery, if necessary</li>
-   * <li>Ensure assignment of root and meta regions<li>
+   * <li>Ensure assignment of meta regions<li>
    * <li>Handle either fresh cluster start or master failover</li>
    * </ol>
    *
@@ -699,6 +717,13 @@ Server {
       this.serverManager = createServerManager(this, this);
     }
 
+    //Initialize table lock manager, and ensure that all write locks held previously
+    //are invalidated
+    this.tableLockManager = TableLockManager.createTableLockManager(conf, zooKeeper, serverName);
+    if (!masterRecovery) {
+      this.tableLockManager.reapAllTableWriteLocks();
+    }
+
     status.setStatus("Initializing ZK system trackers");
     initializeZKBasedSystemTrackers();
 
@@ -713,13 +738,6 @@ Server {
       // start up all service threads.
       status.setStatus("Initializing master service threads");
       startServiceThreads();
-    }
-
-    //Initialize table lock manager, and ensure that all write locks held previously
-    //are invalidated
-    this.tableLockManager = TableLockManager.createTableLockManager(conf, zooKeeper, serverName);
-    if (!masterRecovery) {
-      this.tableLockManager.reapAllTableWriteLocks();
     }
 
     // Wait for region servers to report in.
@@ -742,8 +760,8 @@ Server {
     status.setStatus("Splitting logs after master startup");
     splitLogAfterStartup(this.fileSystemManager);
 
-    // Make sure root and meta assigned before proceeding.
-    if (!assignRootAndMeta(status)) return;
+    // Make sure meta assigned before proceeding.
+    if (!assignMeta(status)) return;
     enableServerShutdownHandler();
 
     // Update meta with new PB serialization if required. i.e migrate all HRI
@@ -759,10 +777,6 @@ Server {
     this.assignmentManager.joinCluster();
 
     this.balancer.setClusterStatus(getClusterStatus());
-
-    // Fixing up missing daughters if any
-    status.setStatus("Fixing up missing daughters");
-    fixupDaughters(status);
 
     if (!masterRecovery) {
       // Start balancer and meta catalog janitor after meta and regions have
@@ -815,7 +829,7 @@ Server {
    * @param master
    * @param services
    * @return An instance of {@link ServerManager}
-   * @throws ZooKeeperConnectionException
+   * @throws org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException
    * @throws IOException
    */
   ServerManager createServerManager(final Server master,
@@ -838,76 +852,43 @@ Server {
   }
 
   /**
-   * Check <code>-ROOT-</code> and <code>.META.</code> are assigned.  If not,
+   * Check <code>.META.</code> are assigned.  If not,
    * assign them.
    * @throws InterruptedException
    * @throws IOException
    * @throws KeeperException
-   * @return True if root and meta are healthy, assigned
+   * @return True if meta is healthy, assigned
    */
-  boolean assignRootAndMeta(MonitoredTask status)
+  boolean assignMeta(MonitoredTask status)
   throws InterruptedException, IOException, KeeperException {
     int assigned = 0;
     long timeout = this.conf.getLong("hbase.catalog.verification.timeout", 1000);
 
-    // Work on ROOT region.  Is it in zk in transition?
-    status.setStatus("Assigning ROOT region");
-    assignmentManager.getRegionStates().createRegionState(
-      HRegionInfo.ROOT_REGIONINFO);
-    boolean rit = this.assignmentManager.
-      processRegionInTransitionAndBlockUntilAssigned(HRegionInfo.ROOT_REGIONINFO);
-    ServerName currentRootServer = null;
-    boolean rootRegionLocation = catalogTracker.verifyRootRegionLocation(timeout);
-    if (!rit && !rootRegionLocation) {
-      currentRootServer = this.catalogTracker.getRootLocation();
-      splitLogAndExpireIfOnline(currentRootServer);
-      this.assignmentManager.assignRoot();
-      // Make sure a -ROOT- location is set.
-      if (!isRootLocation()) return false;
-      // This guarantees that the transition assigning -ROOT- has completed
-      this.assignmentManager.waitForAssignment(HRegionInfo.ROOT_REGIONINFO);
-      assigned++;
-    } else if (rit && !rootRegionLocation) {
-      // Make sure a -ROOT- location is set.
-      if (!isRootLocation()) return false;
-      // This guarantees that the transition assigning -ROOT- has completed
-      this.assignmentManager.waitForAssignment(HRegionInfo.ROOT_REGIONINFO);
-      assigned++;
-    } else if (rootRegionLocation) {
-      // Region already assigned.  We didn't assign it.  Add to in-memory state.
-      this.assignmentManager.regionOnline(HRegionInfo.ROOT_REGIONINFO,
-        this.catalogTracker.getRootLocation());
-    }
-    // Enable the ROOT table if on process fail over the RS containing ROOT
-    // was active.
-    enableCatalogTables(Bytes.toString(HConstants.ROOT_TABLE_NAME));
-    // Check for stopped, just in case
-    if (this.stopped) return false;
-    LOG.info("-ROOT- assigned=" + assigned + ", rit=" + rit +
-      ", location=" + catalogTracker.getRootLocation());
-
-    // Work on meta region
+    // Work on .META. region.  Is it in zk in transition?
     status.setStatus("Assigning META region");
     assignmentManager.getRegionStates().createRegionState(
-      HRegionInfo.FIRST_META_REGIONINFO);
-    rit = this.assignmentManager.
+        HRegionInfo.FIRST_META_REGIONINFO);
+    boolean rit = this.assignmentManager.
       processRegionInTransitionAndBlockUntilAssigned(HRegionInfo.FIRST_META_REGIONINFO);
-    boolean metaRegionLocation = this.catalogTracker.verifyMetaRegionLocation(timeout);
+    ServerName currentMetaServer = null;
+    boolean metaRegionLocation = catalogTracker.verifyMetaRegionLocation(timeout);
     if (!rit && !metaRegionLocation) {
-      ServerName currentMetaServer =
-        this.catalogTracker.getMetaLocationOrReadLocationFromRoot();
-      if (currentMetaServer != null
-          && !currentMetaServer.equals(currentRootServer)) {
-        splitLogAndExpireIfOnline(currentMetaServer);
-      }
-      assignmentManager.assignMeta();
+      currentMetaServer = this.catalogTracker.getMetaLocation();
+      splitLogAndExpireIfOnline(currentMetaServer);
+      this.assignmentManager.assignMeta();
       enableSSHandWaitForMeta();
+      // Make sure a .META. location is set.
+      if (!isMetaLocation()) return false;
+      // This guarantees that the transition assigning .META. has completed
+      this.assignmentManager.waitForAssignment(HRegionInfo.FIRST_META_REGIONINFO);
       assigned++;
     } else if (rit && !metaRegionLocation) {
-      // Wait until META region added to region server onlineRegions. See HBASE-5875.
-      enableSSHandWaitForMeta();
+      // Make sure a .META. location is set.
+      if (!isMetaLocation()) return false;
+      // This guarantees that the transition assigning .META. has completed
+      this.assignmentManager.waitForAssignment(HRegionInfo.FIRST_META_REGIONINFO);
       assigned++;
-    } else {
+    } else if (metaRegionLocation) {
       // Region already assigned.  We didn't assign it.  Add to in-memory state.
       this.assignmentManager.regionOnline(HRegionInfo.FIRST_META_REGIONINFO,
         this.catalogTracker.getMetaLocation());
@@ -915,7 +896,7 @@ Server {
     enableCatalogTables(Bytes.toString(HConstants.META_TABLE_NAME));
     LOG.info(".META. assigned=" + assigned + ", rit=" + rit +
       ", location=" + catalogTracker.getMetaLocation());
-    status.setStatus("META and ROOT assigned.");
+    status.setStatus("META assigned.");
     return true;
   }
 
@@ -928,17 +909,17 @@ Server {
   }
 
   /**
-   * @return True if there a root available
+   * @return True if there a meta available
    * @throws InterruptedException
    */
-  private boolean isRootLocation() throws InterruptedException {
+  private boolean isMetaLocation() throws InterruptedException {
     // Cycle up here in master rather than down in catalogtracker so we can
     // check the master stopped flag every so often.
     while (!this.stopped) {
       try {
-        if (this.catalogTracker.waitForRoot(100) != null) break;
+        if (this.catalogTracker.waitForMeta(100) != null) break;
       } catch (NotAllMetaRegionsOnlineException e) {
-        // Ignore.  I know -ROOT- is not online yet.
+        // Ignore.  I know .META. is not online yet.
       }
     }
     // We got here because we came of above loop.
@@ -948,41 +929,6 @@ Server {
   private void enableCatalogTables(String catalogTableName) {
     if (!this.assignmentManager.getZKTable().isEnabledTable(catalogTableName)) {
       this.assignmentManager.setEnabledTable(catalogTableName);
-    }
-  }
-
-  void fixupDaughters(final MonitoredTask status) throws IOException {
-    final Map<HRegionInfo, Result> offlineSplitParents =
-      new HashMap<HRegionInfo, Result>();
-    // This visitor collects offline split parents in the .META. table
-    MetaReader.Visitor visitor = new MetaReader.Visitor() {
-      @Override
-      public boolean visit(Result r) throws IOException {
-        if (r == null || r.isEmpty()) return true;
-        HRegionInfo info =
-          HRegionInfo.getHRegionInfo(r);
-        if (info == null) return true; // Keep scanning
-        if (info.isOffline() && info.isSplit()) {
-          offlineSplitParents.put(info, r);
-        }
-        // Returning true means "keep scanning"
-        return true;
-      }
-    };
-    // Run full scan of .META. catalog table passing in our custom visitor
-    MetaReader.fullScan(this.catalogTracker, visitor);
-    // Now work on our list of found parents. See if any we can clean up.
-    int fixups = 0;
-    for (Map.Entry<HRegionInfo, Result> e : offlineSplitParents.entrySet()) {
-      ServerName sn = HRegionInfo.getServerName(e.getValue());
-      if (!serverManager.isServerDead(sn)) { // Otherwise, let SSH take care of it
-        fixups += ServerShutdownHandler.fixupDaughters(
-          e.getValue(), assignmentManager, catalogTracker);
-      }
-    }
-    if (fixups != 0) {
-      LOG.info("Scanned the catalog and fixed up " + fixups +
-        " missing daughter region(s)");
     }
   }
 
@@ -1454,6 +1400,57 @@ Server {
   }
 
   @Override
+  public DispatchMergingRegionsResponse dispatchMergingRegions(
+      RpcController controller, DispatchMergingRegionsRequest request)
+      throws ServiceException {
+    final byte[] encodedNameOfRegionA = request.getRegionA().getValue()
+        .toByteArray();
+    final byte[] encodedNameOfRegionB = request.getRegionB().getValue()
+        .toByteArray();
+    final boolean forcible = request.getForcible();
+    if (request.getRegionA().getType() != RegionSpecifierType.ENCODED_REGION_NAME
+        || request.getRegionB().getType() != RegionSpecifierType.ENCODED_REGION_NAME) {
+      LOG.warn("mergeRegions specifier type: expected: "
+          + RegionSpecifierType.ENCODED_REGION_NAME + " actual: region_a="
+          + request.getRegionA().getType() + ", region_b="
+          + request.getRegionB().getType());
+    }
+    RegionState regionStateA = assignmentManager.getRegionStates()
+        .getRegionState(Bytes.toString(encodedNameOfRegionA));
+    RegionState regionStateB = assignmentManager.getRegionStates()
+        .getRegionState(Bytes.toString(encodedNameOfRegionB));
+    if (regionStateA == null || regionStateB == null) {
+      throw new ServiceException(new UnknownRegionException(
+          Bytes.toStringBinary(regionStateA == null ? encodedNameOfRegionA
+              : encodedNameOfRegionB)));
+    }
+
+    if (!forcible && !HRegionInfo.areAdjacent(regionStateA.getRegion(),
+            regionStateB.getRegion())) {
+      throw new ServiceException("Unable to merge not adjacent regions "
+          + regionStateA.getRegion().getRegionNameAsString() + ", "
+          + regionStateB.getRegion().getRegionNameAsString()
+          + " where forcible = " + forcible);
+    }
+
+    try {
+      dispatchMergingRegions(regionStateA.getRegion(), regionStateB.getRegion(), forcible);
+    } catch (IOException ioe) {
+      throw new ServiceException(ioe);
+    }
+
+    return DispatchMergingRegionsResponse.newBuilder().build();
+  }
+
+  @Override
+  public void dispatchMergingRegions(final HRegionInfo region_a,
+      final HRegionInfo region_b, final boolean forcible) throws IOException {
+    checkInitialized();
+    this.executorService.submit(new DispatchMergingRegionHandler(this,
+        this.catalogJanitorChore, region_a, region_b, forcible));
+  }
+
+  @Override
   public MoveRegionResponse moveRegion(RpcController controller, MoveRegionRequest req)
   throws ServiceException {
     final byte [] encodedRegionName = req.getRegion().getValue().toByteArray();
@@ -1466,11 +1463,21 @@ Server {
       LOG.warn("moveRegion specifier type: expected: " + RegionSpecifierType.ENCODED_REGION_NAME
         + " actual: " + type);
     }
+
+    try {
+      move(encodedRegionName, destServerName);
+    } catch (HBaseIOException ioe) {
+      throw new ServiceException(ioe);
+    }
+    return mrr;
+  }
+
+  void move(final byte[] encodedRegionName,
+      final byte[] destServerName) throws HBaseIOException {
     RegionState regionState = assignmentManager.getRegionStates().
       getRegionState(Bytes.toString(encodedRegionName));
     if (regionState == null) {
-      throw new ServiceException(
-        new UnknownRegionException(Bytes.toStringBinary(encodedRegionName)));
+      throw new UnknownRegionException(Bytes.toStringBinary(encodedRegionName));
     }
 
     HRegionInfo hri = regionState.getRegion();
@@ -1486,7 +1493,7 @@ Server {
       if (dest.equals(regionState.getServerName())) {
         LOG.debug("Skipping move of region " + hri.getRegionNameAsString()
           + " because region already assigned to the same server " + dest + ".");
-        return mrr;
+        return;
       }
     }
 
@@ -1494,9 +1501,10 @@ Server {
     RegionPlan rp = new RegionPlan(hri, regionState.getServerName(), dest);
 
     try {
+      checkInitialized();
       if (this.cpHost != null) {
         if (this.cpHost.preMove(hri, rp.getSource(), rp.getDestination())) {
-          return mrr;
+          return;
         }
       }
       LOG.info("Added move plan " + rp + ", running balancer");
@@ -1505,12 +1513,11 @@ Server {
         this.cpHost.postMove(hri, rp.getSource(), rp.getDestination());
       }
     } catch (IOException ioe) {
-      UnknownRegionException ure = new UnknownRegionException(
-        Bytes.toStringBinary(encodedRegionName));
-      ure.initCause(ioe);
-      throw new ServiceException(ure);
+      if (ioe instanceof HBaseIOException) {
+        throw (HBaseIOException)ioe;
+      }
+      throw new HBaseIOException(ioe);
     }
-    return mrr;
   }
 
   @Override
@@ -1587,8 +1594,7 @@ Server {
   }
 
   private static boolean isCatalogTable(final byte [] tableName) {
-    return Bytes.equals(tableName, HConstants.ROOT_TABLE_NAME) ||
-           Bytes.equals(tableName, HConstants.META_TABLE_NAME);
+    return Bytes.equals(tableName, HConstants.META_TABLE_NAME);
   }
 
   @Override
@@ -1978,7 +1984,7 @@ Server {
    * 1. Create a new ZK session. (since our current one is expired)
    * 2. Try to become a primary master again
    * 3. Initialize all ZK based system trackers.
-   * 4. Assign root and meta. (they are already assigned, but we need to update our
+   * 4. Assign meta. (they are already assigned, but we need to update our
    * internal memory state to reflect it)
    * 5. Process any RIT if any during the process of our recovery.
    *
@@ -2196,8 +2202,8 @@ Server {
 
   /**
    * ServerShutdownHandlerEnabled is set false before completing
-   * assignRootAndMeta to prevent processing of ServerShutdownHandler.
-   * @return true if assignRootAndMeta has completed;
+   * assignMeta to prevent processing of ServerShutdownHandler.
+   * @return true if assignMeta has completed;
    */
   public boolean isServerShutdownHandlerEnabled() {
     return this.serverShutdownHandlerEnabled;
@@ -2336,7 +2342,11 @@ Server {
   }
 
   /**
-   * Special method, only used by hbck.
+   * Offline specified region from master's in-memory state. It will not attempt to
+   * reassign the region as in unassign.
+   *  
+   * This is a special method that should be used by experts or hbck.
+   * 
    */
   @Override
   public OfflineRegionResponse offlineRegion(RpcController controller, OfflineRegionRequest request)
@@ -2353,7 +2363,13 @@ Server {
         MetaReader.getRegion(this.catalogTracker, regionName);
       if (pair == null) throw new UnknownRegionException(Bytes.toStringBinary(regionName));
       HRegionInfo hri = pair.getFirst();
+      if (cpHost != null) {
+        cpHost.preRegionOffline(hri);
+      }
       this.assignmentManager.regionOffline(hri);
+      if (cpHost != null) {
+        cpHost.postRegionOffline(hri);
+      }
     } catch (IOException ioe) {
       throw new ServiceException(ioe);
     }
@@ -2492,7 +2508,7 @@ Server {
     }
 
     LOG.debug("Submitting snapshot request for:" +
-        SnapshotDescriptionUtils.toString(request.getSnapshot()));
+        ClientSnapshotDescriptionUtils.toString(request.getSnapshot()));
     // get the snapshot information
     SnapshotDescription snapshot = SnapshotDescriptionUtils.validate(request.getSnapshot(),
       this.conf);
@@ -2563,7 +2579,7 @@ Server {
   public IsSnapshotDoneResponse isSnapshotDone(RpcController controller,
       IsSnapshotDoneRequest request) throws ServiceException {
     LOG.debug("Checking to see if snapshot from request:" +
-        SnapshotDescriptionUtils.toString(request.getSnapshot()) + " is done");
+        ClientSnapshotDescriptionUtils.toString(request.getSnapshot()) + " is done");
     try {
       IsSnapshotDoneResponse.Builder builder = IsSnapshotDoneResponse.newBuilder();
       boolean done = snapshotManager.isSnapshotDone(request.getSnapshot());
@@ -2613,7 +2629,7 @@ Server {
    * No exceptions are thrown if the restore is not running, the result will be "done".
    *
    * @return done <tt>true</tt> if the restore/clone operation is completed.
-   * @throws RestoreSnapshotExcepton if the operation failed.
+   * @throws ServiceException if the operation failed.
    */
   @Override
   public IsRestoreSnapshotDoneResponse isRestoreSnapshotDone(RpcController controller,

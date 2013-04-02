@@ -26,7 +26,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.UnknownScannerException;
+import org.apache.hadoop.hbase.exceptions.UnknownScannerException;
 import org.apache.hadoop.hbase.client.HTableInterface;
 import org.apache.hadoop.hbase.client.HTablePool;
 import org.apache.hadoop.hbase.client.Result;
@@ -59,7 +59,12 @@ public class ScannerResultGenerator extends ResultGenerator {
 
   public ScannerResultGenerator(final String tableName, final RowSpec rowspec,
       final Filter filter) throws IllegalArgumentException, IOException {
-    HTablePool pool = RESTServlet.getInstance().getTablePool(); 
+    this(tableName, rowspec, filter, -1);
+  }
+
+  public ScannerResultGenerator(final String tableName, final RowSpec rowspec,
+      final Filter filter, final int caching) throws IllegalArgumentException, IOException {
+    HTablePool pool = RESTServlet.getInstance().getTablePool();
     HTableInterface table = pool.getTable(tableName);
     try {
       Scan scan;
@@ -86,6 +91,9 @@ public class ScannerResultGenerator extends ResultGenerator {
       }
       // always disable block caching on the cluster when scanning
       scan.setCacheBlocks(false);
+      if (caching > 0 ) {
+        scan.setCaching(caching);
+      }
       scanner = table.getScanner(scan);
       cached = null;
       id = Long.toString(System.currentTimeMillis()) +

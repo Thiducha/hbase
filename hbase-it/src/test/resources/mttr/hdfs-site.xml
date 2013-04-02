@@ -6,14 +6,9 @@
     <name>dfs.http.address</name>
     <value>0.0.0.0:11080</value>
     <description>The name of the default file system. Either the
-      literal string "local" or a host:port for NDFS.
+      literal string "local" or a host:port for HDFS.
     </description>
     <final>true</final>
-  </property>
-
-  <property>
-    <name>dfs.replication</name>
-    <value>3</value>
   </property>
 
   <property>
@@ -21,8 +16,7 @@
     <value>4096</value>
   </property>
 
-
-  <!-- stale mode - trunk -->
+  <!-- stale mode - 2.0.3 -->
   <property>
     <name>dfs.namenode.avoid.read.stale.datanode</name>
     <value>true</value>
@@ -34,24 +28,14 @@
   </property>
 
   <property>
-    <name>dfs.namenode.stale.datanode.interval</name>
-    <value>20000</value>
-  </property>
-
-  <property>
     <name>dfs.namenode.write.stale.datanode.ratio</name>
     <value>1.0f</value>
   </property>
 
-  <!-- stale mode - branch 1.1.1 -->
+  <!-- stale mode - branch 1.1.1+ -->
   <property>
     <name>dfs.namenode.check.stale.datanode</name>
-    <value>false</value>
-  </property>
-
-  <property>
-    <name>dfs.namenode.stale.datanode.interval</name>
-    <value>20000</value>
+    <value>true</value>
   </property>
 
 

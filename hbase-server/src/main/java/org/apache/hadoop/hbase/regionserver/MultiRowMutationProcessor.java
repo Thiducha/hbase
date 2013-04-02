@@ -22,8 +22,10 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.hadoop.hbase.DoNotRetryIOException;
+import org.apache.hadoop.hbase.exceptions.DoNotRetryIOException;
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.KeyValueUtil;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
@@ -70,7 +72,7 @@ MultiRowMutationProcessorResponse> {
     // Check mutations and apply edits to a single WALEdit
     for (Mutation m : mutations) {
       if (m instanceof Put) {
-        Map<byte[], List<KeyValue>> familyMap = m.getFamilyMap();
+        Map<byte[], List<? extends Cell>> familyMap = m.getFamilyMap();
         region.checkFamilies(familyMap.keySet());
         region.checkTimestamps(familyMap, now);
         region.updateKVTimestamps(familyMap.values(), byteNow);
@@ -83,9 +85,10 @@ MultiRowMutationProcessorResponse> {
             "Action must be Put or Delete. But was: "
             + m.getClass().getName());
       }
-      for (List<KeyValue> edits : m.getFamilyMap().values()) {
+      for (List<? extends Cell> cells: m.getFamilyMap().values()) {
         boolean writeToWAL = m.getWriteToWAL();
-        for (KeyValue kv : edits) {
+        for (Cell cell : cells) {
+          KeyValue kv = KeyValueUtil.ensureKeyValue(cell);
           mutationKvs.add(kv);
           if (writeToWAL) {
             walEdit.add(kv);

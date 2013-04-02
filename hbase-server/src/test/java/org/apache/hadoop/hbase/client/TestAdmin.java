@@ -38,24 +38,33 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.commons.logging.impl.Log4JLogger;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.catalog.CatalogTracker;
+import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.exceptions.InvalidFamilyOperationException;
+import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
+import org.apache.hadoop.hbase.exceptions.NotServingRegionException;
+import org.apache.hadoop.hbase.exceptions.TableExistsException;
+import org.apache.hadoop.hbase.exceptions.TableNotDisabledException;
+import org.apache.hadoop.hbase.exceptions.TableNotEnabledException;
+import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
+import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.executor.EventHandler;
-import org.apache.hadoop.hbase.executor.EventHandler.EventType;
-import org.apache.hadoop.hbase.executor.ExecutorService;
+import org.apache.hadoop.hbase.ipc.HBaseClient;
+import org.apache.hadoop.hbase.ipc.HBaseServer;
 import org.apache.hadoop.hbase.master.AssignmentManager;
 import org.apache.hadoop.hbase.master.HMaster;
-import org.apache.hadoop.hbase.master.MasterServices;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.regionserver.wal.HLogUtilsForTests;
-import org.apache.hadoop.hbase.InvalidFamilyOperationException;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.zookeeper.ZKTableReadOnly;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
+import org.apache.log4j.Level;
 import org.junit.*;
 import org.junit.experimental.categories.Category;
 
@@ -75,6 +84,9 @@ public class TestAdmin {
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
+    ((Log4JLogger)HBaseServer.LOG).getLogger().setLevel(Level.ALL);
+    ((Log4JLogger)HBaseClient.LOG).getLogger().setLevel(Level.ALL);
+    ((Log4JLogger)ScannerCallable.LOG).getLogger().setLevel(Level.ALL);
     TEST_UTIL.getConfiguration().setBoolean("hbase.online.schema.update.enable", true);
     TEST_UTIL.getConfiguration().setInt("hbase.regionserver.msginterval", 100);
     TEST_UTIL.getConfiguration().setInt("hbase.client.pause", 250);
@@ -244,7 +256,7 @@ public class TestAdmin {
     boolean ok = false;
     try {
       ht.get(get);
-    } catch (DoNotRetryIOException e) {
+    } catch (org.apache.hadoop.hbase.exceptions.DoNotRetryIOException e) {
       ok = true;
     }
     assertTrue(ok);
@@ -290,7 +302,7 @@ public class TestAdmin {
     try {
       ht1.get(get);
       ht2.get(get);
-    } catch (DoNotRetryIOException e) {
+    } catch (org.apache.hadoop.hbase.exceptions.DoNotRetryIOException e) {
       ok = true;
     }
 
@@ -534,6 +546,55 @@ public class TestAdmin {
   }
 
   @Test
+  public void testCreateTableNumberOfRegions() throws IOException, InterruptedException {
+    byte[] tableName = Bytes.toBytes("testCreateTableNumberOfRegions");
+    HTableDescriptor desc = new HTableDescriptor(tableName);
+    desc.addFamily(new HColumnDescriptor(HConstants.CATALOG_FAMILY));
+    admin.createTable(desc);
+    HTable ht = new HTable(TEST_UTIL.getConfiguration(), tableName);
+    Map<HRegionInfo, ServerName> regions = ht.getRegionLocations();
+    assertEquals("Table should have only 1 region", 1, regions.size());
+    ht.close();
+
+    byte [] TABLE_2 = Bytes.add(tableName, Bytes.toBytes("_2"));
+    desc = new HTableDescriptor(TABLE_2);
+    desc.addFamily(new HColumnDescriptor(HConstants.CATALOG_FAMILY));
+    admin.createTable(desc, new byte[][]{new byte[]{42}});
+    HTable ht2 = new HTable(TEST_UTIL.getConfiguration(), TABLE_2);
+    regions = ht2.getRegionLocations();
+    assertEquals("Table should have only 2 region", 2, regions.size());
+    ht2.close();
+
+    byte [] TABLE_3 = Bytes.add(tableName, Bytes.toBytes("_3"));
+    desc = new HTableDescriptor(TABLE_3);
+    desc.addFamily(new HColumnDescriptor(HConstants.CATALOG_FAMILY));
+    admin.createTable(desc, "a".getBytes(), "z".getBytes(), 3);
+    HTable ht3 = new HTable(TEST_UTIL.getConfiguration(), TABLE_3);
+    regions = ht3.getRegionLocations();
+    assertEquals("Table should have only 3 region", 3, regions.size());
+    ht3.close();
+
+    byte [] TABLE_4 = Bytes.add(tableName, Bytes.toBytes("_4"));
+    desc = new HTableDescriptor(TABLE_4);
+    desc.addFamily(new HColumnDescriptor(HConstants.CATALOG_FAMILY));
+    try {
+      admin.createTable(desc, "a".getBytes(), "z".getBytes(), 2);
+      fail("Should not be able to create a table with only 2 regions using this API.");
+    } catch (IllegalArgumentException eae) {
+    // Expected
+    }
+
+    byte [] TABLE_5 = Bytes.add(tableName, Bytes.toBytes("_5"));
+    desc = new HTableDescriptor(TABLE_5);
+    desc.addFamily(new HColumnDescriptor(HConstants.CATALOG_FAMILY));
+    admin.createTable(desc, new byte[] {1}, new byte[] {127}, 16);
+    HTable ht5 = new HTable(TEST_UTIL.getConfiguration(), TABLE_5);
+    regions = ht5.getRegionLocations();
+    assertEquals("Table should have 16 region", 16, regions.size());
+    ht5.close();
+  }
+
+  @Test
   public void testCreateTableWithRegions() throws IOException, InterruptedException {
 
     byte[] tableName = Bytes.toBytes("testCreateTableWithRegions");
@@ -554,6 +615,9 @@ public class TestAdmin {
     HTableDescriptor desc = new HTableDescriptor(tableName);
     desc.addFamily(new HColumnDescriptor(HConstants.CATALOG_FAMILY));
     admin.createTable(desc, splitKeys);
+    
+    boolean tableAvailable = admin.isTableAvailable(Bytes.toString(tableName), splitKeys);
+    assertTrue("Table should be created with splitKyes + 1 rows in META", tableAvailable);
 
     HTable ht = new HTable(TEST_UTIL.getConfiguration(), tableName);
     Map<HRegionInfo, ServerName> regions = ht.getRegionLocations();
@@ -703,6 +767,21 @@ public class TestAdmin {
       // Expected
     }
     ladmin.close();
+  }
+  
+  @Test
+  public void testTableAvailableWithRandomSplitKeys() throws Exception {
+    byte[] tableName = Bytes.toBytes("testTableAvailableWithRandomSplitKeys");
+    HTableDescriptor desc = new HTableDescriptor(tableName);
+    desc.addFamily(new HColumnDescriptor("col"));
+    byte[][] splitKeys = new byte[1][];
+    splitKeys = new byte [][] {
+        new byte [] { 1, 1, 1 },
+        new byte [] { 2, 2, 2 }
+    };
+    admin.createTable(desc);
+    boolean tableAvailable = admin.isTableAvailable(Bytes.toString(tableName), splitKeys);
+    assertFalse("Table should be created with 1 row in META", tableAvailable);
   }
   
   @Test
@@ -999,7 +1078,7 @@ public class TestAdmin {
     this.admin.disableTable(tableName);
     try {
       new HTable(TEST_UTIL.getConfiguration(), tableName);
-    } catch (DoNotRetryIOException e) {
+    } catch (org.apache.hadoop.hbase.exceptions.DoNotRetryIOException e) {
       //expected
     }
 
@@ -1570,6 +1649,7 @@ public class TestAdmin {
     } catch (MasterNotRunningException ignored) {
     } catch (ZooKeeperConnectionException ignored) {
     } catch (ServiceException ignored) {
+    } catch (IOException ignored) {
     }
     long end = System.currentTimeMillis();
 
@@ -1617,18 +1697,27 @@ public class TestAdmin {
       ct.stop();
     }
   }
-  
-  @Test
-  public void testRootTableSplit() throws Exception {
-    ServerName serverName = TEST_UTIL.getMiniHBaseCluster().getServerHoldingRoot();
-    Scan s = new Scan();
-    HTable rootTable = new HTable(TEST_UTIL.getConfiguration(), HConstants.ROOT_TABLE_NAME);
-    ResultScanner scanner = rootTable.getScanner(s);
-    Result metaEntry = scanner.next();
-    this.admin.split(HConstants.ROOT_TABLE_NAME, metaEntry.getRow());
-    Thread.sleep(1000);
-    List<HRegionInfo> onlineRegions = this.admin.getOnlineRegions(serverName);
-    assertTrue(onlineRegions != null && onlineRegions.contains(HRegionInfo.ROOT_REGIONINFO));
-  }
 
+  @Test
+  public void testMoveNoDest() throws Exception {
+    final String name = "testMoveNoDest";
+    LOG.info("Started " + name);
+    final byte [] nameBytes = Bytes.toBytes(name);
+    TEST_UTIL.createTable(nameBytes, HConstants.CATALOG_FAMILY);
+    TEST_UTIL.waitTableAvailable(nameBytes);
+
+    HRegionInfo hri = admin.getTableRegions(name.getBytes()).get(0);
+    byte[] regionName = hri.getRegionName();
+    HRegionLocation regionLoc = admin.getConnection().locateRegion(regionName);
+    ServerName snOrig = regionLoc.getServerName();
+
+    admin.move(hri.getEncodedNameAsBytes(), null);
+    do {
+      Thread.sleep(200);
+    } while (!admin.getClusterStatus().getRegionsInTransition().isEmpty());
+
+
+    ServerName snDest = admin.getConnection().locateRegion(regionName).getServerName();
+    Assert.assertNotEquals(snOrig, snDest);
+  }
 }

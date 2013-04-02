@@ -38,7 +38,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Abortable;
-import org.apache.hadoop.hbase.DeserializationException;
+import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
@@ -48,6 +48,7 @@ import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
 import org.apache.hadoop.io.Text;
+import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -107,6 +108,13 @@ public class TestTablePermissions {
     UTIL.shutdownMiniCluster();
   }
 
+  @After
+  public void tearDown() throws Exception {
+    Configuration conf = UTIL.getConfiguration();
+    AccessControlLists.removeTablePermissions(conf, TEST_TABLE);
+    AccessControlLists.removeTablePermissions(conf, TEST_TABLE2);
+    AccessControlLists.removeTablePermissions(conf, AccessControlLists.ACL_TABLE_NAME);
+  }
 
   /**
    * Test we can read permissions serialized with Writables.

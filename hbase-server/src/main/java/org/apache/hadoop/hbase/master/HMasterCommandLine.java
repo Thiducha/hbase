@@ -33,8 +33,8 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.ZNodeClearer;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.LocalHBaseCluster;
-import org.apache.hadoop.hbase.MasterNotRunningException;
-import org.apache.hadoop.hbase.ZooKeeperConnectionException;
+import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
+import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.util.JVMClusterUtil;
@@ -182,6 +182,9 @@ public class HMasterCommandLine extends ServerCommandLine {
       return -1;
     } catch (ZooKeeperConnectionException e) {
       LOG.error("ZooKeeper not available");
+      return -1;
+    } catch (IOException e) {
+      LOG.error("Got IOException: " +e.getMessage(), e);
       return -1;
     }
     try {

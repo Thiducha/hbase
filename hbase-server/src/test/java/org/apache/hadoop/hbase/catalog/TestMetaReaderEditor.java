@@ -33,6 +33,9 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.ScannerCallable;
+import org.apache.hadoop.hbase.ipc.HBaseClient;
+import org.apache.hadoop.hbase.ipc.HBaseServer;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
@@ -40,9 +43,11 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
+import org.apache.commons.logging.impl.Log4JLogger;
+import org.apache.log4j.Level;
 
 /**
- * Test {@link MetaReader}, {@link MetaEditor}, and {@link RootLocationEditor}.
+ * Test {@link MetaReader}, {@link MetaEditor}.
  */
 @Category(MediumTests.class)
 public class TestMetaReaderEditor {
@@ -63,10 +68,12 @@ public class TestMetaReaderEditor {
     public boolean isAborted() {
       return abort.get();
     }
-    
   };
 
   @BeforeClass public static void beforeClass() throws Exception {
+    ((Log4JLogger)HBaseServer.LOG).getLogger().setLevel(Level.ALL);
+    ((Log4JLogger)HBaseClient.LOG).getLogger().setLevel(Level.ALL);
+    ((Log4JLogger)ScannerCallable.LOG).getLogger().setLevel(Level.ALL);
     UTIL.startMiniCluster(3);
 
     Configuration c = new Configuration(UTIL.getConfiguration());
@@ -218,8 +225,6 @@ public class TestMetaReaderEditor {
     assertTrue(regions.size() >= 1);
     assertTrue(MetaReader.getTableRegionsAndLocations(CT,
       Bytes.toString(HConstants.META_TABLE_NAME)).size() >= 1);
-    assertTrue(MetaReader.getTableRegionsAndLocations(CT,
-      Bytes.toString(HConstants.ROOT_TABLE_NAME)).size() == 1);
   }
 
   @Test public void testTableExists() throws IOException {
@@ -234,8 +239,6 @@ public class TestMetaReaderEditor {
     assertFalse(MetaReader.tableExists(CT, name));
     assertTrue(MetaReader.tableExists(CT,
       Bytes.toString(HConstants.META_TABLE_NAME)));
-    assertTrue(MetaReader.tableExists(CT,
-      Bytes.toString(HConstants.ROOT_TABLE_NAME)));
   }
 
   @Test public void testGetRegion() throws IOException, InterruptedException {
@@ -245,11 +248,6 @@ public class TestMetaReaderEditor {
     Pair<HRegionInfo, ServerName> pair =
       MetaReader.getRegion(CT, Bytes.toBytes("nonexistent-region"));
     assertNull(pair);
-    // Test it works getting a region from meta/root.
-    pair =
-      MetaReader.getRegion(CT, HRegionInfo.FIRST_META_REGIONINFO.getRegionName());
-    assertEquals(HRegionInfo.FIRST_META_REGIONINFO.getEncodedName(),
-      pair.getFirst().getEncodedName());
     LOG.info("Finished " + name);
   }
 

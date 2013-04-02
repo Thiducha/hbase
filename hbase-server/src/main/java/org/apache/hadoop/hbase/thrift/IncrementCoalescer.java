@@ -39,6 +39,7 @@ import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.thrift.ThriftServerRunner.HBaseHandler;
 import org.apache.hadoop.hbase.thrift.generated.TIncrement;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.metrics.util.MBeanUtil;
 import org.apache.thrift.TException;
 
@@ -51,7 +52,6 @@ import org.apache.thrift.TException;
  * thrift server dies or is shut down before everything in the queue is drained.
  *
  */
-
 public class IncrementCoalescer implements IncrementCoalescerMBean {
 
   /**
@@ -169,7 +169,7 @@ public class IncrementCoalescer implements IncrementCoalescerMBean {
     LinkedBlockingQueue<Runnable> queue = new LinkedBlockingQueue<Runnable>();
     pool =
         new ThreadPoolExecutor(CORE_POOL_SIZE, CORE_POOL_SIZE, 50, TimeUnit.MILLISECONDS, queue,
-            new DaemonThreadFactory());
+            Threads.newDaemonThreadFactory("IncrementCoalescer"));
 
     MBeanUtil.registerMBean("thrift", "Thrift", this);
   }
@@ -279,7 +279,7 @@ public class IncrementCoalescer implements IncrementCoalescerMBean {
             LOG.error("FAILED_ICV: " + Bytes.toString(row.getTable()) + ", "
                 + Bytes.toStringBinary(row.getRowKey()) + ", "
                 + Bytes.toStringBinary(row.getFamily()) + ", "
-                + Bytes.toStringBinary(row.getQualifier()) + ", " + counter);
+                + Bytes.toStringBinary(row.getQualifier()) + ", " + counter, e);
           }
 
         }

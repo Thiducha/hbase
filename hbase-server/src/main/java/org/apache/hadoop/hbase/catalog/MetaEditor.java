@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.net.ConnectException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 import org.apache.commons.logging.Log;
@@ -29,13 +28,21 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
-import org.apache.hadoop.hbase.NotAllMetaRegionsOnlineException;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.exceptions.DoNotRetryIOException;
+import org.apache.hadoop.hbase.exceptions.NotAllMetaRegionsOnlineException;
+import org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel;
+import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutationProto.MutationType;
+import org.apache.hadoop.hbase.protobuf.generated.MultiRowMutation.MultiMutateRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MultiRowMutation.MultiRowMutationService;
 import org.apache.hadoop.hbase.util.Bytes;
+
+import com.google.protobuf.ServiceException;
 
 /**
  * Writes region and assignment information to <code>.META.</code>.
@@ -57,6 +64,18 @@ public class MetaEditor {
     Put put = new Put(regionInfo.getRegionName());
     addRegionInfo(put, regionInfo);
     return put;
+  }
+
+  /**
+   * Generates and returns a Delete containing the region info for the catalog
+   * table
+   */
+  public static Delete makeDeleteFromRegionInfo(HRegionInfo regionInfo) {
+    if (regionInfo == null) {
+      throw new IllegalArgumentException("Can't make a delete for null region");
+    }
+    Delete delete = new Delete(regionInfo.getRegionName());
+    return delete;
   }
 
   /**
@@ -84,17 +103,6 @@ public class MetaEditor {
   }
 
   /**
-   * Put the passed <code>p</code> to the <code>.META.</code> table.
-   * @param ct CatalogTracker on whose back we will ride the edit.
-   * @param p Put to add to .META.
-   * @throws IOException
-   */
-  static void putToRootTable(final CatalogTracker ct, final Put p)
-  throws IOException {
-    put(MetaReader.getRootHTable(ct), p);
-  }
-
-  /**
    * Put the passed <code>p</code> to a catalog table.
    * @param ct CatalogTracker on whose back we will ride the edit.
    * @param p Put to add
@@ -102,7 +110,7 @@ public class MetaEditor {
    */
   static void putToCatalogTable(final CatalogTracker ct, final Put p)
   throws IOException {
-    HTable t = MetaReader.getCatalogHTable(ct, p.getRow());
+    HTable t = MetaReader.getCatalogHTable(ct);
     put(t, p);
   }
 
@@ -211,8 +219,8 @@ public class MetaEditor {
    * Adds a (single) META row for the specified new region and its daughters. Note that this does
    * not add its daughter's as different rows, but adds information about the daughters
    * in the same row as the parent. Use
-   * {@link #offlineParentInMeta(CatalogTracker, HRegionInfo, HRegionInfo, HRegionInfo)} and
-   * {@link #addDaughter(CatalogTracker, HRegionInfo, ServerName, long)}  if you want to do that.
+   * {@link #splitRegion(CatalogTracker, HRegionInfo, HRegionInfo, HRegionInfo, ServerName)}
+   * if you want to do that.
    * @param meta the HTable for META
    * @param regionInfo region information
    * @param splitA first split daughter of the parent regionInfo
@@ -247,32 +255,6 @@ public class MetaEditor {
   }
 
   /**
-   * Offline parent in meta.
-   * Used when splitting.
-   * @param catalogTracker
-   * @param parent
-   * @param a Split daughter region A
-   * @param b Split daughter region B
-   * @throws NotAllMetaRegionsOnlineException
-   * @throws IOException
-   */
-  public static void offlineParentInMeta(CatalogTracker catalogTracker,
-      HRegionInfo parent, final HRegionInfo a, final HRegionInfo b)
-  throws NotAllMetaRegionsOnlineException, IOException {
-    HRegionInfo copyOfParent = new HRegionInfo(parent);
-    copyOfParent.setOffline(true);
-    copyOfParent.setSplit(true);
-    HTable meta = MetaReader.getMetaHTable(catalogTracker);
-    try {
-      addRegionToMeta(meta, copyOfParent, a, b);
-      LOG.info("Offlined parent region " + parent.getRegionNameAsString() +
-          " in META");
-    } finally {
-      meta.close();
-    }
-  }
-
-  /**
    * Adds a daughter region entry to meta.
    * @param regionInfo the region to put
    * @param sn the location of the region
@@ -290,6 +272,103 @@ public class MetaEditor {
     LOG.info("Added daughter " + regionInfo.getRegionNameAsString() +
       (sn == null? ", serverName=null": ", serverName=" + sn.toString()));
   }
+
+  /**
+   * Merge the two regions into one in an atomic operation. Deletes the two
+   * merging regions in META and adds the merged region with the information of
+   * two merging regions.
+   * @param catalogTracker the catalog tracker
+   * @param mergedRegion the merged region
+   * @param regionA
+   * @param regionB
+   * @param sn the location of the region
+   * @throws IOException
+   */
+  public static void mergeRegions(final CatalogTracker catalogTracker,
+      HRegionInfo mergedRegion, HRegionInfo regionA, HRegionInfo regionB,
+      ServerName sn) throws IOException {
+    HTable meta = MetaReader.getMetaHTable(catalogTracker);
+    HRegionInfo copyOfMerged = new HRegionInfo(mergedRegion);
+
+    // Put for parent
+    Put putOfMerged = makePutFromRegionInfo(copyOfMerged);
+    putOfMerged.add(HConstants.CATALOG_FAMILY, HConstants.MERGEA_QUALIFIER,
+        regionA.toByteArray());
+    putOfMerged.add(HConstants.CATALOG_FAMILY, HConstants.MERGEB_QUALIFIER,
+        regionB.toByteArray());
+
+    // Deletes for merging regions
+    Delete deleteA = makeDeleteFromRegionInfo(regionA);
+    Delete deleteB = makeDeleteFromRegionInfo(regionB);
+
+    // The merged is a new region, openSeqNum = 1 is fine.
+    addLocation(putOfMerged, sn, 1);
+
+    byte[] tableRow = Bytes.toBytes(mergedRegion.getRegionNameAsString()
+        + HConstants.DELIMITER);
+    multiMutate(meta, tableRow, putOfMerged, deleteA, deleteB);
+  }
+
+  /**
+   * Splits the region into two in an atomic operation. Offlines the parent
+   * region with the information that it is split into two, and also adds
+   * the daughter regions. Does not add the location information to the daughter
+   * regions since they are not open yet.
+   * @param catalogTracker the catalog tracker
+   * @param parent the parent region which is split
+   * @param splitA Split daughter region A
+   * @param splitB Split daughter region A
+   * @param sn the location of the region
+   */
+  public static void splitRegion(final CatalogTracker catalogTracker,
+      HRegionInfo parent, HRegionInfo splitA, HRegionInfo splitB,
+      ServerName sn) throws IOException {
+    HTable meta = MetaReader.getMetaHTable(catalogTracker);
+    HRegionInfo copyOfParent = new HRegionInfo(parent);
+    copyOfParent.setOffline(true);
+    copyOfParent.setSplit(true);
+
+    //Put for parent
+    Put putParent = makePutFromRegionInfo(copyOfParent);
+    addDaughtersToPut(putParent, splitA, splitB);
+
+    //Puts for daughters
+    Put putA = makePutFromRegionInfo(splitA);
+    Put putB = makePutFromRegionInfo(splitB);
+
+    addLocation(putA, sn, 1); //these are new regions, openSeqNum = 1 is fine.
+    addLocation(putB, sn, 1);
+
+    byte[] tableRow = Bytes.toBytes(parent.getRegionNameAsString() + HConstants.DELIMITER);
+    multiMutate(meta, tableRow, putParent, putA, putB);
+  }
+
+  /**
+   * Performs an atomic multi-Mutate operation against the given table.
+   */
+  private static void multiMutate(HTable table, byte[] row, Mutation... mutations) throws IOException {
+    CoprocessorRpcChannel channel = table.coprocessorService(row);
+    MultiMutateRequest.Builder mmrBuilder = MultiMutateRequest.newBuilder();
+    for (Mutation mutation : mutations) {
+      if (mutation instanceof Put) {
+        mmrBuilder.addMutationRequest(ProtobufUtil.toMutation(MutationType.PUT, mutation));
+      } else if (mutation instanceof Delete) {
+        mmrBuilder.addMutationRequest(ProtobufUtil.toMutation(MutationType.DELETE, mutation));
+      } else {
+        throw new DoNotRetryIOException("multi in MetaEditor doesn't support "
+            + mutation.getClass().getName());
+      }
+    }
+
+    MultiRowMutationService.BlockingInterface service =
+        MultiRowMutationService.newBlockingStub(channel);
+    try {
+      service.mutateRows(null, mmrBuilder.build());
+    } catch (ServiceException ex) {
+      ProtobufUtil.toIOException(ex);
+    }
+  }
+
 
   /**
    * Updates the location of the specified META region in ROOT to be the
@@ -418,7 +497,7 @@ public class MetaEditor {
    * Deletes daughters references in offlined split parent.
    * @param catalogTracker
    * @param parent Parent row we're to remove daughter reference from
-   * @throws NotAllMetaRegionsOnlineException
+   * @throws org.apache.hadoop.hbase.exceptions.NotAllMetaRegionsOnlineException
    * @throws IOException
    */
   public static void deleteDaughtersReferencesInParent(CatalogTracker catalogTracker,
@@ -431,6 +510,24 @@ public class MetaEditor {
     LOG.info("Deleted daughters references, qualifier=" + Bytes.toStringBinary(HConstants.SPLITA_QUALIFIER) +
       " and qualifier=" + Bytes.toStringBinary(HConstants.SPLITB_QUALIFIER) +
       ", from parent " + parent.getRegionNameAsString());
+  }
+
+  /**
+   * Deletes merge qualifiers for the specified merged region.
+   * @param catalogTracker
+   * @param mergedRegion
+   * @throws IOException
+   */
+  public static void deleteMergeQualifiers(CatalogTracker catalogTracker,
+      final HRegionInfo mergedRegion) throws IOException {
+    Delete delete = new Delete(mergedRegion.getRegionName());
+    delete.deleteColumns(HConstants.CATALOG_FAMILY, HConstants.MERGEA_QUALIFIER);
+    delete.deleteColumns(HConstants.CATALOG_FAMILY, HConstants.MERGEB_QUALIFIER);
+    deleteFromMetaTable(catalogTracker, delete);
+    LOG.info("Deleted references in merged region "
+        + mergedRegion.getRegionNameAsString() + ", qualifier="
+        + Bytes.toStringBinary(HConstants.MERGEA_QUALIFIER) + " and qualifier="
+        + Bytes.toStringBinary(HConstants.MERGEB_QUALIFIER));
   }
 
   private static Put addRegionInfo(final Put p, final HRegionInfo hri)

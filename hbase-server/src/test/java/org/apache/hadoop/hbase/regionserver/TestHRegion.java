@@ -23,9 +23,9 @@ import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,14 +38,15 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.CompatibilitySingletonFactory;
-import org.apache.hadoop.hbase.DoNotRetryIOException;
-import org.apache.hadoop.hbase.FailedSanityCheckException;
+import org.apache.hadoop.hbase.exceptions.FailedSanityCheckException;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HBaseTestCase;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HConstants.OperationStatusCode;
+import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.CellComparator;
 import org.apache.hadoop.hbase.HDFSBlocksDistribution;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
@@ -64,6 +65,9 @@ import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.exceptions.NoSuchColumnFamilyException;
+import org.apache.hadoop.hbase.exceptions.NotServingRegionException;
+import org.apache.hadoop.hbase.exceptions.WrongRegionException;
 import org.apache.hadoop.hbase.filter.BinaryComparator;
 import org.apache.hadoop.hbase.filter.ColumnCountGetFilter;
 import org.apache.hadoop.hbase.filter.CompareFilter.CompareOp;
@@ -91,7 +95,6 @@ import org.apache.hadoop.hbase.util.IncrementingEnvironmentEdge;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.PairOfSameType;
 import org.apache.hadoop.hbase.util.Threads;
-import org.apache.hbase.CellComparator;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -242,8 +245,8 @@ public class TestHRegion extends HBaseTestCase {
     byte[] family = Bytes.toBytes("family");
     this.region = initHRegion(tableName, method, conf, family);
     try {
-      Path regiondir = region.getRegionDir();
-      FileSystem fs = region.getFilesystem();
+      Path regiondir = region.getRegionFileSystem().getRegionDir();
+      FileSystem fs = region.getRegionFileSystem().getFileSystem();
       byte[] regionName = region.getRegionInfo().getEncodedNameAsBytes();
 
       Path recoveredEditsDir = HLogUtil.getRegionDirRecoveredEditsDir(regiondir);
@@ -254,8 +257,7 @@ public class TestHRegion extends HBaseTestCase {
       for (long i = minSeqId; i <= maxSeqId; i += 10) {
         Path recoveredEdits = new Path(recoveredEditsDir, String.format("%019d", i));
         fs.create(recoveredEdits);
-        HLog.Writer writer = HLogFactory.createWriter(fs,
-            recoveredEdits, conf);
+        HLog.Writer writer = HLogFactory.createWriter(fs, recoveredEdits, conf);
 
         long time = System.nanoTime();
         WALEdit edit = new WALEdit();
@@ -270,8 +272,7 @@ public class TestHRegion extends HBaseTestCase {
       Map<byte[], Long> maxSeqIdInStores = new TreeMap<byte[], Long>(
           Bytes.BYTES_COMPARATOR);
       for (Store store : region.getStores().values()) {
-        maxSeqIdInStores.put(store.getColumnFamilyName().getBytes(),
-            minSeqId - 1);
+        maxSeqIdInStores.put(store.getColumnFamilyName().getBytes(), minSeqId - 1);
       }
       long seqId = region.replayRecoveredEditsIfAny(regiondir, maxSeqIdInStores, null, status);
       assertEquals(maxSeqId, seqId);
@@ -294,8 +295,8 @@ public class TestHRegion extends HBaseTestCase {
     byte[] family = Bytes.toBytes("family");
     this.region = initHRegion(tableName, method, conf, family);
     try {
-      Path regiondir = region.getRegionDir();
-      FileSystem fs = region.getFilesystem();
+      Path regiondir = region.getRegionFileSystem().getRegionDir();
+      FileSystem fs = region.getRegionFileSystem().getFileSystem();
       byte[] regionName = region.getRegionInfo().getEncodedNameAsBytes();
 
       Path recoveredEditsDir = HLogUtil.getRegionDirRecoveredEditsDir(regiondir);
@@ -306,8 +307,7 @@ public class TestHRegion extends HBaseTestCase {
       for (long i = minSeqId; i <= maxSeqId; i += 10) {
         Path recoveredEdits = new Path(recoveredEditsDir, String.format("%019d", i));
         fs.create(recoveredEdits);
-        HLog.Writer writer = HLogFactory.createWriter(fs,
-            recoveredEdits, conf);
+        HLog.Writer writer = HLogFactory.createWriter(fs, recoveredEdits, conf);
 
         long time = System.nanoTime();
         WALEdit edit = new WALEdit();
@@ -351,13 +351,12 @@ public class TestHRegion extends HBaseTestCase {
     byte[] family = Bytes.toBytes("family");
     this.region = initHRegion(tableName, method, conf, family);
     try {
-      Path regiondir = region.getRegionDir();
-      FileSystem fs = region.getFilesystem();
+      Path regiondir = region.getRegionFileSystem().getRegionDir();
+      FileSystem fs = region.getRegionFileSystem().getFileSystem();
 
       Path recoveredEditsDir = HLogUtil.getRegionDirRecoveredEditsDir(regiondir);
       for (int i = 1000; i < 1050; i += 10) {
-        Path recoveredEdits = new Path(
-            recoveredEditsDir, String.format("%019d", i));
+        Path recoveredEdits = new Path(recoveredEditsDir, String.format("%019d", i));
         FSDataOutputStream dos=  fs.create(recoveredEdits);
         dos.writeInt(i);
         dos.close();
@@ -1002,7 +1001,7 @@ public class TestHRegion extends HBaseTestCase {
         boolean res = region.checkAndMutate(row, fam1, qual1, CompareOp.EQUAL,
             new BinaryComparator(value2), put, false);
         fail();
-      } catch (DoNotRetryIOException expected) {
+      } catch (org.apache.hadoop.hbase.exceptions.DoNotRetryIOException expected) {
         // expected exception.
       }
     } finally {
@@ -1142,7 +1141,8 @@ public class TestHRegion extends HBaseTestCase {
       //testing existing family
       byte [] family = fam2;
       try {
-        Map<byte[], List<KeyValue>> deleteMap = new HashMap<byte[], List<KeyValue>>();
+        NavigableMap<byte[], List<? extends Cell>> deleteMap =
+          new TreeMap<byte[], List<? extends Cell>>(Bytes.BYTES_COMPARATOR);
         deleteMap.put(family, kvs);
         region.delete(deleteMap, HConstants.DEFAULT_CLUSTER_ID, true);
       } catch (Exception e) {
@@ -1153,7 +1153,8 @@ public class TestHRegion extends HBaseTestCase {
       boolean ok = false;
       family = fam4;
       try {
-        Map<byte[], List<KeyValue>> deleteMap = new HashMap<byte[], List<KeyValue>>();
+        NavigableMap<byte[], List<? extends Cell>> deleteMap =
+          new TreeMap<byte[], List<? extends Cell>>(Bytes.BYTES_COMPARATOR);
         deleteMap.put(family, kvs);
         region.delete(deleteMap, HConstants.DEFAULT_CLUSTER_ID, true);
       } catch (Exception e) {
@@ -1480,7 +1481,8 @@ public class TestHRegion extends HBaseTestCase {
       kvs.add(new KeyValue(row1, fam1, col2, null));
       kvs.add(new KeyValue(row1, fam1, col3, null));
 
-      Map<byte[], List<KeyValue>> deleteMap = new HashMap<byte[], List<KeyValue>>();
+      NavigableMap<byte[], List<? extends Cell>> deleteMap =
+        new TreeMap<byte[], List<? extends Cell>>(Bytes.BYTES_COMPARATOR);
       deleteMap.put(fam1, kvs);
       region.delete(deleteMap, HConstants.DEFAULT_CLUSTER_ID, true);
 
@@ -1520,7 +1522,7 @@ public class TestHRegion extends HBaseTestCase {
       //Test
       try {
         region.get(get);
-      } catch (DoNotRetryIOException e) {
+      } catch (org.apache.hadoop.hbase.exceptions.DoNotRetryIOException e) {
         assertFalse(false);
         return;
       }
@@ -1707,9 +1709,9 @@ public class TestHRegion extends HBaseTestCase {
           openClosedRegion(subregions[i]);
           subregions[i].compactStores();
         }
-        Path oldRegionPath = region.getRegionDir();
-        Path oldRegion1 = subregions[0].getRegionDir();
-        Path oldRegion2 = subregions[1].getRegionDir();
+        Path oldRegionPath = region.getRegionFileSystem().getRegionDir();
+        Path oldRegion1 = subregions[0].getRegionFileSystem().getRegionDir();
+        Path oldRegion2 = subregions[1].getRegionFileSystem().getRegionDir();
         long startTime = System.currentTimeMillis();
         region = HRegion.mergeAdjacent(subregions[0], subregions[1]);
         LOG.info("Merge regions elapsed time: " +
@@ -1889,7 +1891,7 @@ public class TestHRegion extends HBaseTestCase {
       try {
         region.getScanner(null);
         fail("Expected to get an exception during getScanner on a region that is closed");
-      } catch (org.apache.hadoop.hbase.NotServingRegionException e) {
+      } catch (NotServingRegionException e) {
         //this is the correct exception that is expected
       } catch (IOException e) {
         fail("Got wrong type of exception - should be a NotServingRegionException, but was an IOException: "
@@ -3420,8 +3422,7 @@ public class TestHRegion extends HBaseTestCase {
       // static method is used by load balancer or other components
       HDFSBlocksDistribution blocksDistribution2 =
         HRegion.computeHDFSBlocksDistribution(htu.getConfiguration(),
-        firstRegion.getTableDesc(),
-        firstRegion.getRegionInfo().getEncodedName());
+        firstRegion.getTableDesc(), firstRegion.getRegionInfo());
       long uniqueBlocksWeight2 =
         blocksDistribution2.getUniqueBlocksTotalWeight();
 
@@ -3486,37 +3487,37 @@ public class TestHRegion extends HBaseTestCase {
 
     // Create a region and skip the initialization (like CreateTableHandler)
     HRegion region = HRegion.createHRegion(hri, rootDir, conf, htd, null, false, true);
-    Path regionDir = region.getRegionDir();
-    FileSystem fs = region.getFilesystem();
+    Path regionDir = region.getRegionFileSystem().getRegionDir();
+    FileSystem fs = region.getRegionFileSystem().getFileSystem();
     HRegion.closeHRegion(region);
 
-    Path regionInfoFile = new Path(regionDir, HRegion.REGIONINFO_FILE);
+    Path regionInfoFile = new Path(regionDir, HRegionFileSystem.REGION_INFO_FILE);
 
     // Verify that the .regioninfo file is present
-    assertTrue(HRegion.REGIONINFO_FILE + " should be present in the region dir",
+    assertTrue(HRegionFileSystem.REGION_INFO_FILE + " should be present in the region dir",
       fs.exists(regionInfoFile));
 
     // Try to open the region
     region = HRegion.openHRegion(rootDir, hri, htd, null, conf);
-    assertEquals(regionDir, region.getRegionDir());
+    assertEquals(regionDir, region.getRegionFileSystem().getRegionDir());
     HRegion.closeHRegion(region);
 
     // Verify that the .regioninfo file is still there
-    assertTrue(HRegion.REGIONINFO_FILE + " should be present in the region dir",
+    assertTrue(HRegionFileSystem.REGION_INFO_FILE + " should be present in the region dir",
       fs.exists(regionInfoFile));
 
     // Remove the .regioninfo file and verify is recreated on region open
     fs.delete(regionInfoFile);
-    assertFalse(HRegion.REGIONINFO_FILE + " should be removed from the region dir",
+    assertFalse(HRegionFileSystem.REGION_INFO_FILE + " should be removed from the region dir",
       fs.exists(regionInfoFile));
 
     region = HRegion.openHRegion(rootDir, hri, htd, null, conf);
-    assertEquals(regionDir, region.getRegionDir());
+    assertEquals(regionDir, region.getRegionFileSystem().getRegionDir());
     HRegion.closeHRegion(region);
 
     // Verify that the .regioninfo file is still there
-    assertTrue(HRegion.REGIONINFO_FILE + " should be present in the region dir",
-      fs.exists(new Path(regionDir, HRegion.REGIONINFO_FILE)));
+    assertTrue(HRegionFileSystem.REGION_INFO_FILE + " should be present in the region dir",
+      fs.exists(new Path(regionDir, HRegionFileSystem.REGION_INFO_FILE)));
   }
 
   /**

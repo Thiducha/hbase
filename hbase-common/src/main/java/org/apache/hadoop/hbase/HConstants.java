@@ -17,6 +17,9 @@
  */
 package org.apache.hadoop.hbase;
 
+import static org.apache.hadoop.hbase.io.hfile.BlockType.MAGIC_LENGTH;
+
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Collections;
@@ -27,6 +30,7 @@ import java.util.regex.Pattern;
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
+import org.apache.hadoop.hbase.util.Bytes;
 
 /**
  * HConstants holds a bunch of HBase-related constants
@@ -39,14 +43,39 @@ public final class HConstants {
 
   /** When we encode strings, we always specify UTF8 encoding */
   public static final Charset UTF8_CHARSET = Charset.forName(UTF8_ENCODING);
+  /**
+   * Default block size for an HFile.
+   */
+  public final static int DEFAULT_BLOCKSIZE = 64 * 1024;
 
-  private static byte[] toBytes(String target) {
-    return target.getBytes(UTF8_CHARSET);
-  }
+  /** Used as a magic return value while optimized index key feature enabled(HBASE-7845) */
+  public final static int INDEX_KEY_MAGIC = -2;
+  /*
+     * Name of directory that holds recovered edits written by the wal log
+     * splitting code, one per region
+     */
+  public static final String RECOVERED_EDITS_DIR = "recovered.edits";
+  /**
+   * The first four bytes of Hadoop RPC connections
+   */
+  public static final ByteBuffer RPC_HEADER = ByteBuffer.wrap("HBas".getBytes());
+  public static final byte RPC_CURRENT_VERSION = 0;
 
-  private static String toString(byte[] target) {
-    return new String(target, UTF8_CHARSET);
-  }
+  // HFileBlock constants.
+
+  /** The size data structures with minor version is 0 */
+  public static final int HFILEBLOCK_HEADER_SIZE_NO_CHECKSUM = MAGIC_LENGTH + 2 * Bytes.SIZEOF_INT
+      + Bytes.SIZEOF_LONG;
+  /** The size of a version 2 HFile block header, minor version 1.
+   * There is a 1 byte checksum type, followed by a 4 byte bytesPerChecksum
+   * followed by another 4 byte value to store sizeofDataOnDisk.
+   */
+  public static final int HFILEBLOCK_HEADER_SIZE = HFILEBLOCK_HEADER_SIZE_NO_CHECKSUM +
+    Bytes.SIZEOF_BYTE + 2 * Bytes.SIZEOF_INT;
+  /** Just an array of bytes of the right size. */
+  public static final byte[] HFILEBLOCK_DUMMY_HEADER = new byte[HFILEBLOCK_HEADER_SIZE];
+
+  //End HFileBlockConstants.
 
   /**
    * Status codes used for return values of bulk operations.
@@ -293,8 +322,8 @@ public final class HConstants {
   /** name of the file for unique cluster ID */
   public static final String CLUSTER_ID_FILE_NAME = "hbase.id";
 
-  /** Configuration key storing the cluster ID */
-  public static final String CLUSTER_ID = "hbase.cluster.id";
+  /** Default value for cluster ID */
+  public static final String CLUSTER_ID_DEFAULT = "default-cluster";
 
   // Always store the location of the root table's HRegion.
   // This HRegion is never split.
@@ -317,10 +346,10 @@ public final class HConstants {
   // should go down.
 
   /** The root table's name.*/
-  public static final byte [] ROOT_TABLE_NAME = toBytes("-ROOT-");
+  public static final byte [] ROOT_TABLE_NAME = Bytes.toBytes("-ROOT-");
 
   /** The META table's name. */
-  public static final byte [] META_TABLE_NAME = toBytes(".META.");
+  public static final byte [] META_TABLE_NAME = Bytes.toBytes(".META.");
 
   /** delimiter used between portions of a region name */
   public static final int META_ROW_DELIMITER = ',';
@@ -329,36 +358,41 @@ public final class HConstants {
   public static final String CATALOG_FAMILY_STR = "info";
 
   /** The catalog family */
-  public static final byte [] CATALOG_FAMILY = toBytes(CATALOG_FAMILY_STR);
+  public static final byte [] CATALOG_FAMILY = Bytes.toBytes(CATALOG_FAMILY_STR);
 
   /** The RegionInfo qualifier as a string */
   public static final String REGIONINFO_QUALIFIER_STR = "regioninfo";
 
   /** The regioninfo column qualifier */
-  public static final byte [] REGIONINFO_QUALIFIER =
-    toBytes(REGIONINFO_QUALIFIER_STR);
+  public static final byte [] REGIONINFO_QUALIFIER = Bytes.toBytes(REGIONINFO_QUALIFIER_STR);
 
   /** The server column qualifier */
-  public static final byte [] SERVER_QUALIFIER = toBytes("server");
+  public static final byte [] SERVER_QUALIFIER = Bytes.toBytes("server");
 
   /** The startcode column qualifier */
-  public static final byte [] STARTCODE_QUALIFIER = toBytes("serverstartcode");
+  public static final byte [] STARTCODE_QUALIFIER = Bytes.toBytes("serverstartcode");
 
   /** The open seqnum column qualifier */
-  public static final byte [] SEQNUM_QUALIFIER = toBytes("seqnumDuringOpen");
+  public static final byte [] SEQNUM_QUALIFIER = Bytes.toBytes("seqnumDuringOpen");
 
   /** The lower-half split region column qualifier */
-  public static final byte [] SPLITA_QUALIFIER = toBytes("splitA");
+  public static final byte [] SPLITA_QUALIFIER = Bytes.toBytes("splitA");
 
   /** The upper-half split region column qualifier */
-  public static final byte [] SPLITB_QUALIFIER = toBytes("splitB");
+  public static final byte [] SPLITB_QUALIFIER = Bytes.toBytes("splitB");
+
+  /** The lower-half merge region column qualifier */
+  public static final byte[] MERGEA_QUALIFIER = Bytes.toBytes("mergeA");
+
+  /** The upper-half merge region column qualifier */
+  public static final byte[] MERGEB_QUALIFIER = Bytes.toBytes("mergeB");
 
   /**
    * The meta table version column qualifier.
    * We keep current version of the meta table in this column in <code>-ROOT-</code>
    * table: i.e. in the 'info:v' column.
    */
-  public static final byte [] META_VERSION_QUALIFIER = toBytes("v");
+  public static final byte [] META_VERSION_QUALIFIER = Bytes.toBytes("v");
 
   /**
    * The current version of the meta table.
@@ -727,7 +761,7 @@ public final class HConstants {
    * The byte array represents for NO_NEXT_INDEXED_KEY;
    * The actual value is irrelevant because this is always compared by reference.
    */
-  public static final byte [] NO_NEXT_INDEXED_KEY = toBytes("NO_NEXT_INDEXED_KEY");
+  public static final byte [] NO_NEXT_INDEXED_KEY = Bytes.toBytes("NO_NEXT_INDEXED_KEY");
   /** delimiter used between portions of a region name */
   public static final int DELIMITER = ',';
   public static final String HBASE_CONFIG_READ_ZOOKEEPER_CONFIG =
@@ -760,20 +794,14 @@ public final class HConstants {
 
   /** Directories that are not HBase table directories */
   public static final List<String> HBASE_NON_TABLE_DIRS =
-<<<<<<< HEAD
     Collections.unmodifiableList(Arrays.asList(HREGION_LOGDIR_NAME,
         HREGION_OLDLOGDIR_NAME, CORRUPT_DIR_NAME, SPLIT_LOGDIR_NAME,
-        HBCK_SIDELINEDIR_NAME, HFILE_ARCHIVE_DIRECTORY));
-=======
-    Collections.unmodifiableList(Arrays.asList(new String[] { HREGION_LOGDIR_NAME,
-      HREGION_OLDLOGDIR_NAME, CORRUPT_DIR_NAME, SPLIT_LOGDIR_NAME,
-      HBCK_SIDELINEDIR_NAME, HFILE_ARCHIVE_DIRECTORY, SNAPSHOT_DIR_NAME, HBASE_TEMP_DIRECTORY }));
->>>>>>> clean
+        HBCK_SIDELINEDIR_NAME, HFILE_ARCHIVE_DIRECTORY, SNAPSHOT_DIR_NAME, HBASE_TEMP_DIRECTORY));
 
   /** Directories that are not HBase user table directories */
   public static final List<String> HBASE_NON_USER_TABLE_DIRS =
     Collections.unmodifiableList(Arrays.asList((String[])ArrayUtils.addAll(
-      new String[] { toString(META_TABLE_NAME), toString(ROOT_TABLE_NAME) },
+      new String[] { Bytes.toString(META_TABLE_NAME), Bytes.toString(ROOT_TABLE_NAME) },
       HBASE_NON_TABLE_DIRS.toArray())));
 
   /** Health script related settings. */
@@ -792,10 +820,11 @@ public final class HConstants {
 
   /**
    * IP to use for the multicast status messages between the master and the clients.
-   * If not set, the master wo,'t send any message.
+   * The default address is chosen as one among others within the ones suitable for multicast
+   * messages.
    */
   public static final String STATUS_MULTICAST_ADDRESS = "hbase.status.multicast.address.ip";
-  public static final String DEFAULT_STATUS_MULTICAST_ADDRESS = null; // "226.1.1.3";
+  public static final String DEFAULT_STATUS_MULTICAST_ADDRESS = "226.1.1.3";
 
   /**
    * The port to use for the multicast messages.
@@ -803,18 +832,6 @@ public final class HConstants {
   public static final String STATUS_MULTICAST_PORT = "hbase.status.multicast.port";
   public static final int DEFAULT_STATUS_MULTICAST_PORT = 60100;
 
-  /**
-   * The minimum time between two status messages.
-   */
-  public static final String STATUS_MULTICAST_PERIOD = "hbase.status.period";
-  public static final int DEFAULT_STATUS_MULTICAST_PERIOD = 10000;
-
-  /**
-   * The timeframe considered to send a message. If there is a dead server, it will be included in
-   *  the status message for hbase.status.period.range * hbase.status.period milliseconds.
-   */
-  public static final String STATUS_MULTICAST_PERIOD_RANGE = "hbase.status.period.range";
-  public static final int DEFAULT_STATUS_MULTICAST_PERIOD_RANGE = 5;
 
 
   private HConstants() {

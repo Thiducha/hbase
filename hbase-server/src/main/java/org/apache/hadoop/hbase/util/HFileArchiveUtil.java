@@ -49,20 +49,7 @@ public class HFileArchiveUtil {
   public static Path getStoreArchivePath(final Configuration conf, final String tableName,
       final String regionName, final String familyName) throws IOException {
     Path tableArchiveDir = getTableArchivePath(conf, tableName);
-    return HStore.getStoreHomedir(tableArchiveDir, regionName, familyName);
-  }
-
-  /**
-   * Get the directory to archive a store directory
-   * @param conf {@link Configuration} to read for the archive directory name
-   * @param region parent region information under which the store currently
-   *          lives
-   * @param family name of the family in the store
-   * @return {@link Path} to the directory to archive the given store or
-   *         <tt>null</tt> if it should not be archived
-   */
-  public static Path getStoreArchivePath(Configuration conf, HRegion region, byte [] family){
-    return getStoreArchivePath(conf, region.getRegionInfo(), region.getTableDir(), family);
+    return HStore.getStoreHomedir(tableArchiveDir, regionName, Bytes.toBytes(familyName));
   }
 
   /**
@@ -77,19 +64,17 @@ public class HFileArchiveUtil {
   public static Path getStoreArchivePath(Configuration conf, HRegionInfo region, Path tabledir,
       byte[] family) {
     Path tableArchiveDir = getTableArchivePath(tabledir);
-    return HStore.getStoreHomedir(tableArchiveDir,
-      HRegionInfo.encodeRegionName(region.getRegionName()), family);
+    return HStore.getStoreHomedir(tableArchiveDir, region, family);
   }
 
   /**
    * Get the archive directory for a given region under the specified table
-   * @param conf {@link Configuration} to read the archive directory from. Can be null
    * @param tabledir the original table directory. Cannot be null.
    * @param regiondir the path to the region directory. Cannot be null.
    * @return {@link Path} to the directory to archive the given region, or <tt>null</tt> if it
    *         should not be archived
    */
-  public static Path getRegionArchiveDir(Configuration conf, Path tabledir, Path regiondir) {
+  public static Path getRegionArchiveDir(Path tabledir, Path regiondir) {
     // get the archive directory for a table
     Path archiveDir = getTableArchivePath(tabledir);
 

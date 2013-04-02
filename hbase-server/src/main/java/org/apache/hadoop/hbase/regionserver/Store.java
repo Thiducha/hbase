@@ -26,6 +26,7 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.KeyValue;
@@ -34,10 +35,9 @@ import org.apache.hadoop.hbase.io.HeapSize;
 import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.io.hfile.HFileDataBlockEncoder;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionContext;
 import org.apache.hadoop.hbase.regionserver.compactions.CompactionProgress;
 import org.apache.hadoop.hbase.regionserver.compactions.CompactionRequest;
-
-import com.google.common.collect.ImmutableList;
 
 /**
  * Interface for objects that hold a column family in a Region. Its a memstore and a set of zero or
@@ -102,12 +102,12 @@ public interface Store extends HeapSize, StoreConfigInformation {
    * <p>
    * This operation is atomic on each KeyValue (row/family/qualifier) but not necessarily atomic
    * across all of them.
-   * @param kvs
+   * @param cells
    * @param readpoint readpoint below which we can safely remove duplicate KVs 
    * @return memstore size delta
    * @throws IOException
    */
-  public long upsert(Iterable<KeyValue> kvs, long readpoint) throws IOException;
+  public long upsert(Iterable<? extends Cell> cells, long readpoint) throws IOException;
 
   /**
    * Adds a value to the memstore
@@ -143,10 +143,11 @@ public interface Store extends HeapSize, StoreConfigInformation {
    * @param maxKeyCount
    * @param compression Compression algorithm to use
    * @param isCompaction whether we are creating a new file in a compaction
+   * @param includeMVCCReadpoint whether we should out the MVCC readpoint
    * @return Writer for a new StoreFile in the tmp dir.
    */
-  public StoreFile.Writer createWriterInTmp(int maxKeyCount,
-    Compression.Algorithm compression, boolean isCompaction) throws IOException;
+  public StoreFile.Writer createWriterInTmp(long maxKeyCount, Compression.Algorithm compression,
+      boolean isCompaction, boolean includeMVCCReadpoint) throws IOException;
 
   // Compaction oriented methods
 
@@ -158,12 +159,14 @@ public interface Store extends HeapSize, StoreConfigInformation {
    */
   public CompactionProgress getCompactionProgress();
 
-  public CompactionRequest requestCompaction() throws IOException;
+  public CompactionContext requestCompaction() throws IOException;
 
-  public CompactionRequest requestCompaction(int priority, CompactionRequest request)
+  public CompactionContext requestCompaction(int priority, CompactionRequest baseRequest)
       throws IOException;
 
-  public void finishRequest(CompactionRequest cr);
+  public void cancelRequestedCompaction(CompactionContext compaction);
+
+  public List<StoreFile> compact(CompactionContext compaction) throws IOException;
 
   /**
    * @return true if we should run a major compaction.
@@ -179,13 +182,6 @@ public interface Store extends HeapSize, StoreConfigInformation {
   public boolean needsCompaction();
 
   public int getCompactPriority();
-
-  /**
-   * @param priority priority to check against. When priority is {@link Store#PRIORITY_USER},
-   *          {@link Store#PRIORITY_USER} is returned.
-   * @return The priority that this store has in the compaction queue.
-   */
-  public int getCompactPriority(int priority);
 
   public StoreFlusher getStoreFlusher(long cacheFlushId);
 
@@ -319,4 +315,9 @@ public interface Store extends HeapSize, StoreConfigInformation {
    * @param o Observer no longer interested in changes in set of Readers.
    */
   public void deleteChangedReaderObserver(ChangedReadersObserver o);
+
+  /**
+   * @return Whether this store has too many store files.
+   */
+  public boolean hasTooManyStoreFiles();
 }

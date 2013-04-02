@@ -19,6 +19,7 @@
 package org.apache.hadoop.hbase.security.access;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -71,11 +72,13 @@ import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.RegionCoprocessorHost;
 import org.apache.hadoop.hbase.regionserver.RegionServerCoprocessorHost;
 import org.apache.hadoop.hbase.regionserver.ScanType;
-import org.apache.hadoop.hbase.security.AccessDeniedException;
+import org.apache.hadoop.hbase.exceptions.AccessDeniedException;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.security.access.Permission.Action;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.junit.After;
 import org.junit.AfterClass;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -113,9 +116,9 @@ public class TestAccessController {
   private static byte[] TEST_FAMILY = Bytes.toBytes("f1");
 
   private static MasterCoprocessorEnvironment CP_ENV;
-  private static RegionCoprocessorEnvironment RCP_ENV;
-  private static RegionServerCoprocessorEnvironment RSCP_ENV;
   private static AccessController ACCESS_CONTROLLER;
+  private static RegionServerCoprocessorEnvironment RSCP_ENV;
+  private RegionCoprocessorEnvironment RCP_ENV;
 
   @BeforeClass
   public static void setupBeforeClass() throws Exception {
@@ -150,7 +153,16 @@ public class TestAccessController {
     USER_OWNER = User.createUserForTesting(conf, "owner", new String[0]);
     USER_CREATE = User.createUserForTesting(conf, "tbl_create", new String[0]);
     USER_NONE = User.createUserForTesting(conf, "nouser", new String[0]);
+  }
 
+  @AfterClass
+  public static void tearDownAfterClass() throws Exception {
+    TEST_UTIL.shutdownMiniCluster();
+  }
+
+  @Before
+  public void setUp() throws Exception {
+    // Create the test table (owner added to the _acl_ table)
     HBaseAdmin admin = TEST_UTIL.getHBaseAdmin();
     HTableDescriptor htd = new HTableDescriptor(TEST_TABLE);
     htd.addFamily(new HColumnDescriptor(TEST_FAMILY));
@@ -186,14 +198,18 @@ public class TestAccessController {
 
       protocol.grant(null, RequestConverter.buildGrantRequest(USER_CREATE.getShortName(),
         TEST_TABLE, null, null, AccessControlProtos.Permission.Action.CREATE));
+
+      assertEquals(4, AccessControlLists.getTablePermissions(conf, TEST_TABLE).size());
     } finally {
       acl.close();
     }
   }
 
-  @AfterClass
-  public static void tearDownAfterClass() throws Exception {
-    TEST_UTIL.shutdownMiniCluster();
+  @After
+  public void tearDown() throws Exception {
+    // Clean the _acl_ table
+    TEST_UTIL.deleteTable(TEST_TABLE);
+    assertEquals(0, AccessControlLists.getTablePermissions(conf, TEST_TABLE).size());
   }
 
   public void verifyAllowed(User user, PrivilegedExceptionAction... actions) throws Exception {
@@ -471,6 +487,29 @@ public class TestAccessController {
   }
 
   @Test
+  public void testRegionOffline() throws Exception {
+    Map<HRegionInfo, ServerName> regions;
+    HTable table = new HTable(TEST_UTIL.getConfiguration(), TEST_TABLE);
+    try {
+      regions = table.getRegionLocations();
+    } finally {
+      table.close();
+    }
+    final Map.Entry<HRegionInfo, ServerName> firstRegion = regions.entrySet().iterator().next();
+
+    PrivilegedExceptionAction action = new PrivilegedExceptionAction() {
+      public Object run() throws Exception {
+        ACCESS_CONTROLLER.preRegionOffline(ObserverContext.createAndPrepare(CP_ENV, null),
+          firstRegion.getKey());
+        return null;
+      }
+    };
+
+    verifyAllowed(action, SUPERUSER, USER_ADMIN, USER_OWNER);
+    verifyDenied(action, USER_CREATE, USER_RW, USER_RO, USER_NONE);
+  }
+
+  @Test
   public void testBalance() throws Exception {
     PrivilegedExceptionAction action = new PrivilegedExceptionAction() {
       public Object run() throws Exception {
@@ -574,7 +613,7 @@ public class TestAccessController {
     PrivilegedExceptionAction action = new PrivilegedExceptionAction() {
       public Object run() throws Exception {
         ACCESS_CONTROLLER.preCompact(ObserverContext.createAndPrepare(RCP_ENV, null), null, null,
-          ScanType.MINOR_COMPACT);
+          ScanType.COMPACT_RETAIN_DELETES);
         return null;
       }
     };

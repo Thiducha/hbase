@@ -39,7 +39,7 @@ import static org.junit.Assert.*;
 /**
  * Tests unhandled exceptions thrown by coprocessors running on regionserver.
  * Expected result is that the master will remove the buggy coprocessor from
- * its set of coprocessors and throw a org.apache.hadoop.hbase.DoNotRetryIOException
+ * its set of coprocessors and throw a org.apache.hadoop.hbase.exceptions.DoNotRetryIOException
  * back to the client.
  * (HBASE-4014).
  */
@@ -91,7 +91,7 @@ public class TestRegionServerCoprocessorExceptionWithRemove {
     byte[] TEST_FAMILY = Bytes.toBytes("aaa");
 
     HTable table = TEST_UTIL.createTable(TEST_TABLE, TEST_FAMILY);
-    TEST_UTIL.waitUntilAllRegionsAssigned(
+    TEST_UTIL.waitUntilAllRegionsAssigned(TEST_TABLE,
         TEST_UTIL.createMultiRegions(table, TEST_FAMILY));
     // Note which regionServer that should survive the buggy coprocessor's
     // prePut().

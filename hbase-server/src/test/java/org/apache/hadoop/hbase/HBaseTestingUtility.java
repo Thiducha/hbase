@@ -1,3 +1,5 @@
+
+
 /**
  *
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -63,6 +65,10 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
+import org.apache.hadoop.hbase.exceptions.TableExistsException;
+import org.apache.hadoop.hbase.exceptions.TableNotEnabledException;
+import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.fs.HFileSystem;
 import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.compress.Compression.Algorithm;
@@ -70,6 +76,7 @@ import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
 import org.apache.hadoop.hbase.io.hfile.ChecksumUtil;
 import org.apache.hadoop.hbase.mapreduce.MapreduceTestingShim;
 import org.apache.hadoop.hbase.master.HMaster;
+import org.apache.hadoop.hbase.master.RegionStates;
 import org.apache.hadoop.hbase.master.ServerManager;
 import org.apache.hadoop.hbase.regionserver.BloomType;
 import org.apache.hadoop.hbase.regionserver.HRegion;
@@ -308,7 +315,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
 
   /**
    * @return Where to write test data on the test filesystem; Returns working directory
-   * for the test filesytem by default
+   * for the test filesystem by default
    * @see #setupDataTestDirOnTestFS()
    * @see #getTestFileSystem()
    */
@@ -389,6 +396,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     FileSystem fs = getTestFileSystem();
     if (fs.getUri().getScheme().equals(FileSystem.getLocal(conf).getUri().getScheme())) {
       File dataTestDir = new File(getDataTestDir().toString());
+      dataTestDir.deleteOnExit();
       dataTestDirOnTestFS = new Path(dataTestDir.getAbsolutePath());
     } else {
       Path base = getBaseTestDirOnTestFS();
@@ -397,6 +405,29 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
       fs.deleteOnExit(dataTestDirOnTestFS);
     }
   }
+
+  /**
+   * Cleans the test data directory on the test filesystem.
+   * @return True if we removed the test dirs
+   * @throws IOException
+   */
+  public boolean cleanupDataTestDirOnTestFS() throws IOException {
+    boolean ret = getTestFileSystem().delete(dataTestDirOnTestFS, true);
+    if (ret)
+      dataTestDirOnTestFS = null;
+    return ret;
+  }
+
+  /**
+   * Cleans a subdirectory under the test data directory on the test filesystem.
+   * @return True if we removed child
+   * @throws IOException
+   */
+  public boolean cleanupDataTestDirOnTestFS(String subdirName) throws IOException {
+    Path cpath = getDataTestDirOnTestFS(subdirName);
+    return getTestFileSystem().delete(cpath, true);
+  }
+
   /**
    * Start a minidfscluster.
    * @param servers How many DNs to start.
@@ -453,9 +484,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
 
     // Set this just-started cluster as our filesystem.
     FileSystem fs = this.dfsCluster.getFileSystem();
-    this.conf.set("fs.defaultFS", fs.getUri().toString());
-    // Do old style too just to be safe.
-    this.conf.set("fs.default.name", fs.getUri().toString());
+    FSUtils.setFsDefault(this.conf, new Path(fs.getUri()));
 
     // Wait for the cluster to be totally up
     this.dfsCluster.waitClusterUp();
@@ -475,9 +504,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
 
     // Set this just-started cluster as our filesystem.
     FileSystem fs = this.dfsCluster.getFileSystem();
-    this.conf.set("fs.defaultFS", fs.getUri().toString());
-    // Do old style too just to be safe.
-    this.conf.set("fs.default.name", fs.getUri().toString());
+    FSUtils.setFsDefault(this.conf, new Path(fs.getUri()));
 
     // Wait for the cluster to be totally up
     this.dfsCluster.waitClusterUp();
@@ -569,8 +596,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
       this.dfsCluster.shutdown();
       dfsCluster = null;
       dataTestDirOnTestFS = null;
-      this.conf.set("fs.defaultFS", "file:///");
-      this.conf.set("fs.default.name", "file:///");
+      FSUtils.setFsDefault(this.conf, new Path("file:///"));
     }
   }
 
@@ -919,7 +945,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
   public Path createRootDir() throws IOException {
     FileSystem fs = FileSystem.get(this.conf);
     Path hbaseRootdir = getDefaultRootDirPath();
-    this.conf.set(HConstants.HBASE_DIR, hbaseRootdir.toString());
+    FSUtils.setRootDir(this.conf, hbaseRootdir);
     fs.mkdirs(hbaseRootdir);
     FSUtils.setVersion(fs, hbaseRootdir);
     return hbaseRootdir;
@@ -957,6 +983,33 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     getMiniHBaseCluster().compact(tableName, major);
   }
 
+  /**
+   * Create a table.
+   * @param tableName
+   * @param family
+   * @return An HTable instance for the created table.
+   * @throws IOException
+   */
+  public HTable createTable(String tableName, String family)
+  throws IOException{
+    return createTable(tableName, new String[] { family });
+  }
+
+  /**
+   * Create a table.
+   * @param tableName
+   * @param families
+   * @return An HTable instance for the created table.
+   * @throws IOException
+   */
+  public HTable createTable(String tableName, String[] families)
+  throws IOException {
+    List<byte[]> fams = new ArrayList<byte[]>(families.length);
+    for (String family : families) {
+      fams.add(Bytes.toBytes(family));
+    }
+    return createTable(Bytes.toBytes(tableName), fams.toArray(new byte[0][]));
+  }
 
   /**
    * Create a table.
@@ -1113,6 +1166,31 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     }
     getHBaseAdmin().createTable(desc);
     return new HTable(new Configuration(getConfiguration()), tableName);
+  }
+
+  /**
+   * Create a table.
+   * @param tableName
+   * @param family
+   * @param splitRows
+   * @return An HTable instance for the created table.
+   * @throws IOException
+   */
+  public HTable createTable(byte[] tableName, byte[] family, byte[][] splitRows)
+      throws IOException {
+    HTableDescriptor desc = new HTableDescriptor(tableName);
+    HColumnDescriptor hcd = new HColumnDescriptor(family);
+    desc.addFamily(hcd);
+    getHBaseAdmin().createTable(desc, splitRows);
+    return new HTable(getConfiguration(), tableName);
+  }
+
+  /**
+   * Drop an existing table
+   * @param tableName existing table
+   */
+  public void deleteTable(String tableName) throws IOException {
+    deleteTable(Bytes.toBytes(tableName));
   }
 
   /**
@@ -1842,6 +1920,41 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     closeRegion(hrl.getRegionInfo().getRegionName());
   }
 
+  /*
+   * Retrieves a splittable region randomly from tableName
+   * 
+   * @param tableName name of table
+   * @param maxAttempts maximum number of attempts, unlimited for value of -1
+   * @return the HRegion chosen, null if none was found within limit of maxAttempts
+   */
+  public HRegion getSplittableRegion(byte[] tableName, int maxAttempts) {
+    List<HRegion> regions = getHBaseCluster().getRegions(tableName);
+    int regCount = regions.size();
+    Set<Integer> attempted = new HashSet<Integer>();
+    int idx;
+    int attempts = 0;
+    do {
+      regions = getHBaseCluster().getRegions(tableName);
+      if (regCount != regions.size()) {
+        // if there was region movement, clear attempted Set
+        attempted.clear();
+      }
+      regCount = regions.size();
+      idx = random.nextInt(regions.size());
+      // if we have just tried this region, there is no need to try again
+      if (attempted.contains(idx)) continue;
+      try {
+        regions.get(idx).checkSplit();
+        return regions.get(idx);
+      } catch (Exception ex) {
+        LOG.warn("Caught exception", ex);
+        attempted.add(idx);
+      }
+      attempts++;
+    } while (maxAttempts == -1 || attempts < maxAttempts);
+    return null;
+  }
+  
   public MiniZooKeeperCluster getZkCluster() {
     return zkCluster;
   }
@@ -1867,11 +1980,25 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     return HFileSystem.get(conf);
   }
 
+  /**
+   * Wait until all regions in a table have been assigned.  Waits default timeout before giving up
+   * (30 seconds).
+   * @param table Table to wait on.
+   * @throws InterruptedException
+   * @throws IOException
+   */
   public void waitTableAvailable(byte[] table)
       throws InterruptedException, IOException {
     waitTableAvailable(table, 30000);
   }
 
+  /**
+   * Wait until all regions in a table have been assigned
+   * @param table Table to wait on.
+   * @param timeoutMillis Timeout.
+   * @throws InterruptedException
+   * @throws IOException
+   */
   public void waitTableAvailable(byte[] table, long timeoutMillis)
   throws InterruptedException, IOException {
     long startWait = System.currentTimeMillis();
@@ -1883,19 +2010,38 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     }
   }
 
+  /**
+   * Waits for a table to be 'enabled'.  Enabled means that table is set as 'enabled' and the
+   * regions have been all assigned.  Will timeout after default period (30 seconds)
+   * @see #waitTableAvailable(byte[])
+   * @param table Table to wait on.
+   * @param table
+   * @throws InterruptedException
+   * @throws IOException
+   */
   public void waitTableEnabled(byte[] table)
       throws InterruptedException, IOException {
     waitTableEnabled(table, 30000);
   }
 
+  /**
+   * Waits for a table to be 'enabled'.  Enabled means that table is set as 'enabled' and the
+   * regions have been all assigned.
+   * @see #waitTableAvailable(byte[])
+   * @param table Table to wait on.
+   * @param timeoutMillis Time to wait on it being marked enabled.
+   * @throws InterruptedException
+   * @throws IOException
+   */
   public void waitTableEnabled(byte[] table, long timeoutMillis)
   throws InterruptedException, IOException {
     long startWait = System.currentTimeMillis();
-    while (!getHBaseAdmin().isTableAvailable(table) &&
-           !getHBaseAdmin().isTableEnabled(table)) {
+    waitTableAvailable(table, timeoutMillis);
+    long remainder = System.currentTimeMillis() - startWait;
+    while (!getHBaseAdmin().isTableEnabled(table)) {
       assertTrue("Timed out waiting for table to become available and enabled " +
          Bytes.toStringBinary(table),
-         System.currentTimeMillis() - startWait < timeoutMillis);
+         System.currentTimeMillis() - remainder < timeoutMillis);
       Thread.sleep(200);
     }
   }
@@ -2018,29 +2164,45 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
    * @param countOfRegions How many regions in .META.
    * @throws IOException
    */
-  public void waitUntilAllRegionsAssigned(final int countOfRegions)
+  public void waitUntilAllRegionsAssigned(final byte[] tableName, final int countOfRegions)
   throws IOException {
+    int retries = 30; // We may wait up to 30 seconds
+    int rows = 0;
     HTable meta = new HTable(getConfiguration(), HConstants.META_TABLE_NAME);
-    while (true) {
-      int rows = 0;
-      Scan scan = new Scan();
-      scan.addColumn(HConstants.CATALOG_FAMILY, HConstants.SERVER_QUALIFIER);
-      ResultScanner s = meta.getScanner(scan);
-      for (Result r = null; (r = s.next()) != null;) {
-        byte [] b =
-          r.getValue(HConstants.CATALOG_FAMILY, HConstants.SERVER_QUALIFIER);
-        if (b == null || b.length <= 0) {
+    try {
+      do {
+        Scan scan = new Scan();
+        scan.addColumn(HConstants.CATALOG_FAMILY, HConstants.REGIONINFO_QUALIFIER);
+        scan.addColumn(HConstants.CATALOG_FAMILY, HConstants.SERVER_QUALIFIER);
+        ResultScanner s = meta.getScanner(scan);
+        try {
+          for (Result r = null; (r = s.next()) != null;) {
+            byte[] b = r.getValue(HConstants.CATALOG_FAMILY, HConstants.REGIONINFO_QUALIFIER);
+            HRegionInfo hri = HRegionInfo.parseFromOrNull(b);
+            if (hri != null && Bytes.equals(hri.getTableName(), tableName)) {
+              b = r.getValue(HConstants.CATALOG_FAMILY, HConstants.SERVER_QUALIFIER);
+              if (b == null || b.length <= 0) {
+                continue;
+              }
+              rows++;
+            }
+          }
+        } finally {
+          s.close();
+        }
+        // If I get to here and all rows have a Server, then all have been assigned.
+        if (rows == countOfRegions) {
           break;
         }
-        rows++;
-      }
-      s.close();
-      // If I get to here and all rows have a Server, then all have been assigned.
-      if (rows == countOfRegions) {
-        break;
-      }
-      LOG.info("Found=" + rows);
-      Threads.sleep(200);
+        LOG.info("Found=" + rows);
+        Threads.sleep(1000);
+      } while (--retries > 0);
+    } finally {
+      meta.close();
+    }
+    if (rows != countOfRegions) {
+      throw new IOException("Timed out waiting for " + countOfRegions + " regions of " +
+        Bytes.toStringBinary(tableName) + " to come online");
     }
   }
 
@@ -2115,7 +2277,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
    * @param serverName
    * @return
    * @throws IOException
-   * @throws ZooKeeperConnectionException
+   * @throws org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException
    * @throws KeeperException
    * @throws NodeExistsException
    */
@@ -2339,12 +2501,23 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     HColumnDescriptor hcd = new HColumnDescriptor(columnFamily);
     hcd.setDataBlockEncoding(dataBlockEncoding);
     hcd.setCompressionType(compression);
-    desc.addFamily(hcd);
+    return createPreSplitLoadTestTable(conf, desc, hcd);
+  }
+
+  /**
+   * Creates a pre-split table for load testing. If the table already exists,
+   * logs a warning and continues.
+   * @return the number of regions the table was split into
+   */
+  public static int createPreSplitLoadTestTable(Configuration conf,
+      HTableDescriptor desc, HColumnDescriptor hcd) throws IOException {
+    if (!desc.hasFamily(hcd.getName())) {
+      desc.addFamily(hcd);
+    }
 
     int totalNumberOfRegions = 0;
+    HBaseAdmin admin = new HBaseAdmin(conf);
     try {
-      HBaseAdmin admin = new HBaseAdmin(conf);
-
       // create a table a pre-splits regions.
       // The number of splits is set as:
       //    region servers * regions per region server).
@@ -2367,8 +2540,10 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
       LOG.error("Master not running", e);
       throw new IOException(e);
     } catch (TableExistsException e) {
-      LOG.warn("Table " + Bytes.toStringBinary(tableName) +
+      LOG.warn("Table " + Bytes.toStringBinary(desc.getName()) +
           " already exists, continuing");
+    } finally {
+      admin.close();
     }
     return totalNumberOfRegions;
   }
@@ -2415,7 +2590,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
   public void setFileSystemURI(String fsURI) {
     FS_URI = fsURI;
   }
-  
+
   /**
    * Wrapper method for {@link Waiter#waitFor(Configuration, long, Predicate)}.
    */
@@ -2439,4 +2614,19 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
       boolean failIfTimeout, Predicate<E> predicate) throws E {
     return Waiter.waitFor(this.conf, timeout, interval, failIfTimeout, predicate);
   }
+
+  /**
+   * Returns a {@link Predicate} for checking that there are no regions in transition in master
+   */
+  public Waiter.Predicate<Exception> predicateNoRegionsInTransition() {
+    return new Waiter.Predicate<Exception>() {
+      @Override
+      public boolean evaluate() throws Exception {
+        final RegionStates regionStates = getMiniHBaseCluster().getMaster()
+            .getAssignmentManager().getRegionStates();
+        return !regionStates.isRegionsInTransition();
+      }
+    };
+  }
+
 }

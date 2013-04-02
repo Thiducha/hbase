@@ -28,6 +28,7 @@ import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,12 +49,13 @@ import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hbase.ClusterId;
-import org.apache.hadoop.hbase.DeserializationException;
+import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HDFSBlocksDistribution;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.RemoteExceptionHandler;
+import org.apache.hadoop.hbase.exceptions.FileSystemVersionException;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.generated.FSProtos;
@@ -84,10 +86,65 @@ public abstract class FSUtils {
     super();
   }
 
+  /**
+   * Compare of path component. Does not consider schema; i.e. if schemas different but <code>path
+   * <code> starts with <code>rootPath<code>, then the function returns true
+   * @param rootPath
+   * @param path 
+   * @return True if <code>path</code> starts with <code>rootPath</code>
+   */
+  public static boolean isStartingWithPath(final Path rootPath, final String path) {
+    String uriRootPath = rootPath.toUri().getPath();
+    String tailUriPath = (new Path(path)).toUri().getPath();
+    return tailUriPath.startsWith(uriRootPath);
+  }
+
+  /**
+   * Compare path component of the Path URI; e.g. if hdfs://a/b/c and /a/b/c, it will compare the
+   * '/a/b/c' part. Does not consider schema; i.e. if schemas different but path or subpath matches,
+   * the two will equate.
+   * @param pathToSearch Path we will be trying to match.
+   * @param pathTail
+   * @return True if <code>pathTail</code> is tail on the path of <code>pathToSearch</code>
+   */
+  public static boolean isMatchingTail(final Path pathToSearch, String pathTail) {
+    return isMatchingTail(pathToSearch, new Path(pathTail));
+  }
+
+  /**
+   * Compare path component of the Path URI; e.g. if hdfs://a/b/c and /a/b/c, it will compare the
+   * '/a/b/c' part. If you passed in 'hdfs://a/b/c and b/c, it would return true.  Does not consider
+   * schema; i.e. if schemas different but path or subpath matches, the two will equate.
+   * @param pathToSearch Path we will be trying to match.
+   * @param pathTail
+   * @return True if <code>pathTail</code> is tail on the path of <code>pathToSearch</code>
+   */
+  public static boolean isMatchingTail(final Path pathToSearch, final Path pathTail) {
+    if (pathToSearch.depth() != pathTail.depth()) return false;
+    Path tailPath = pathTail;
+    String tailName;
+    Path toSearch = pathToSearch;
+    String toSearchName;
+    boolean result = false;
+    do {
+      tailName = tailPath.getName();
+      if (tailName == null || tailName.length() <= 0) {
+        result = true;
+        break;
+      }
+      toSearchName = toSearch.getName();
+      if (toSearchName == null || toSearchName.length() <= 0) break;
+      // Move up a parent on each path for next go around.  Path doesn't let us go off the end.
+      tailPath = tailPath.getParent();
+      toSearch = toSearch.getParent();
+    } while(tailName.equals(toSearchName));
+    return result;
+  }
+
   public static FSUtils getInstance(FileSystem fs, Configuration conf) {
     String scheme = fs.getUri().getScheme();
     if (scheme == null) {
-      LOG.warn("Could not find scheme for uri " + 
+      LOG.warn("Could not find scheme for uri " +
           fs.getUri() + ", default to hdfs");
       scheme = "hdfs";
     }
@@ -109,19 +166,6 @@ public abstract class FSUtils {
     return fs.exists(dir) && fs.delete(dir, true);
   }
 
-  /**
-   * Check if directory exists.  If it does not, create it.
-   * @param fs filesystem object
-   * @param dir path to check
-   * @return Path
-   * @throws IOException e
-   */
-  public Path checkdir(final FileSystem fs, final Path dir) throws IOException {
-    if (!fs.exists(dir)) {
-      fs.mkdirs(dir);
-    }
-    return dir;
-  }
 
   /**
    * Create the specified file on the filesystem. By default, this will:
@@ -133,7 +177,7 @@ public abstract class FSUtils {
    * <li>use the default block size</li>
    * <li>not track progress</li>
    * </ol>
-   * 
+   *
    * @param fs {@link FileSystem} on which to write the file
    * @param path {@link Path} to the file to write
    * @return output stream to the created file
@@ -153,7 +197,7 @@ public abstract class FSUtils {
    * <li>use the default block size</li>
    * <li>not track progress</li>
    * </ol>
-   * 
+   *
    * @param fs {@link FileSystem} on which to write the file
    * @param path {@link Path} to the file to write
    * @param perm
@@ -173,7 +217,7 @@ public abstract class FSUtils {
   /**
    * Get the file permissions specified in the configuration, if they are
    * enabled.
-   * 
+   *
    * @param fs filesystem that the file will be created on.
    * @param conf configuration to read for determining if permissions are
    *          enabled and which to use
@@ -265,11 +309,11 @@ public abstract class FSUtils {
   }
   
   /**
-   * Check whether dfs is in safemode. 
+   * Check whether dfs is in safemode.
    * @param conf
    * @throws IOException
    */
-  public static void checkDfsSafeMode(final Configuration conf) 
+  public static void checkDfsSafeMode(final Configuration conf)
   throws IOException {
     boolean isInSafeMode = false;
     FileSystem fs = FileSystem.get(conf);
@@ -281,7 +325,7 @@ public abstract class FSUtils {
       throw new IOException("File system is in safemode, it can't be written now");
     }
   }
-  
+
   /**
    * Verifies current version of file system
    *
@@ -289,7 +333,7 @@ public abstract class FSUtils {
    * @param rootdir root hbase directory
    * @return null if no version file exists, version string otherwise.
    * @throws IOException e
-   * @throws DeserializationException 
+   * @throws org.apache.hadoop.hbase.exceptions.DeserializationException
    */
   public static String getVersion(FileSystem fs, Path rootdir)
   throws IOException, DeserializationException {
@@ -372,7 +416,7 @@ public abstract class FSUtils {
    * @param message if true, issues a message on System.out
    *
    * @throws IOException e
-   * @throws DeserializationException 
+   * @throws DeserializationException
    */
   public static void checkVersion(FileSystem fs, Path rootdir, boolean message)
   throws IOException, DeserializationException {
@@ -389,14 +433,14 @@ public abstract class FSUtils {
    * @param retries number of times to retry
    *
    * @throws IOException e
-   * @throws DeserializationException 
+   * @throws DeserializationException
    */
   public static void checkVersion(FileSystem fs, Path rootdir,
       boolean message, int wait, int retries)
   throws IOException, DeserializationException {
     String version = getVersion(fs, rootdir);
     if (version == null) {
-      if (!rootRegionExists(fs, rootdir)) {
+      if (!metaRegionExists(fs, rootdir)) {
         // rootDir is empty (no version file and no root region)
         // just create new version file (HBASE-1195)
         setVersion(fs, rootdir, wait, retries);
@@ -554,7 +598,7 @@ public abstract class FSUtils {
 
   /**
    * @param cid
-   * @throws IOException 
+   * @throws IOException
    */
   private static void rewriteAsPb(final FileSystem fs, final Path rootdir, final Path p,
       final ClusterId cid)
@@ -635,6 +679,23 @@ public abstract class FSUtils {
   }
 
   /**
+   * Checks for the presence of the root path (using the provided conf object) in the given path. If
+   * it exists, this method removes it and returns the String representation of remaining relative path.
+   * @param path
+   * @param conf
+   * @return String representation of the remaining relative path
+   * @throws IOException
+   */
+  public static String removeRootPath(Path path, final Configuration conf) throws IOException {
+    Path root = FSUtils.getRootDir(conf);
+    String pathStr = path.toString();
+    // check that the path is absolute... it has the root path in it.
+    if (!pathStr.startsWith(root.toString())) return pathStr;
+    // if not, return as it is.
+    return pathStr.substring(root.toString().length() + 1);// remove the "/" too.
+  }
+
+  /**
    * If DFS, check safe mode and if so, wait until we clear it.
    * @param conf configuration
    * @param wait Sleep between retries
@@ -687,6 +748,11 @@ public abstract class FSUtils {
     c.set(HConstants.HBASE_DIR, root.toString());
   }
 
+  public static void setFsDefault(final Configuration c, final Path root) throws IOException {
+    c.set("fs.defaultFS", root.toString());    // for hadoop 0.21+
+    c.set("fs.default.name", root.toString()); // for hadoop 0.20
+  }
+
   /**
    * Checks if root region exists
    *
@@ -695,10 +761,10 @@ public abstract class FSUtils {
    * @return true if exists
    * @throws IOException e
    */
-  public static boolean rootRegionExists(FileSystem fs, Path rootdir)
+  public static boolean metaRegionExists(FileSystem fs, Path rootdir)
   throws IOException {
     Path rootRegionDir =
-      HRegion.getRegionDir(rootdir, HRegionInfo.ROOT_REGIONINFO);
+      HRegion.getRegionDir(rootdir, HRegionInfo.FIRST_META_REGIONINFO);
     return fs.exists(rootRegionDir);
   }
 
@@ -707,9 +773,9 @@ public abstract class FSUtils {
    * @param fs file system
    * @param status file status of the file
    * @param start start position of the portion
-   * @param length length of the portion 
+   * @param length length of the portion
    * @return The HDFS blocks distribution
-   */  
+   */
   static public HDFSBlocksDistribution computeHDFSBlocksDistribution(
     final FileSystem fs, FileStatus status, long start, long length)
     throws IOException {
@@ -721,12 +787,12 @@ public abstract class FSUtils {
       long len = bl.getLength();
       blocksDistribution.addHostsAndBlockWeight(hosts, len);
     }
-    
+
     return blocksDistribution;
   }
-  
 
-  
+
+
   /**
    * Runs through the hbase rootdir and checks all stores have only
    * one file in them -- that is, they've been major compacted.  Looks
@@ -795,7 +861,7 @@ public abstract class FSUtils {
    *
    * @param master  The master defining the HBase root and file system.
    * @return A map for each table and its percentage.
-   * 
+   *
    * @throws IOException When scanning the directory fails.
    */
   public static Map<String, Integer> getTableFragmentation(
@@ -968,29 +1034,61 @@ public abstract class FSUtils {
   }
 
   /**
-   * A {@link PathFilter} that returns directories.
+   * Directory filter that doesn't include any of the directories in the specified blacklist
    */
-  public static class DirFilter implements PathFilter {
+  public static class BlackListDirFilter implements PathFilter {
     private final FileSystem fs;
+    private List<String> blacklist;
 
-    public DirFilter(final FileSystem fs) {
+    /**
+     * Create a filter on the give filesystem with the specified blacklist
+     * @param fs filesystem to filter
+     * @param directoryNameBlackList list of the names of the directories to filter. If
+     *          <tt>null</tt>, all directories are returned
+     */
+    @SuppressWarnings("unchecked")
+    public BlackListDirFilter(final FileSystem fs, final List<String> directoryNameBlackList) {
       this.fs = fs;
+      blacklist =
+        (List<String>) (directoryNameBlackList == null ? Collections.emptyList()
+          : directoryNameBlackList);
     }
 
     @Override
     public boolean accept(Path p) {
       boolean isValid = false;
       try {
-        if (HConstants.HBASE_NON_USER_TABLE_DIRS.contains(p.toString())) {
+        if (blacklist.contains(p.getName().toString())) {
           isValid = false;
         } else {
           isValid = fs.getFileStatus(p).isDir();
         }
       } catch (IOException e) {
-        LOG.warn("An error occurred while verifying if [" + p.toString() + 
-                 "] is a valid directory. Returning 'not valid' and continuing.", e);
+        LOG.warn("An error occurred while verifying if [" + p.toString()
+            + "] is a valid directory. Returning 'not valid' and continuing.", e);
       }
       return isValid;
+    }
+  }
+
+  /**
+   * A {@link PathFilter} that only allows directories.
+   */
+  public static class DirFilter extends BlackListDirFilter {
+
+    public DirFilter(FileSystem fs) {
+      super(fs, null);
+    }
+  }
+
+  /**
+   * A {@link PathFilter} that returns usertable directories. To get all directories use the
+   * {@link BlackListDirFilter} with a <tt>null</tt> blacklist
+   */
+  public static class UserTableDirFilter extends BlackListDirFilter {
+
+    public UserTableDirFilter(FileSystem fs) {
+      super(fs, HConstants.HBASE_NON_USER_TABLE_DIRS);
     }
   }
 
@@ -1039,7 +1137,7 @@ public abstract class FSUtils {
   }
 
   /**
-   * Recover file lease. Used when a file might be suspect 
+   * Recover file lease. Used when a file might be suspect
    * to be had been left open by another process.
    * @param fs FileSystem handle
    * @param p Path of file to recover lease
@@ -1048,7 +1146,7 @@ public abstract class FSUtils {
    */
   public abstract void recoverFileLease(final FileSystem fs, final Path p,
       Configuration conf) throws IOException;
-  
+
   /**
    * @param fs
    * @param rootdir
@@ -1059,14 +1157,10 @@ public abstract class FSUtils {
   public static List<Path> getTableDirs(final FileSystem fs, final Path rootdir)
   throws IOException {
     // presumes any directory under hbase.rootdir is a table
-    FileStatus [] dirs = fs.listStatus(rootdir, new DirFilter(fs));
+    FileStatus[] dirs = fs.listStatus(rootdir, new UserTableDirFilter(fs));
     List<Path> tabledirs = new ArrayList<Path>(dirs.length);
     for (FileStatus dir: dirs) {
-      Path p = dir.getPath();
-      String tableName = p.getName();
-      if (!HConstants.HBASE_NON_USER_TABLE_DIRS.contains(tableName)) {
-        tabledirs.add(p);
-      }
+      tabledirs.add(dir.getPath());
     }
     return tabledirs;
   }
@@ -1215,10 +1309,10 @@ public abstract class FSUtils {
   throws IOException {
     return getRootDir(conf).getFileSystem(conf);
   }
-  
+
   /**
-   * Runs through the HBase rootdir and creates a reverse lookup map for 
-   * table StoreFile names to the full Path. 
+   * Runs through the HBase rootdir and creates a reverse lookup map for
+   * table StoreFile names to the full Path.
    * <br>
    * Example...<br>
    * Key = 3944417774205889744  <br>
@@ -1233,22 +1327,17 @@ public abstract class FSUtils {
     final FileSystem fs, final Path hbaseRootDir)
   throws IOException {
     Map<String, Path> map = new HashMap<String, Path>();
-    
-    // if this method looks similar to 'getTableFragmentation' that is because 
+
+    // if this method looks similar to 'getTableFragmentation' that is because
     // it was borrowed from it.
     
-    DirFilter df = new DirFilter(fs);
-    // presumes any directory under hbase.rootdir is a table
+    // only include the directory paths to tables
+    PathFilter df = new BlackListDirFilter(fs, HConstants.HBASE_NON_TABLE_DIRS);
     FileStatus [] tableDirs = fs.listStatus(hbaseRootDir, df);
     for (FileStatus tableDir : tableDirs) {
-      // Skip the .log and other non-table directories.  All others should be tables.
       // Inside a table, there are compaction.dir directories to skip.  Otherwise, all else
       // should be regions. 
-      Path d = tableDir.getPath();
-      if (HConstants.HBASE_NON_TABLE_DIRS.contains(d.getName())) {
-        continue;
-      }
-      FileStatus[] regionDirs = fs.listStatus(d, df);
+      FileStatus[] regionDirs = fs.listStatus(tableDir.getPath(), df);
       for (FileStatus regionDir : regionDirs) {
         Path dd = regionDir.getPath();
         if (dd.getName().equals(HConstants.HREGION_COMPACTIONDIR_NAME)) {
@@ -1265,17 +1354,17 @@ public abstract class FSUtils {
             Path sf = sfStatus.getPath();
             map.put( sf.getName(), sf);
           }
-          
+
         }
       }
     }
       return map;
   }
-  
+
   /**
    * Calls fs.listStatus() and treats FileNotFoundException as non-fatal
    * This accommodates differences between hadoop versions
-   * 
+   *
    * @param fs file system
    * @param dir directory
    * @param filter path filter
@@ -1308,7 +1397,7 @@ public abstract class FSUtils {
 
   /**
    * Calls fs.delete() and returns the value returned by the fs.delete()
-   * 
+   *
    * @param fs
    * @param path
    * @param recursive
@@ -1322,7 +1411,7 @@ public abstract class FSUtils {
 
   /**
    * Calls fs.exists(). Checks if the specified path exists
-   * 
+   *
    * @param fs
    * @param path
    * @return the value returned by fs.exists()
@@ -1334,7 +1423,7 @@ public abstract class FSUtils {
 
   /**
    * Throw an exception if an action is not permitted by a user on a file.
-   * 
+   *
    * @param ugi
    *          the user
    * @param file
@@ -1383,7 +1472,7 @@ public abstract class FSUtils {
 
   /**
    * Recursive helper to log the state of the FS
-   * 
+   *
    * @see #logFileSystemState(FileSystem, Path, Log)
    */
   private static void logFSTree(Log LOG, final FileSystem fs, final Path root, String prefix)

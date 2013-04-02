@@ -26,7 +26,6 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.CoprocessorEnvironment;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.UnknownRegionException;
 import org.apache.hadoop.hbase.master.RegionPlan;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.SnapshotDescription;
 
@@ -231,6 +230,16 @@ public class BaseMasterObserver implements MasterObserver {
   @Override
   public void postUnassign(ObserverContext<MasterCoprocessorEnvironment> ctx,
       HRegionInfo regionInfo, boolean force) throws IOException {
+  }
+
+  @Override
+  public void preRegionOffline(ObserverContext<MasterCoprocessorEnvironment> ctx,
+    HRegionInfo regionInfo) throws IOException {
+  }
+
+  @Override
+  public void postRegionOffline(ObserverContext<MasterCoprocessorEnvironment> ctx,
+    HRegionInfo regionInfo) throws IOException {
   }
 
   @Override

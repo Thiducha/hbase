@@ -37,11 +37,15 @@ import org.apache.hadoop.hbase.catalog.MetaReader;
 import org.apache.hadoop.hbase.errorhandling.ForeignException;
 import org.apache.hadoop.hbase.errorhandling.ForeignExceptionDispatcher;
 import org.apache.hadoop.hbase.errorhandling.ForeignExceptionSnare;
+import org.apache.hadoop.hbase.exceptions.SnapshotCreationException;
 import org.apache.hadoop.hbase.executor.EventHandler;
+import org.apache.hadoop.hbase.executor.EventType;
 import org.apache.hadoop.hbase.master.MasterServices;
 import org.apache.hadoop.hbase.master.SnapshotSentinel;
+import org.apache.hadoop.hbase.master.TableLockManager;
+import org.apache.hadoop.hbase.master.TableLockManager.TableLock;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.SnapshotDescription;
-import org.apache.hadoop.hbase.snapshot.SnapshotCreationException;
+import org.apache.hadoop.hbase.snapshot.ClientSnapshotDescriptionUtils;
 import org.apache.hadoop.hbase.snapshot.SnapshotDescriptionUtils;
 import org.apache.hadoop.hbase.snapshot.TableInfoCopyTask;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -52,7 +56,7 @@ import org.apache.zookeeper.KeeperException;
  * A handler for taking snapshots from the master.
  *
  * This is not a subclass of TableEventHandler because using that would incur an extra META scan.
- * 
+ *
  * The {@link #snapshotRegions(List)} call should get implemented for each snapshot flavor.
  */
 @InterfaceAudience.Private
@@ -72,6 +76,8 @@ public abstract class TakeSnapshotHandler extends EventHandler implements Snapsh
   protected final Path workingDir;
   private final MasterSnapshotVerifier verifier;
   protected final ForeignExceptionDispatcher monitor;
+  protected final TableLockManager tableLockManager;
+  protected final TableLock tableLock;
 
   /**
    * @param snapshot descriptor of the snapshot to take
@@ -93,7 +99,9 @@ public abstract class TakeSnapshotHandler extends EventHandler implements Snapsh
     this.workingDir = SnapshotDescriptionUtils.getWorkingSnapshotDir(snapshot, rootDir);
     this.monitor =  new ForeignExceptionDispatcher();
 
-    loadTableDescriptor(); // check that .tableinfo is present
+    this.tableLockManager = master.getTableLockManager();
+    this.tableLock = this.tableLockManager.writeLock(Bytes.toBytes(snapshot.getTable())
+      , EventType.C_M_SNAPSHOT_TABLE.toString());
 
     // prepare the verify
     this.verifier = new MasterSnapshotVerifier(masterServices, snapshot, rootDir);
@@ -108,6 +116,15 @@ public abstract class TakeSnapshotHandler extends EventHandler implements Snapsh
       throw new IOException("HTableDescriptor missing for " + name);
     }
     return htd;
+  }
+
+  public TakeSnapshotHandler prepare() throws Exception {
+    super.prepare();
+    loadTableDescriptor(); // check that .tableinfo is present
+
+    this.tableLock.acquire(); //after this, you should ensure to release this lock in
+                              //case of exceptions
+    return this;
   }
 
   /**
@@ -145,13 +162,13 @@ public abstract class TakeSnapshotHandler extends EventHandler implements Snapsh
       // complete the snapshot, atomically moving from tmp to .snapshot dir.
       completeSnapshot(this.snapshotDir, this.workingDir, this.fs);
     } catch (Exception e) {
-      String reason = "Failed taking snapshot " + SnapshotDescriptionUtils.toString(snapshot)
+      String reason = "Failed taking snapshot " + ClientSnapshotDescriptionUtils.toString(snapshot)
           + " due to exception:" + e.getMessage();
       LOG.error(reason, e);
       ForeignException ee = new ForeignException(reason, e);
       monitor.receive(ee);
       // need to mark this completed to close off and allow cleanup to happen.
-      cancel("Failed to take snapshot '" + SnapshotDescriptionUtils.toString(snapshot)
+      cancel("Failed to take snapshot '" + ClientSnapshotDescriptionUtils.toString(snapshot)
           + "' due to exception");
     } finally {
       LOG.debug("Launching cleanup of working dir:" + workingDir);
@@ -163,6 +180,17 @@ public abstract class TakeSnapshotHandler extends EventHandler implements Snapsh
         }
       } catch (IOException e) {
         LOG.error("Couldn't delete snapshot working directory:" + workingDir);
+      }
+      releaseTableLock();
+    }
+  }
+
+  protected void releaseTableLock() {
+    if (this.tableLock != null) {
+      try {
+        this.tableLock.release();
+      } catch (IOException ex) {
+        LOG.warn("Could not release the table lock", ex);
       }
     }
   }
@@ -198,7 +226,7 @@ public abstract class TakeSnapshotHandler extends EventHandler implements Snapsh
     if (finished) return;
 
     this.finished = true;
-    LOG.info("Stop taking snapshot=" + SnapshotDescriptionUtils.toString(snapshot) + " because: "
+    LOG.info("Stop taking snapshot=" + ClientSnapshotDescriptionUtils.toString(snapshot) + " because: "
         + why);
     CancellationException ce = new CancellationException(why);
     monitor.receive(new ForeignException(master.getServerName().toString(), ce));

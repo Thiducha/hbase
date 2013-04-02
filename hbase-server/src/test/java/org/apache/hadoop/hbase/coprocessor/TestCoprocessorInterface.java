@@ -33,7 +33,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.Coprocessor;
 import org.apache.hadoop.hbase.CoprocessorEnvironment;
-import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.HBaseTestCase;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -46,12 +45,12 @@ import org.apache.hadoop.hbase.SmallTests;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.regionserver.HRegion;
-import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.regionserver.InternalScanner;
 import org.apache.hadoop.hbase.regionserver.RegionCoprocessorHost;
 import org.apache.hadoop.hbase.regionserver.RegionScanner;
 import org.apache.hadoop.hbase.regionserver.ScanType;
 import org.apache.hadoop.hbase.regionserver.SplitTransaction;
+import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.regionserver.StoreFile;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.PairOfSameType;
@@ -118,7 +117,7 @@ public class TestCoprocessorInterface extends HBaseTestCase {
     }
 
     @Override
-    public boolean isFilterDone() {
+    public boolean isFilterDone() throws IOException {
       return delegate.isFilterDone();
     }
 
@@ -319,10 +318,15 @@ public class TestCoprocessorInterface extends HBaseTestCase {
     // now have all Environments fail
     for (int i = 0; i < regions.length; i++) {
       try {
-        Get g = new Get(regions[i].getStartKey());
+        byte [] r = regions[i].getStartKey();
+        if (r == null || r.length <= 0) {
+          // Its the start row.  Can't ask for null.  Ask for minimal key instead.
+          r = new byte [] {0};
+        }
+        Get g = new Get(r);
         regions[i].get(g);
         fail();
-      } catch (DoNotRetryIOException xc) {
+      } catch (org.apache.hadoop.hbase.exceptions.DoNotRetryIOException xc) {
       }
       assertNull(regions[i].getCoprocessorHost().
           findCoprocessor(CoprocessorII.class.getName()));
@@ -343,7 +347,8 @@ public class TestCoprocessorInterface extends HBaseTestCase {
         findCoprocessor(CoprocessorII.class.getName());
     // new map and object created, hence the reference is different
     // hence the old entry was indeed removed by the GC and new one has been created
-    assertFalse(((CoprocessorII)c2).getSharedData().get("test2") == o2);
+    Object o3 = ((CoprocessorII)c2).getSharedData().get("test2");
+    assertFalse(o3 == o2);
   }
 
   public void testCoprocessorInterface() throws IOException {

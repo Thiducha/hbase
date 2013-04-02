@@ -10,8 +10,7 @@
 
   <property>
     <name>fs.default.name</name>
-    <value>hdfs://HBASE_IT_MAIN_BOX:9000</value>
-    <final>true</final>
+    <value>hdfs://HBASE_IT_BOX_0</value>
   </property>
 
 </configuration>

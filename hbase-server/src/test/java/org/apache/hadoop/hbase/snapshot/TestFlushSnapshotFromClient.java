@@ -29,6 +29,7 @@ import java.util.concurrent.CountDownLatch;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.commons.logging.impl.Log4JLogger;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -37,20 +38,26 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.LargeTests;
-import org.apache.hadoop.hbase.TableNotFoundException;
+import org.apache.hadoop.hbase.exceptions.SnapshotCreationException;
+import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
+import org.apache.hadoop.hbase.ipc.HBaseClient;
+import org.apache.hadoop.hbase.ipc.HBaseServer;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.ScannerCallable;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.master.snapshot.SnapshotManager;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.SnapshotDescription;
 import org.apache.hadoop.hbase.regionserver.ConstantSizeRegionSplitPolicy;
 import org.apache.hadoop.hbase.regionserver.HRegion;
+import org.apache.hadoop.hbase.regionserver.HRegionFileSystem;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.FSTableDescriptors;
 import org.apache.hadoop.hbase.util.FSUtils;
 import org.apache.hadoop.hbase.util.HBaseFsck;
 import org.apache.hadoop.hbase.util.JVMClusterUtil.RegionServerThread;
+import org.apache.log4j.Level;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -81,6 +88,9 @@ public class TestFlushSnapshotFromClient {
    */
   @BeforeClass
   public static void setupCluster() throws Exception {
+    ((Log4JLogger)HBaseServer.LOG).getLogger().setLevel(Level.ALL);
+    ((Log4JLogger)HBaseClient.LOG).getLogger().setLevel(Level.ALL);
+    ((Log4JLogger)ScannerCallable.LOG).getLogger().setLevel(Level.ALL);
     setupConf(UTIL.getConfiguration());
     UTIL.startMiniCluster(NUM_RS);
   }
@@ -101,7 +111,7 @@ public class TestFlushSnapshotFromClient {
     // Enable snapshot
     conf.setBoolean(SnapshotManager.HBASE_SNAPSHOT_ENABLED, true);
     conf.set(HConstants.HBASE_REGION_SPLIT_POLICY_KEY,
-      ConstantSizeRegionSplitPolicy.class.getName());    
+      ConstantSizeRegionSplitPolicy.class.getName());
   }
 
   @Before
@@ -177,7 +187,7 @@ public class TestFlushSnapshotFromClient {
       admin, fs, false, new Path(rootDir, HConstants.HREGION_LOGDIR_NAME), snapshotServers);
 
     admin.deleteSnapshot(snapshot);
-    snapshots = admin.getCompletedSnapshots();
+    snapshots = admin.listSnapshots();
     SnapshotTestingUtils.assertNoSnapshots(admin);
   }
 
@@ -257,7 +267,7 @@ public class TestFlushSnapshotFromClient {
     String snapshotName = "flushSnapshotCreateListDestroy";
     // test creating the snapshot
     admin.snapshot(snapshotName, STRING_TABLE_NAME, SnapshotDescription.Type.FLUSH);
-    logFSTree(new Path(UTIL.getConfiguration().get(HConstants.HBASE_DIR)));
+    logFSTree(FSUtils.getRootDir(UTIL.getConfiguration()));
 
     // make sure we only have 1 matching snapshot
     List<SnapshotDescription> snapshots = SnapshotTestingUtils.assertOneSnapshotThatMatches(admin,
@@ -283,7 +293,7 @@ public class TestFlushSnapshotFromClient {
     for (HRegionInfo info : regions) {
       String regionName = info.getEncodedName();
       Path regionDir = new Path(snapshotDir, regionName);
-      HRegionInfo snapshotRegionInfo = HRegion.loadDotRegionInfoFileContent(fs, regionDir);
+      HRegionInfo snapshotRegionInfo = HRegionFileSystem.loadRegionInfoFileContent(fs, regionDir);
       assertEquals(info, snapshotRegionInfo);
       // check to make sure we have the family
       Path familyDir = new Path(regionDir, Bytes.toString(TEST_FAM));
@@ -341,13 +351,14 @@ public class TestFlushSnapshotFromClient {
       public void run() {
         try {
           HBaseAdmin admin = UTIL.getHBaseAdmin();
-          LOG.info("Submitting snapshot request: " + SnapshotDescriptionUtils.toString(ss));
+          LOG.info("Submitting snapshot request: " + ClientSnapshotDescriptionUtils.toString(ss));
           admin.takeSnapshotAsync(ss);
         } catch (Exception e) {
-          LOG.info("Exception during snapshot request: " + SnapshotDescriptionUtils.toString(ss)
+          LOG.info("Exception during snapshot request: " + ClientSnapshotDescriptionUtils.toString(
+              ss)
               + ".  This is ok, we expect some", e);
         }
-        LOG.info("Submitted snapshot request: " + SnapshotDescriptionUtils.toString(ss));
+        LOG.info("Submitted snapshot request: " + ClientSnapshotDescriptionUtils.toString(ss));
         toBeSubmitted.countDown();
       }
     };
@@ -380,14 +391,14 @@ public class TestFlushSnapshotFromClient {
     }
 
     // dump for debugging
-    logFSTree(new Path(UTIL.getConfiguration().get(HConstants.HBASE_DIR)));
+    logFSTree(FSUtils.getRootDir(UTIL.getConfiguration()));
 
-    List<SnapshotDescription> taken = admin.getCompletedSnapshots();
+    List<SnapshotDescription> taken = admin.listSnapshots();
     int takenSize = taken.size();
     LOG.info("Taken " + takenSize + " snapshots:  " + taken);
     assertTrue("We expect at least 1 request to be rejected because of we concurrently" +
         " issued many requests", takenSize < ssNum && takenSize > 0);
-    // delete snapshots so subsequent tests are clean.  
+    // delete snapshots so subsequent tests are clean.
     for (SnapshotDescription ss : taken) {
       admin.deleteSnapshot(ss.getName());
     }

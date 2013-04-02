@@ -30,11 +30,13 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.Server;
 import org.apache.hadoop.hbase.backup.HFileArchiver;
 import org.apache.hadoop.hbase.catalog.MetaEditor;
+import org.apache.hadoop.hbase.executor.EventType;
 import org.apache.hadoop.hbase.master.AssignmentManager;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.master.MasterCoprocessorHost;
 import org.apache.hadoop.hbase.master.MasterFileSystem;
 import org.apache.hadoop.hbase.master.MasterServices;
+import org.apache.hadoop.hbase.master.RegionStates;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Threads;
 import org.apache.zookeeper.KeeperException;
@@ -65,17 +67,21 @@ public class DeleteTableHandler extends TableEventHandler {
 
     // 1. Wait because of region in transition
     AssignmentManager am = this.masterServices.getAssignmentManager();
+    RegionStates states = am.getRegionStates();
     long waitTime = server.getConfiguration().
       getLong("hbase.master.wait.on.region", 5 * 60 * 1000);
     for (HRegionInfo region : regions) {
       long done = System.currentTimeMillis() + waitTime;
       while (System.currentTimeMillis() < done) {
-        if (!am.getRegionStates().isRegionInTransition(region)) break;
+        if (states.isRegionFailedToOpen(region)) {
+          am.regionOffline(region);
+        }
+        if (!states.isRegionInTransition(region)) break;
         Threads.sleep(waitingTimeForEvents);
         LOG.debug("Waiting on region to clear regions in transition; "
           + am.getRegionStates().getRegionTransitionState(region));
       }
-      if (am.getRegionStates().isRegionInTransition(region)) {
+      if (states.isRegionInTransition(region)) {
         throw new IOException("Waited hbase.master.wait.on.region (" +
           waitTime + "ms) for region to leave region " +
           region.getRegionNameAsString() + " in transitions");
@@ -103,12 +109,17 @@ public class DeleteTableHandler extends TableEventHandler {
       if (!fs.delete(tempTableDir, true)) {
         LOG.error("Couldn't delete " + tempTableDir);
       }
+
+      LOG.debug("Table '" + Bytes.toString(tableName) + "' archived!");
     } finally {
+      String tableNameStr = Bytes.toString(tableName);
       // 6. Update table descriptor cache
+      LOG.debug("Removing '" + tableNameStr + "' descriptor.");
       this.masterServices.getTableDescriptors().remove(Bytes.toString(tableName));
 
       // 7. If entry for this table in zk, and up in AssignmentManager, remove it.
-      am.getZKTable().setDeletedTable(Bytes.toString(tableName));
+      LOG.debug("Marking '" + tableNameStr + "' as deleted.");
+      am.getZKTable().setDeletedTable(tableNameStr);
     }
 
     if (cpHost != null) {

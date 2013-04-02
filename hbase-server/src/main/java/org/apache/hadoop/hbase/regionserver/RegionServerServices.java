@@ -27,6 +27,7 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.catalog.CatalogTracker;
 import org.apache.hadoop.hbase.executor.ExecutorService;
 import org.apache.hadoop.hbase.ipc.RpcServer;
+import org.apache.hadoop.hbase.master.TableLockManager;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.zookeeper.KeeperException;
 
@@ -40,7 +41,7 @@ public interface RegionServerServices extends OnlineRegions {
    */
   public boolean isStopping();
 
-  /** @return the HLog for a particular region. Pass null for getting the 
+  /** @return the HLog for a particular region. Pass null for getting the
    * default (common) WAL */
   public HLog getWAL(HRegionInfo regionInfo) throws IOException;
 
@@ -60,17 +61,20 @@ public interface RegionServerServices extends OnlineRegions {
   public RegionServerAccounting getRegionServerAccounting();
 
   /**
+   * @return RegionServer's instance of {@link TableLockManager}
+   */
+  public TableLockManager getTableLockManager();
+
+  /**
    * Tasks to perform after region open to complete deploy of region on
    * regionserver
-   * 
+   *
    * @param r Region to open.
    * @param ct Instance of {@link CatalogTracker}
-   * @param daughter True if this is daughter of a split
    * @throws KeeperException
    * @throws IOException
    */
-  public void postOpenDeployTasks(final HRegion r, final CatalogTracker ct,
-      final boolean daughter)
+  public void postOpenDeployTasks(final HRegion r, final CatalogTracker ct)
   throws KeeperException, IOException;
 
   /**
@@ -98,4 +102,9 @@ public interface RegionServerServices extends OnlineRegions {
    * @return hbase executor service
    */
   public ExecutorService getExecutorService();
+
+  /**
+   * @return The RegionServer's CatalogTracker
+   */
+  public CatalogTracker getCatalogTracker();
 }

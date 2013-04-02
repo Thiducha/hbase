@@ -64,6 +64,7 @@ public class ReplicationHLogReaderManager {
     // Detect if this is a new file, if so get a new reader else
     // reset the current reader so that we see the new data
     if (this.reader == null || !this.lastPath.equals(path)) {
+      this.closeReader();
       this.reader = HLogFactory.createReader(this.fs, path, this.conf);
       this.lastPath = path;
     } else {
@@ -123,15 +124,20 @@ public class ReplicationHLogReaderManager {
   public void closeReader() throws IOException {
     if (this.reader != null) {
       this.reader.close();
+      this.reader = null;
     }
   }
 
   /**
    * Tell the helper to reset internal state
    */
-  public void finishCurrentFile() {
+  void finishCurrentFile() {
     this.position = 0;
-    this.reader = null;
+    try {
+      this.closeReader();
+    } catch (IOException e) {
+      LOG.warn("Unable to close reader", e);
+    }
   }
 
 }

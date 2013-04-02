@@ -24,7 +24,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -38,7 +37,8 @@ import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.TableNotEnabledException;
+import org.apache.hadoop.hbase.exceptions.HBaseSnapshotException;
+import org.apache.hadoop.hbase.exceptions.TableNotEnabledException;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
@@ -46,6 +46,7 @@ import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.SnapshotDescriptio
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.IsSnapshotDoneRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.IsSnapshotDoneResponse;
 import org.apache.hadoop.hbase.regionserver.HRegion;
+import org.apache.hadoop.hbase.regionserver.HRegionFileSystem;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.FSTableDescriptors;
 import org.apache.hadoop.hbase.util.FSUtils;
@@ -67,7 +68,7 @@ public class SnapshotTestingUtils {
    *           if the admin operation fails
    */
   public static void assertNoSnapshots(HBaseAdmin admin) throws IOException {
-    assertEquals("Have some previous snapshots", 0, admin.getCompletedSnapshots()
+    assertEquals("Have some previous snapshots", 0, admin.listSnapshots()
         .size());
   }
 
@@ -79,7 +80,7 @@ public class SnapshotTestingUtils {
       HBaseAdmin admin, String snapshotName, String tableName)
       throws IOException {
     // list the snapshot
-    List<SnapshotDescription> snapshots = admin.getCompletedSnapshots();
+    List<SnapshotDescription> snapshots = admin.listSnapshots();
 
     List<SnapshotDescription> returnedSnapshots = new ArrayList<SnapshotDescription>();
     for (SnapshotDescription sd : snapshots) {
@@ -108,7 +109,7 @@ public class SnapshotTestingUtils {
       HBaseAdmin admin, String snapshotName, String tableName)
       throws IOException {
     // list the snapshot
-    List<SnapshotDescription> snapshots = admin.getCompletedSnapshots();
+    List<SnapshotDescription> snapshots = admin.listSnapshots();
 
     assertEquals("Should only have 1 snapshot", 1, snapshots.size());
     assertEquals(snapshotName, snapshots.get(0).getName());
@@ -196,8 +197,7 @@ public class SnapshotTestingUtils {
     for (HRegionInfo info : regions) {
       String regionName = info.getEncodedName();
       Path regionDir = new Path(snapshotDir, regionName);
-      HRegionInfo snapshotRegionInfo = HRegion.loadDotRegionInfoFileContent(fs,
-          regionDir);
+      HRegionInfo snapshotRegionInfo = HRegionFileSystem.loadRegionInfoFileContent(fs, regionDir);
       assertEquals(info, snapshotRegionInfo);
 
       // check to make sure we have the family

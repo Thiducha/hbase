@@ -38,7 +38,7 @@ import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.LargeTests;
-import org.apache.hadoop.hbase.NotServingRegionException;
+import org.apache.hadoop.hbase.exceptions.NotServingRegionException;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.Stoppable;
 import org.apache.hadoop.hbase.client.Get;
@@ -118,7 +118,7 @@ public class TestEndToEndSplitTransaction {
     // 3. finish phase II
     // note that this replicates some code from SplitTransaction
     // 2nd daughter first
-    server.postOpenDeployTasks(regions.getSecond(), server.getCatalogTracker(), true);
+    server.postOpenDeployTasks(regions.getSecond(), server.getCatalogTracker());
     // Add to online regions
     server.addToOnlineRegions(regions.getSecond());
     // THIS is the crucial point:
@@ -128,7 +128,7 @@ public class TestEndToEndSplitTransaction {
     assertTrue(test(con, tableName, lastRow, server));
 
     // first daughter second
-    server.postOpenDeployTasks(regions.getFirst(), server.getCatalogTracker(), true);
+    server.postOpenDeployTasks(regions.getFirst(), server.getCatalogTracker());
     // Add to online regions
     server.addToOnlineRegions(regions.getFirst());
     assertTrue(test(con, tableName, firstRow, server));
@@ -477,7 +477,10 @@ public class TestEndToEndSplitTransaction {
     HTable table = new HTable(conf, hri.getTableName());
 
     try {
-      Get get = new Get(hri.getStartKey());
+      byte [] row = hri.getStartKey();
+      // Check for null/empty row.  If we find one, use a key that is likely to be in first region.
+      if (row == null || row.length <= 0) row = new byte [] {'0'};
+      Get get = new Get(row);
       while (System.currentTimeMillis() - start < timeout) {
         try {
           table.get(get);

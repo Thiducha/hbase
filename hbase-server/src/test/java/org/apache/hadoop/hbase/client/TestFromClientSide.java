@@ -47,9 +47,9 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.commons.logging.impl.Log4JLogger;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Abortable;
-import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
@@ -78,20 +78,23 @@ import org.apache.hadoop.hbase.filter.WhileMatchFilter;
 import org.apache.hadoop.hbase.io.hfile.BlockCache;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel;
+import org.apache.hadoop.hbase.ipc.HBaseClient;
+import org.apache.hadoop.hbase.ipc.HBaseServer;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Mutate.MutateType;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutationProto;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutationProto.MutationType;
 import org.apache.hadoop.hbase.protobuf.generated.MultiRowMutation.MultiMutateRequest;
 import org.apache.hadoop.hbase.protobuf.generated.MultiRowMutation.MultiRowMutationService;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
-import org.apache.hadoop.hbase.regionserver.NoSuchColumnFamilyException;
+import org.apache.hadoop.hbase.exceptions.DoNotRetryIOException;
+import org.apache.hadoop.hbase.exceptions.NoSuchColumnFamilyException;
 import org.apache.hadoop.hbase.regionserver.Store;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
-import org.apache.hadoop.io.DataInputBuffer;
+import org.apache.log4j.Level;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -121,6 +124,9 @@ public class TestFromClientSide {
    */
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
+    ((Log4JLogger)HBaseServer.LOG).getLogger().setLevel(Level.ALL);
+    ((Log4JLogger)HBaseClient.LOG).getLogger().setLevel(Level.ALL);
+    ((Log4JLogger)ScannerCallable.LOG).getLogger().setLevel(Level.ALL);
     Configuration conf = TEST_UTIL.getConfiguration();
     conf.setStrings(CoprocessorHost.REGION_COPROCESSOR_CONF_KEY,
         MultiRowMutationEndpoint.class.getName());
@@ -3635,7 +3641,8 @@ public class TestFromClientSide {
     assertEquals(put.size(), 1);
     assertEquals(put.getFamilyMap().get(CONTENTS_FAMILY).size(), 1);
 
-    KeyValue kv = put.getFamilyMap().get(CONTENTS_FAMILY).get(0);
+    // KeyValue v1 expectation.  Cast for now until we go all Cell all the time. TODO
+    KeyValue kv = (KeyValue)put.getFamilyMap().get(CONTENTS_FAMILY).get(0);
 
     assertTrue(Bytes.equals(kv.getFamily(), CONTENTS_FAMILY));
     // will it return null or an empty byte array?
@@ -4148,18 +4155,18 @@ public class TestFromClientSide {
     HTable t = TEST_UTIL.createTable(TABLENAME, FAMILY);
     Put p = new Put(ROW);
     p.add(FAMILY, QUALIFIER, VALUE);
-    Mutate m1 = ProtobufUtil.toMutate(MutateType.PUT, p);
+    MutationProto m1 = ProtobufUtil.toMutation(MutationType.PUT, p);
 
     p = new Put(ROW1);
     p.add(FAMILY, QUALIFIER, VALUE);
-    Mutate m2 = ProtobufUtil.toMutate(MutateType.PUT, p);
+    MutationProto m2 = ProtobufUtil.toMutation(MutationType.PUT, p);
 
     MultiMutateRequest.Builder mrmBuilder = MultiMutateRequest.newBuilder();
     mrmBuilder.addMutationRequest(m1);
     mrmBuilder.addMutationRequest(m2);
     MultiMutateRequest mrm = mrmBuilder.build();
     CoprocessorRpcChannel channel = t.coprocessorService(ROW);
-    MultiRowMutationService.BlockingInterface service = 
+    MultiRowMutationService.BlockingInterface service =
        MultiRowMutationService.newBlockingStub(channel);
     service.mutateRows(null, mrm);
     Get g = new Get(ROW);
@@ -4195,6 +4202,8 @@ public class TestFromClientSide {
     Delete d = new Delete(ROW);
     d.deleteColumns(FAMILY, QUALIFIERS[0]);
     arm.add(d);
+    // TODO: Trying mutateRow again.  The batch was failing with a one try only.
+    // t.mutateRow(arm);
     t.batch(Arrays.asList((Row)arm));
     r = t.get(g);
     assertEquals(0, Bytes.compareTo(VALUE, r.getValue(FAMILY, QUALIFIERS[1])));
@@ -4305,6 +4314,8 @@ public class TestFromClientSide {
       incNoRow.addColumn(FAMILY, COLUMN, 5);
       fail("Should have thrown IllegalArgumentException");
     } catch (IllegalArgumentException iax) {
+      // success
+    } catch (NullPointerException npe) {
       // success
     }
     // try null family

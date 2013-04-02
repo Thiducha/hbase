@@ -31,6 +31,8 @@ import org.apache.hadoop.hbase.catalog.CatalogTracker;
 import org.apache.hadoop.hbase.executor.ExecutorService;
 import org.apache.hadoop.hbase.fs.HFileSystem;
 import org.apache.hadoop.hbase.ipc.RpcServer;
+import org.apache.hadoop.hbase.master.TableLockManager;
+import org.apache.hadoop.hbase.master.TableLockManager.NullTableLockManager;
 import org.apache.hadoop.hbase.regionserver.CompactionRequestor;
 import org.apache.hadoop.hbase.regionserver.FlushRequester;
 import org.apache.hadoop.hbase.regionserver.HRegion;
@@ -47,13 +49,19 @@ import org.apache.zookeeper.KeeperException;
 public class MockRegionServerServices implements RegionServerServices {
   private final Map<String, HRegion> regions = new HashMap<String, HRegion>();
   private boolean stopping = false;
-  private final ConcurrentSkipListMap<byte[], Boolean> rit = 
+  private final ConcurrentSkipListMap<byte[], Boolean> rit =
     new ConcurrentSkipListMap<byte[], Boolean>(Bytes.BYTES_COMPARATOR);
   private HFileSystem hfs = null;
   private ZooKeeperWatcher zkw = null;
+  private ServerName serverName = null;
 
-  public MockRegionServerServices(ZooKeeperWatcher zkw){
+  public MockRegionServerServices(ZooKeeperWatcher zkw) {
     this.zkw = zkw;
+  }
+  
+  public MockRegionServerServices(ZooKeeperWatcher zkw, ServerName serverName) {
+    this.zkw = zkw;
+    this.serverName = serverName;
   }
 
   public MockRegionServerServices(){
@@ -80,7 +88,7 @@ public class MockRegionServerServices implements RegionServerServices {
   }
 
   @Override
-  public void postOpenDeployTasks(HRegion r, CatalogTracker ct, boolean daughter)
+  public void postOpenDeployTasks(HRegion r, CatalogTracker ct)
       throws KeeperException, IOException {
     addToOnlineRegions(r);
   }
@@ -119,14 +127,19 @@ public class MockRegionServerServices implements RegionServerServices {
   public ZooKeeperWatcher getZooKeeper() {
     return zkw;
   }
-  
+
   public RegionServerAccounting getRegionServerAccounting() {
     return null;
   }
 
   @Override
+  public TableLockManager getTableLockManager() {
+    return new NullTableLockManager();
+  }
+
+  @Override
   public ServerName getServerName() {
-    return null;
+    return this.serverName;
   }
 
   @Override

@@ -27,7 +27,7 @@ import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.TreeMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -40,8 +40,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -57,6 +55,7 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.exceptions.FailedLogCloseException;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.ClassSize;
 import org.apache.hadoop.hbase.util.DrainBarrier;
@@ -173,7 +172,8 @@ class FSHLog implements HLog, Syncable {
    * contains the regions that are currently flushing. That way we can store two numbers for
    * flushing and non-flushing (oldestUnflushedSeqNums) memstore for the same region.
    */
-  private final Map<byte[], Long> oldestFlushingSeqNums = new HashMap<byte[], Long>();
+  private final Map<byte[], Long> oldestFlushingSeqNums =
+    new TreeMap<byte[], Long>(Bytes.BYTES_COMPARATOR);
 
   private volatile boolean closed = false;
 
@@ -221,7 +221,7 @@ class FSHLog implements HLog, Syncable {
   /**
    * Thread that handles optional sync'ing
    */
-  private final LogSyncer logSyncerThread;
+  private final LogSyncer logSyncer;
 
   /** Number of log close errors tolerated before we abort */
   private final int closeErrorsTolerated;
@@ -349,7 +349,7 @@ class FSHLog implements HLog, Syncable {
     this.closeErrorsTolerated = conf.getInt(
         "hbase.regionserver.logroll.errors.tolerated", 0);
     
-    this.logSyncerThread = new LogSyncer(this.optionalFlushInterval);
+    this.logSyncer = new LogSyncer(this.optionalFlushInterval);
     
     LOG.info("HLog configuration: blocksize=" +
       StringUtils.byteDesc(this.blocksize) +
@@ -379,8 +379,15 @@ class FSHLog implements HLog, Syncable {
     // handle the reflection necessary to call getNumCurrentReplicas()
     this.getNumCurrentReplicas = getGetNumCurrentReplicas(this.hdfs_out);
 
-    Threads.setDaemonThreadRunning(logSyncerThread.getThread(),
-        Thread.currentThread().getName() + ".logSyncer");
+    // When optionalFlushInterval is set as 0, don't start a thread for deferred log sync.
+    if (this.optionalFlushInterval > 0) {
+      Threads.setDaemonThreadRunning(logSyncer.getThread(), Thread.currentThread().getName()
+          + ".logSyncer");
+    } else {
+      LOG.info("hbase.regionserver.optionallogflushinterval is set as "
+          + this.optionalFlushInterval + ". Deferred log syncing won't work. "
+          + "Any Mutation, marked to be deferred synced, will be flushed immediately.");
+    }
     coprocessorHost = new WALCoprocessorHost(this, conf);
 
     this.metrics = new MetricsWAL();
@@ -798,13 +805,16 @@ class FSHLog implements HLog, Syncable {
     if (this.closed) {
       return;
     }
-    try {
-      logSyncerThread.close();
-      // Make sure we synced everything
-      logSyncerThread.join(this.optionalFlushInterval*2);
-    } catch (InterruptedException e) {
-      LOG.error("Exception while waiting for syncer thread to die", e);
-      Thread.currentThread().interrupt();
+    // When optionalFlushInterval is 0, the logSyncer is not started as a Thread.
+    if (this.optionalFlushInterval > 0) {
+      try {
+        logSyncer.close();
+        // Make sure we synced everything
+        logSyncer.join(this.optionalFlushInterval * 2);
+      } catch (InterruptedException e) {
+        LOG.error("Exception while waiting for syncer thread to die", e);
+        Thread.currentThread().interrupt();
+      }
     }
     try {
       // Prevent all further flushing and rolling.
@@ -1089,9 +1099,9 @@ class FSHLog implements HLog, Syncable {
           return;
         }
         doneUpto = this.unflushedEntries.get();
-        pending = logSyncerThread.getPendingWrites();
+        pending = logSyncer.getPendingWrites();
         try {
-          logSyncerThread.hlogFlush(tempWriter, pending);
+          logSyncer.hlogFlush(tempWriter, pending);
         } catch(IOException io) {
           ioe = io;
           LOG.error("syncer encountered error, will retry. txid=" + txid, ioe);
@@ -1102,7 +1112,7 @@ class FSHLog implements HLog, Syncable {
           synchronized (flushLock) {
             // HBASE-4387, HBASE-5623, retry with updateLock held
             tempWriter = this.writer;
-            logSyncerThread.hlogFlush(tempWriter, pending);
+            logSyncer.hlogFlush(tempWriter, pending);
           }
         }          
       }
@@ -1257,7 +1267,7 @@ class FSHLog implements HLog, Syncable {
       // coprocessor hook:
       if (!coprocessorHost.preWALWrite(info, logKey, logEdit)) {
         // write to our buffer for the Hlog file.
-        logSyncerThread.append(new FSHLog.Entry(logKey, logEdit));
+        logSyncer.append(new FSHLog.Entry(logKey, logEdit));
       }
       long took = EnvironmentEdgeManager.currentTimeMillis() - now;
       coprocessorHost.postWALWrite(info, logKey, logEdit);
@@ -1387,7 +1397,7 @@ class FSHLog implements HLog, Syncable {
     if (!fs.exists(p)) {
       throw new FileNotFoundException(p.toString());
     }
-    final Path baseDir = new Path(conf.get(HConstants.HBASE_DIR));
+    final Path baseDir = FSUtils.getRootDir(conf);
     final Path oldLogDir = new Path(baseDir, HConstants.HREGION_OLDLOGDIR_NAME);
     if (!fs.getFileStatus(p).isDir()) {
       throw new IOException(p + " is not a directory");
@@ -1433,9 +1443,8 @@ class FSHLog implements HLog, Syncable {
       Configuration conf = HBaseConfiguration.create();
       for (int i = 1; i < args.length; i++) {
         try {
-          conf.set("fs.default.name", args[i]);
-          conf.set("fs.defaultFS", args[i]);
           Path logPath = new Path(args[i]);
+          FSUtils.setFsDefault(conf, logPath);
           split(conf, logPath);
         } catch (Throwable t) {
           t.printStackTrace(System.err);

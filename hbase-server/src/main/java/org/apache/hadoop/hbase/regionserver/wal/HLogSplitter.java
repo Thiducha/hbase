@@ -26,6 +26,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +35,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionService;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.Future;
@@ -49,10 +51,10 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.RemoteExceptionHandler;
+import org.apache.hadoop.hbase.exceptions.OrphanHLogAfterSplitException;
 import org.apache.hadoop.hbase.io.HeapSize;
 import org.apache.hadoop.hbase.master.SplitLogManager;
 import org.apache.hadoop.hbase.monitoring.MonitoredTask;
@@ -187,15 +189,29 @@ public class HLogSplitter {
    */
   public List<Path> splitLog()
       throws IOException {
+    return splitLog((CountDownLatch) null);
+  }
+  
+  /**
+   * Split up a bunch of regionserver commit log files that are no longer being
+   * written to, into new files, one per region for region to replay on startup.
+   * Delete the old log files when finished.
+   *
+   * @param latch
+   * @throws IOException will throw if corrupted hlogs aren't tolerated
+   * @return the list of splits
+   */
+  public List<Path> splitLog(CountDownLatch latch)
+      throws IOException {
     Preconditions.checkState(!hasSplit,
         "An HLogSplitter instance may only be used once");
     hasSplit = true;
 
     status = TaskMonitor.get().createStatus(
         "Splitting logs in " + srcDir);
-    
+
     long startTime = EnvironmentEdgeManager.currentTimeMillis();
-    
+
     status.setStatus("Determining files to split...");
     List<Path> splits = null;
     if (!fs.exists(srcDir)) {
@@ -210,7 +226,7 @@ public class HLogSplitter {
     }
     logAndReport("Splitting " + logfiles.length + " hlog(s) in "
     + srcDir.toString());
-    splits = splitLog(logfiles);
+    splits = splitLog(logfiles, latch);
 
     splitTime = EnvironmentEdgeManager.currentTimeMillis() - startTime;
     String msg = "hlog file splitting completed in " + splitTime +
@@ -219,7 +235,7 @@ public class HLogSplitter {
     LOG.info(msg);
     return splits;
   }
-  
+
   private void logAndReport(String msg) {
     status.setStatus(msg);
     LOG.info(msg);
@@ -274,7 +290,8 @@ public class HLogSplitter {
    * After the process is complete, the log files are archived to a separate
    * directory.
    */
-  private List<Path> splitLog(final FileStatus[] logfiles) throws IOException {
+  private List<Path> splitLog(final FileStatus[] logfiles, CountDownLatch latch)
+      throws IOException {
     List<Path> processedLogs = new ArrayList<Path>(logfiles.length);
     List<Path> corruptedLogs = new ArrayList<Path>(logfiles.length);
     List<Path> splits;
@@ -321,11 +338,20 @@ public class HLogSplitter {
         }
       }
       status.setStatus("Log splits complete. Checking for orphaned logs.");
-      
-      if (fs.listStatus(srcDir).length > processedLogs.size()
+
+      if (latch != null) {
+        try {
+          latch.await();
+        } catch (InterruptedException ie) {
+          LOG.warn("wait for latch interrupted");
+          Thread.currentThread().interrupt();
+        }
+      }
+      FileStatus[] currFiles = fs.listStatus(srcDir);
+      if (currFiles.length > processedLogs.size()
           + corruptedLogs.size()) {
         throw new OrphanHLogAfterSplitException(
-            "Discovered orphan hlog after split. Maybe the "
+          "Discovered orphan hlog after split. Maybe the "
             + "HRegionServer was not dead when we started");
       }
     } finally {
@@ -511,7 +537,12 @@ public class HLogSplitter {
     List<Path> corruptedLogs = new ArrayList<Path>();
     FileSystem fs;
     fs = rootdir.getFileSystem(conf);
-    Path logPath = new Path(logfile);
+    Path logPath = null;
+    if (FSUtils.isStartingWithPath(rootdir, logfile)) {
+      logPath = new Path(logfile);
+    } else {
+      logPath = new Path(rootdir, logfile);
+    }
     if (ZKSplitLog.isCorrupted(rootdir, logPath.getName(), fs)) {
       corruptedLogs.add(logPath);
     } else {
@@ -539,7 +570,7 @@ public class HLogSplitter {
       final List<Path> corruptedLogs,
       final List<Path> processedLogs, final Path oldLogDir,
       final FileSystem fs, final Configuration conf) throws IOException {
-    final Path corruptDir = new Path(conf.get(HConstants.HBASE_DIR), conf.get(
+    final Path corruptDir = new Path(FSUtils.getRootDir(conf), conf.get(
         "hbase.regionserver.hlog.splitlog.corrupt.dir",  HConstants.CORRUPT_DIR_NAME));
 
     if (!fs.mkdirs(corruptDir)) {
@@ -610,7 +641,7 @@ public class HLogSplitter {
         fs.mkdirs(tmp);
       }
       tmp = new Path(tmp,
-        HLog.RECOVERED_EDITS_DIR + "_" + encodedRegionName);
+        HConstants.RECOVERED_EDITS_DIR + "_" + encodedRegionName);
       LOG.warn("Found existing old file: " + dir + ". It could be some "
         + "leftover of an old installation. It should be a folder instead. "
         + "So moving it to " + tmp);
@@ -842,7 +873,7 @@ public class HLogSplitter {
           buffer = new RegionEntryBuffer(key.getTablename(), key.getEncodedRegionName());
           buffers.put(key.getEncodedRegionName(), buffer);
         }
-        incrHeap= buffer.appendEntry(entry);        
+        incrHeap= buffer.appendEntry(entry);
       }
 
       // If we crossed the chunk threshold, wait for more space to be available
@@ -1092,7 +1123,7 @@ public class HLogSplitter {
 
   /**
    * A class used in distributed log splitting
-   * 
+   *
    */
   class DistributedLogSplittingHelper {
     // Report progress, only used in distributed log splitting
@@ -1143,7 +1174,7 @@ public class HLogSplitter {
         new TreeSet<byte[]>(Bytes.BYTES_COMPARATOR));
 
     private boolean closeAndCleanCompleted = false;
-    
+
     private boolean logWritersClosed  = false;
 
     private final int numThreads;
@@ -1171,7 +1202,7 @@ public class HLogSplitter {
     }
 
     /**
-     * 
+     *
      * @return null if failed to report progress
      * @throws IOException
      */
@@ -1303,7 +1334,7 @@ public class HLogSplitter {
       }
       return paths;
     }
-    
+
     private List<IOException> closeLogWriters(List<IOException> thrown)
         throws IOException {
       if (!logWritersClosed) {

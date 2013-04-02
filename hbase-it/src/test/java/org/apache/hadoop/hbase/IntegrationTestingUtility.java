@@ -72,12 +72,8 @@ public class IntegrationTestingUtility extends HBaseTestingUtility {
    */
   public void initializeCluster(int numSlaves) throws Exception {
     if (isDistributedCluster()) {
-      if (numSlaves > 0) {
-        createDistributedHBaseCluster();
-        checkNodeCount(numSlaves);
-      } else {
-        createUnconnectedDistributedHBaseCluster();
-      }
+      createDistributedHBaseCluster(numSlaves > 0);
+      checkNodeCount(numSlaves);
     } else {
       startMiniCluster(numSlaves);
     }
@@ -88,6 +84,9 @@ public class IntegrationTestingUtility extends HBaseTestingUtility {
    * exception otherwise.
    */
   public void checkNodeCount(int numSlaves) throws Exception {
+    if (numSlaves <= 0){
+      return;
+    }
     HBaseCluster cluster = getHBaseClusterInterface();
     if (cluster.getClusterStatus().getServers().size() < numSlaves) {
       throw new Exception("Cluster does not have enough nodes:" + numSlaves);
@@ -130,22 +129,16 @@ public class IntegrationTestingUtility extends HBaseTestingUtility {
     return isDistributedCluster;
   }
 
-  private void createDistributedHBaseCluster() throws IOException {
-    Configuration conf = getConfiguration();
-    Class<? extends ClusterManager> clusterManagerClass = conf.getClass(HBASE_CLUSTER_MANAGER_CLASS,
-      DEFAULT_HBASE_CLUSTER_MANAGER_CLASS, ClusterManager.class);
-    ClusterManager clusterManager = ReflectionUtils.newInstance(
-      clusterManagerClass, conf);
-    setHBaseCluster(new DistributedHBaseCluster(conf, clusterManager));
-  }
-
-  private void createUnconnectedDistributedHBaseCluster() throws IOException {
+  public ClusterManager createClusterManager(){
     Configuration conf = getConfiguration();
     Class<? extends ClusterManager> clusterManagerClass = conf.getClass(HBASE_CLUSTER_MANAGER_CLASS,
         DEFAULT_HBASE_CLUSTER_MANAGER_CLASS, ClusterManager.class);
-    ClusterManager clusterManager = ReflectionUtils.newInstance(
-        clusterManagerClass, conf);
-    setHBaseCluster(DistributedHBaseCluster.createUnconnectedDistributedHBaseCluster(conf, clusterManager));
+    return  ReflectionUtils.newInstance(clusterManagerClass, conf);
   }
 
+  private void createDistributedHBaseCluster(boolean connected) throws IOException {
+    Configuration conf = getConfiguration();
+    ClusterManager clusterManager = createClusterManager();
+    setHBaseCluster(new DistributedHBaseCluster(conf, clusterManager, connected));
+  }
 }

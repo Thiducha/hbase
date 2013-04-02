@@ -26,6 +26,7 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.Server;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.executor.EventHandler;
+import org.apache.hadoop.hbase.executor.EventType;
 import org.apache.hadoop.hbase.master.AssignmentManager;
 import org.apache.hadoop.hbase.master.RegionState;
 import org.apache.hadoop.hbase.zookeeper.ZKAssign;
@@ -44,9 +45,8 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
   private final int expectedVersion;
 
   private enum OpenedPriority {
-    ROOT (1),
-    META (2),
-    USER (3);
+    META (1),
+    USER (2);
 
     private final int value;
     OpenedPriority(int value) {
@@ -65,9 +65,7 @@ public class OpenedRegionHandler extends EventHandler implements TotesHRegionInf
     this.regionInfo = regionInfo;
     this.sn = sn;
     this.expectedVersion = expectedVersion;
-    if(regionInfo.isRootRegion()) {
-      priority = OpenedPriority.ROOT;
-    } else if(regionInfo.isMetaRegion()) {
+    if(regionInfo.isMetaRegion()) {
       priority = OpenedPriority.META;
     } else {
       priority = OpenedPriority.USER;

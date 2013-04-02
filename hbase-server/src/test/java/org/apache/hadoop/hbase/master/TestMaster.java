@@ -22,13 +22,17 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.catalog.MetaReader;
+import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.exceptions.PleaseHoldException;
+import org.apache.hadoop.hbase.exceptions.UnknownRegionException;
 import org.apache.hadoop.hbase.executor.EventHandler;
 import org.apache.hadoop.hbase.executor.EventHandler.EventHandlerListener;
-import org.apache.hadoop.hbase.executor.EventHandler.EventType;
+import org.apache.hadoop.hbase.executor.EventType;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Pair;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -48,11 +52,13 @@ public class TestMaster {
   private static final Log LOG = LogFactory.getLog(TestMaster.class);
   private static final byte[] TABLENAME = Bytes.toBytes("TestMaster");
   private static final byte[] FAMILYNAME = Bytes.toBytes("fam");
+  private static HBaseAdmin admin;
 
   @BeforeClass
   public static void beforeAllTests() throws Exception {
     // Start a cluster of two regionservers.
-    TEST_UTIL.startMiniCluster(1);
+    TEST_UTIL.startMiniCluster(2);
+    admin = TEST_UTIL.getHBaseAdmin();
   }
 
   @AfterClass
@@ -110,6 +116,65 @@ public class TestMaster {
       assertEquals(tableRegionFromName.getFirst(), pair.getFirst());
     } finally {
       proceed.countDown();
+    }
+  }
+
+  @Test
+  public void testMoveRegionWhenNotInitialized() {
+    MiniHBaseCluster cluster = TEST_UTIL.getHBaseCluster();
+    HMaster m = cluster.getMaster();
+    try {
+      m.initialized = false; // fake it, set back later
+      HRegionInfo meta = HRegionInfo.FIRST_META_REGIONINFO;
+      m.move(meta.getEncodedNameAsBytes(), null);
+      fail("Region should not be moved since master is not initialized");
+    } catch (IOException ioe) {
+      assertTrue(ioe instanceof PleaseHoldException);
+    } finally {
+      m.initialized = true;
+    }
+  }
+
+  @Test
+  public void testMoveThrowsUnknownRegionException() throws IOException {
+    byte[] tableName = Bytes.toBytes("testMoveThrowsUnknownRegionException");
+    HTableDescriptor htd = new HTableDescriptor(tableName);
+    HColumnDescriptor hcd = new HColumnDescriptor("value");
+    htd.addFamily(hcd);
+
+    admin.createTable(htd, null);
+    try {
+      HRegionInfo hri = new HRegionInfo(
+        tableName, Bytes.toBytes("A"), Bytes.toBytes("Z"));
+      admin.move(hri.getEncodedNameAsBytes(), null);
+      fail("Region should not be moved since it is fake");
+    } catch (IOException ioe) {
+      assertTrue(ioe instanceof UnknownRegionException);
+    } finally {
+      TEST_UTIL.deleteTable(tableName);
+    }
+  }
+
+  @Test
+  public void testMoveThrowsPleaseHoldException() throws IOException {
+    byte[] tableName = Bytes.toBytes("testMoveThrowsPleaseHoldException");
+    HMaster master = TEST_UTIL.getMiniHBaseCluster().getMaster();
+    HTableDescriptor htd = new HTableDescriptor(tableName);
+    HColumnDescriptor hcd = new HColumnDescriptor("value");
+    htd.addFamily(hcd);
+
+    admin.createTable(htd, null);
+    try {
+      List<HRegionInfo> tableRegions = admin.getTableRegions(tableName);
+
+      master.initialized = false; // fake it, set back later
+      admin.move(tableRegions.get(0).getEncodedNameAsBytes(), null);
+      fail("Region should not be moved since master is not initialized");
+    } catch (IOException ioe) {
+      assertTrue(ioe instanceof PleaseHoldException);
+    } finally {
+      master.initialized = true;
+      TEST_UTIL.deleteTable(tableName);
     }
   }
 

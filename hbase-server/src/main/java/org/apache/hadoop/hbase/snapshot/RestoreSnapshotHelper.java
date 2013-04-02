@@ -45,7 +45,8 @@ import org.apache.hadoop.hbase.errorhandling.ForeignExceptionDispatcher;
 import org.apache.hadoop.hbase.io.HFileLink;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.SnapshotDescription;
 import org.apache.hadoop.hbase.regionserver.HRegion;
-import org.apache.hadoop.hbase.regionserver.StoreFile;
+import org.apache.hadoop.hbase.regionserver.HRegionFileSystem;
+import org.apache.hadoop.hbase.regionserver.StoreFileInfo;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.FSUtils;
 import org.apache.hadoop.hbase.util.FSVisitor;
@@ -173,7 +174,7 @@ public class RestoreSnapshotHelper {
       for (String regionName: snapshotRegionNames) {
         LOG.info("region to add: " + regionName);
         Path regionDir = new Path(snapshotDir, regionName);
-        regionsToAdd.add(HRegion.loadDotRegionInfoFileContent(fs, regionDir));
+        regionsToAdd.add(HRegionFileSystem.loadRegionInfoFileContent(fs, regionDir));
       }
 
       // Create new regions cloning from the snapshot
@@ -329,7 +330,7 @@ public class RestoreSnapshotHelper {
           Path hfile = new Path(familyDir, hfileName);
           LOG.trace("Removing hfile=" + hfile +
             " from region=" + regionInfo.getEncodedName() + " table=" + tableName);
-          HFileArchiver.archiveStoreFile(fs, regionInfo, conf, tableDir, family, hfile);
+          HFileArchiver.archiveStoreFile(conf, fs, regionInfo, tableDir, family, hfile);
         }
       } else {
         // Family doesn't exists in the snapshot
@@ -452,7 +453,7 @@ public class RestoreSnapshotHelper {
       final String hfileName) throws IOException {
     if (HFileLink.isHFileLink(hfileName)) {
       HFileLink.createFromHFileLink(conf, fs, familyDir, hfileName);
-    } else if (StoreFile.isReference(hfileName)) {
+    } else if (StoreFileInfo.isReference(hfileName)) {
       restoreReferenceFile(familyDir, regionInfo, hfileName);
     } else {
       HFileLink.create(conf, fs, familyDir, regionInfo, hfileName);
@@ -481,7 +482,7 @@ public class RestoreSnapshotHelper {
       final String hfileName) throws IOException {
     // Extract the referred information (hfile name and parent region)
     String tableName = snapshotDesc.getTable();
-    Path refPath = StoreFile.getReferredToFile(new Path(new Path(new Path(tableName,
+    Path refPath = StoreFileInfo.getReferredToFile(new Path(new Path(new Path(tableName,
         regionInfo.getEncodedName()), familyDir.getName()), hfileName));
     String snapshotRegionName = refPath.getParent().getParent().getName();
     String fileName = refPath.getName();
@@ -562,7 +563,7 @@ public class RestoreSnapshotHelper {
 
     List<HRegionInfo> regions = new LinkedList<HRegionInfo>();
     for (FileStatus regionDir: regionDirs) {
-      HRegionInfo hri = HRegion.loadDotRegionInfoFileContent(fs, regionDir.getPath());
+      HRegionInfo hri = HRegionFileSystem.loadRegionInfoFileContent(fs, regionDir.getPath());
       regions.add(hri);
     }
     LOG.debug("found " + regions.size() + " regions for table=" + tableDesc.getNameAsString());

@@ -24,8 +24,11 @@ import java.io.IOException;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.KeyValue.KVComparator;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionContext;
 import org.apache.hadoop.hbase.regionserver.compactions.CompactionPolicy;
 import org.apache.hadoop.hbase.regionserver.compactions.Compactor;
+import org.apache.hadoop.hbase.regionserver.compactions.DefaultCompactionPolicy;
+import org.apache.hadoop.hbase.regionserver.compactions.DefaultCompactor;
 import org.apache.hadoop.hbase.util.ReflectionUtils;
 
 /**
@@ -34,15 +37,11 @@ import org.apache.hadoop.hbase.util.ReflectionUtils;
  * they are tied together and replaced together via StoreEngine-s.
  */
 @InterfaceAudience.Private
-public abstract class StoreEngine {
-  protected final Store store;
-  protected final Configuration conf;
-  protected final KVComparator comparator;
-
-  private final PP<CompactionPolicy> compactionPolicy = new PP<CompactionPolicy>();
-  private final PP<Compactor> compactor = new PP<Compactor>();
-  private final PP<StoreFileManager> storeFileManager = new PP<StoreFileManager>();
-  private boolean isInitialized = false;
+public abstract class StoreEngine<
+  CP extends CompactionPolicy, C extends Compactor, SFM extends StoreFileManager> {
+  protected CP compactionPolicy;
+  protected C compactor;
+  protected SFM storeFileManager;
 
   /**
    * The name of the configuration parameter that specifies the class of
@@ -50,52 +49,48 @@ public abstract class StoreEngine {
    */
   public static final String STORE_ENGINE_CLASS_KEY = "hbase.hstore.engine.class";
 
-  private static final Class<? extends StoreEngine>
+  private static final Class<? extends StoreEngine<?, ?, ?>>
     DEFAULT_STORE_ENGINE_CLASS = DefaultStoreEngine.class;
 
   /**
    * @return Compaction policy to use.
    */
   public CompactionPolicy getCompactionPolicy() {
-    createComponentsOnce();
-    return this.compactionPolicy.get();
+    return this.compactionPolicy;
   }
 
   /**
    * @return Compactor to use.
    */
   public Compactor getCompactor() {
-    createComponentsOnce();
-    return this.compactor.get();
+    return this.compactor;
   }
 
   /**
    * @return Store file manager to use.
    */
   public StoreFileManager getStoreFileManager() {
-    createComponentsOnce();
-    return this.storeFileManager.get();
-  }
-
-  protected StoreEngine(Configuration conf, Store store, KVComparator comparator) {
-    this.store = store;
-    this.conf = conf;
-    this.comparator = comparator;
+    return this.storeFileManager;
   }
 
   /**
-   * Create the StoreEngine's components.
-   * @param storeFileManager out parameter for StoreFileManager.
-   * @param compactionPolicy out parameter for CompactionPolicy.
-   * @param compactor out parameter for Compactor.
+   * Creates an instance of a compaction context specific to this engine.
+   * Doesn't actually select or start a compaction. See CompactionContext class comment.
+   * @return New CompactionContext object.
    */
-  protected abstract void createComponents(PP<StoreFileManager> storeFileManager,
-      PP<CompactionPolicy> compactionPolicy, PP<Compactor> compactor);
+  public abstract CompactionContext createCompaction() throws IOException;
 
-  private void createComponentsOnce() {
-    if (isInitialized) return;
-    createComponents(storeFileManager, compactionPolicy, compactor);
-    isInitialized = true;
+  /**
+   * Create the StoreEngine's components.
+   */
+  protected abstract void createComponents(
+      Configuration conf, Store store, KVComparator kvComparator) throws IOException;
+
+  private void createComponentsOnce(
+      Configuration conf, Store store, KVComparator kvComparator) throws IOException {
+    assert compactor == null && compactionPolicy == null && storeFileManager == null;
+    createComponents(conf, store, kvComparator);
+    assert compactor != null && compactionPolicy != null && storeFileManager != null;
   }
 
   /**
@@ -106,29 +101,16 @@ public abstract class StoreEngine {
    * @param kvComparator KVComparator for storeFileManager.
    * @return StoreEngine to use.
    */
-  public static StoreEngine create(Store store, Configuration conf, KVComparator kvComparator)
-      throws IOException {
+  public static StoreEngine<?, ?, ?> create(
+      Store store, Configuration conf, KVComparator kvComparator) throws IOException {
     String className = conf.get(STORE_ENGINE_CLASS_KEY, DEFAULT_STORE_ENGINE_CLASS.getName());
     try {
-      return ReflectionUtils.instantiateWithCustomCtor(className,
-          new Class[] { Configuration.class, Store.class, KVComparator.class },
-          new Object[] { conf, store, kvComparator });
+      StoreEngine<?,?,?> se = ReflectionUtils.instantiateWithCustomCtor(
+          className, new Class[] { }, new Object[] { });
+      se.createComponentsOnce(conf, store, kvComparator);
+      return se;
     } catch (Exception e) {
       throw new IOException("Unable to load configured store engine '" + className + "'", e);
-    }
-  }
-
-  /**
-   * To allow StoreEngine-s to have custom dependencies between 3 components, we want to create
-   * them in one place. To return multiple, simulate C++ pointer to pointers/C# out params.
-   */
-  protected static class PP<T> {
-    private T t = null;
-    public void set(T t) {
-      this.t = t;
-    }
-    public T get() {
-      return this.t;
     }
   }
 }

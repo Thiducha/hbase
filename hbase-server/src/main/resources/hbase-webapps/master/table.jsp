@@ -41,7 +41,7 @@
   String tableName = request.getParameter("name");
   HTable table = new HTable(conf, tableName);
   String tableHeader = "<h2>Table Regions</h2><table class=\"table table-striped\"><tr><th>Name</th><th>Region Server</th><th>Start Key</th><th>End Key</th><th>Requests</th></tr>";
-  ServerName rl = master.getCatalogTracker().getRootLocation();
+  ServerName rl = master.getCatalogTracker().getMetaLocation();
   boolean showFragmentation = conf.getBoolean("hbase.master.ui.fragmentation.enabled", false);
   boolean readOnly = conf.getBoolean("hbase.master.ui.readonly", false);
   Map<String, Integer> frags = null;
@@ -191,28 +191,13 @@
     </div>
     <div class="row">
 <%
-  if(tableName.equals(Bytes.toString(HConstants.ROOT_TABLE_NAME))) {
-%>
-<%= tableHeader %>
-<%
-  String url = "http://" + rl.getHostname() + ":" + infoPort + "/";
-%>
-<tr>
-  <td><%= tableName %></td>
-  <td><a href="<%= url %>"><%= rl.getHostname() %>:<%= rl.getPort() %></a></td>
-  <td>-</td>
-  <td></td>
-  <td>-</td>
-</tr>
-</table>
-<%
-  } else if(tableName.equals(Bytes.toString(HConstants.META_TABLE_NAME))) {
+  if(tableName.equals(Bytes.toString(HConstants.META_TABLE_NAME))) {
 %>
 <%= tableHeader %>
 <%
   // NOTE: Presumes one meta region only.
   HRegionInfo meta = HRegionInfo.FIRST_META_REGIONINFO;
-  ServerName metaLocation = master.getCatalogTracker().getMetaLocation();
+  ServerName metaLocation = master.getCatalogTracker().waitForMeta(1);
   for (int i = 0; i < 1; i++) {
     String url = "http://" + metaLocation.getHostname() + ":" + infoPort + "/";
 %>

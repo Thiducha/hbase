@@ -20,8 +20,6 @@ package org.apache.hadoop.hbase.mapreduce;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.ArrayList;
@@ -37,7 +35,6 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.filecache.DistributedCache;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -51,13 +48,12 @@ import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
 import org.apache.hadoop.hbase.io.hfile.AbstractHFileWriter;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
-import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.io.hfile.HFileDataBlockEncoder;
 import org.apache.hadoop.hbase.io.hfile.HFileDataBlockEncoderImpl;
 import org.apache.hadoop.hbase.io.hfile.NoOpDataBlockEncoder;
+import org.apache.hadoop.hbase.regionserver.BloomType;
 import org.apache.hadoop.hbase.regionserver.HStore;
 import org.apache.hadoop.hbase.regionserver.StoreFile;
-import org.apache.hadoop.hbase.regionserver.BloomType;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.SequenceFile;
@@ -98,7 +94,7 @@ public class HFileOutputFormat extends FileOutputFormat<ImmutableBytesWritable, 
     final long maxsize = conf.getLong(HConstants.HREGION_MAX_FILESIZE,
         HConstants.DEFAULT_MAX_FILE_SIZE);
     final int blocksize = conf.getInt("hbase.mapreduce.hfileoutputformat.blocksize",
-        HFile.DEFAULT_BLOCKSIZE);
+        HConstants.DEFAULT_BLOCKSIZE);
     // Invented config.  Add to hbase-*.xml if other than default compression.
     final String defaultCompression = conf.get("hfile.compression",
         Compression.Algorithm.NONE.getName());
@@ -268,13 +264,12 @@ public class HFileOutputFormat extends FileOutputFormat<ImmutableBytesWritable, 
   }
 
   /**
-   * Write out a SequenceFile that can be read by TotalOrderPartitioner
-   * that contains the split points in startKeys.
-   * @param partitionsPath output path for SequenceFile
-   * @param startKeys the region start keys
+   * Write out a {@link SequenceFile} that can be read by
+   * {@link TotalOrderPartitioner} that contains the split points in startKeys.
    */
   private static void writePartitions(Configuration conf, Path partitionsPath,
       List<ImmutableBytesWritable> startKeys) throws IOException {
+    LOG.info("Writing partition information to " + partitionsPath);
     if (startKeys.isEmpty()) {
       throw new IllegalArgumentException("No regions passed");
     }
@@ -326,7 +321,6 @@ public class HFileOutputFormat extends FileOutputFormat<ImmutableBytesWritable, 
   throws IOException {
     Configuration conf = job.getConfiguration();
 
-    job.setPartitionerClass(TotalOrderPartitioner.class);
     job.setOutputKeyClass(ImmutableBytesWritable.class);
     job.setOutputValueClass(KeyValue.class);
     job.setOutputFormatClass(HFileOutputFormat.class);
@@ -342,29 +336,14 @@ public class HFileOutputFormat extends FileOutputFormat<ImmutableBytesWritable, 
       LOG.warn("Unknown map output value type:" + job.getMapOutputValueClass());
     }
 
+    // Use table's region boundaries for TOP split points.
     LOG.info("Looking up current regions for table " + table);
     List<ImmutableBytesWritable> startKeys = getRegionStartKeys(table);
     LOG.info("Configuring " + startKeys.size() + " reduce partitions " +
         "to match current region count");
     job.setNumReduceTasks(startKeys.size());
 
-    Path partitionsPath = new Path(job.getWorkingDirectory(),
-                                   "partitions_" + UUID.randomUUID());
-    LOG.info("Writing partition information to " + partitionsPath);
-
-    FileSystem fs = partitionsPath.getFileSystem(conf);
-    writePartitions(conf, partitionsPath, startKeys);
-    partitionsPath.makeQualified(fs);
-
-    URI cacheUri;
-    try {
-      cacheUri = new URI(partitionsPath.toString() + "#" + TotalOrderPartitioner.DEFAULT_PATH);
-    } catch (URISyntaxException e) {
-      throw new IOException(e);
-    }
-    DistributedCache.addCacheFile(cacheUri, conf);
-    DistributedCache.createSymlink(conf);
-
+    configurePartitioner(job, startKeys);
     // Set compression algorithms based on column families
     configureCompression(table, conf);
     configureBloomType(table, conf);
@@ -416,7 +395,26 @@ public class HFileOutputFormat extends FileOutputFormat<ImmutableBytesWritable, 
     }
     return confValMap;
   }
-  
+
+  /**
+   * Configure <code>job</code> with a TotalOrderPartitioner, partitioning against
+   * <code>splitPoints</code>. Cleans up the partitions file after job exists.
+   */
+  static void configurePartitioner(Job job, List<ImmutableBytesWritable> splitPoints)
+      throws IOException {
+
+    // create the partitions file
+    FileSystem fs = FileSystem.get(job.getConfiguration());
+    Path partitionsPath = new Path("/tmp", "partitions_" + UUID.randomUUID());
+    fs.makeQualified(partitionsPath);
+    fs.deleteOnExit(partitionsPath);
+    writePartitions(job.getConfiguration(), partitionsPath, splitPoints);
+
+    // configure job to use it
+    job.setPartitionerClass(TotalOrderPartitioner.class);
+    TotalOrderPartitioner.setPartitionFile(job.getConfiguration(), partitionsPath);
+  }
+
   /**
    * Serialize column family to compression algorithm map to configuration.
    * Invoked while configuring the MR job for incremental load.

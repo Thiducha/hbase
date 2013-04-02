@@ -307,13 +307,18 @@ module Hbase
     def move(encoded_region_name, server = nil)
       @admin.move(encoded_region_name.to_java_bytes, server ? server.to_java_bytes: nil)
     end
+    
+    #----------------------------------------------------------------------------------------------
+    # Merge two regions
+    def merge_region(encoded_region_a_name, encoded_region_b_name, force)
+      @admin.mergeRegions(encoded_region_a_name.to_java_bytes, encoded_region_b_name.to_java_bytes, java.lang.Boolean::valueOf(force))
+    end
 
     #----------------------------------------------------------------------------------------------
     # Returns table's structure description
     def describe(table_name)
       tables = @admin.listTables.to_a
       tables << org.apache.hadoop.hbase.HTableDescriptor::META_TABLEDESC
-      tables << org.apache.hadoop.hbase.HTableDescriptor::ROOT_TABLEDESC
 
       tables.each do |t|
         # Found the table
@@ -328,11 +333,12 @@ module Hbase
     def truncate(table_name, conf = @conf)
       h_table = org.apache.hadoop.hbase.client.HTable.new(conf, table_name)
       table_description = h_table.getTableDescriptor()
+      raise ArgumentError, "Table #{table_name} is not enabled. Enable it first.'" unless enabled?(table_name)
       yield 'Disabling table...' if block_given?
-      disable(table_name)
+      @admin.disableTable(table_name)
 
       yield 'Dropping table...' if block_given?
-      drop(table_name)
+      @admin.deleteTable(table_name)
 
       yield 'Creating table...' if block_given?
       @admin.createTable(table_description)
@@ -688,7 +694,7 @@ module Hbase
     #----------------------------------------------------------------------------------------------
     # Returns a list of snapshots
     def list_snapshot
-      @admin.getCompletedSnapshots
+      @admin.listSnapshots
     end
 
     # Apply config specific to a table/column to its descriptor

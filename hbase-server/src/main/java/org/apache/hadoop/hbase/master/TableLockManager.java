@@ -31,7 +31,7 @@ import org.apache.hadoop.hbase.InterProcessLock;
 import org.apache.hadoop.hbase.InterProcessLock.MetadataHandler;
 import org.apache.hadoop.hbase.InterProcessReadWriteLock;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.LockTimeoutException;
+import org.apache.hadoop.hbase.exceptions.LockTimeoutException;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.generated.ZooKeeperProtos;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -149,7 +149,7 @@ public abstract class TableLockManager {
    * A null implementation
    */
   @InterfaceAudience.Private
-  static class NullTableLockManager extends TableLockManager {
+  public static class NullTableLockManager extends TableLockManager {
     static class NullTableLock implements TableLock {
       @Override
       public void acquire() throws IOException {
