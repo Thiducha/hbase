@@ -19,16 +19,14 @@
  */
 package org.apache.hadoop.hbase.master;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
-import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -46,12 +44,13 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.LargeTests;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.exceptions.LockTimeoutException;
-import org.apache.hadoop.hbase.exceptions.TableNotDisabledException;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.coprocessor.BaseMasterObserver;
 import org.apache.hadoop.hbase.coprocessor.MasterCoprocessorEnvironment;
 import org.apache.hadoop.hbase.coprocessor.ObserverContext;
+import org.apache.hadoop.hbase.exceptions.LockTimeoutException;
+import org.apache.hadoop.hbase.exceptions.NotServingRegionException;
+import org.apache.hadoop.hbase.exceptions.TableNotDisabledException;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.LoadTestTool;
@@ -356,10 +355,19 @@ public class TestTableLockManager {
       public void chore() {
         try {
           HRegion region = TEST_UTIL.getSplittableRegion(tableName, -1);
-          byte[] regionName = region.getRegionName();
-          admin.flush(regionName);
-          admin.compact(regionName);
-          admin.split(regionName);
+          if (region != null) {
+            byte[] regionName = region.getRegionName();
+            admin.flush(regionName);
+            admin.compact(regionName);
+            admin.split(regionName);
+          } else {
+            LOG.warn("Could not find suitable region for the table.  Possibly the " +
+              "region got closed and the attempts got over before " +
+              "the region could have got reassigned.");
+          }
+        } catch (NotServingRegionException nsre) {
+          // the region may be in transition
+          LOG.warn("Caught exception", nsre);
         } catch (Exception ex) {
           LOG.warn("Caught exception", ex);
           fail(ex.getMessage());

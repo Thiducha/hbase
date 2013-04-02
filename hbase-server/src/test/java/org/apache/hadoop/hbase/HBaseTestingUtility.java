@@ -1940,15 +1940,20 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
         attempted.clear();
       }
       regCount = regions.size();
-      idx = random.nextInt(regions.size());
-      // if we have just tried this region, there is no need to try again
-      if (attempted.contains(idx)) continue;
-      try {
-        regions.get(idx).checkSplit();
-        return regions.get(idx);
-      } catch (Exception ex) {
-        LOG.warn("Caught exception", ex);
-        attempted.add(idx);
+      // There are chances that before we get the region for the table from an RS the region may
+      // be going for CLOSE.  This may be because online schema change is enabled 
+      if (regCount > 0) {
+        idx = random.nextInt(regCount);
+        // if we have just tried this region, there is no need to try again
+        if (attempted.contains(idx))
+          continue;
+        try {
+          regions.get(idx).checkSplit();
+          return regions.get(idx);
+        } catch (Exception ex) {
+          LOG.warn("Caught exception", ex);
+          attempted.add(idx);
+        }
       }
       attempts++;
     } while (maxAttempts == -1 || attempts < maxAttempts);
@@ -2156,53 +2161,56 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     }
   }
 
-
   /**
-   * Wait until <code>countOfRegion</code> in .META. have a non-empty
-   * info:server.  This means all regions have been deployed, master has been
-   * informed and updated .META. with the regions deployed server.
-   * @param countOfRegions How many regions in .META.
+   * Wait until all regions for a table in .META. have a non-empty
+   * info:server, up to 60 seconds. This means all regions have been deployed,
+   * master has been informed and updated .META. with the regions deployed
+   * server.
+   * @param tableName the table name
    * @throws IOException
    */
-  public void waitUntilAllRegionsAssigned(final byte[] tableName, final int countOfRegions)
-  throws IOException {
-    int retries = 30; // We may wait up to 30 seconds
-    int rows = 0;
-    HTable meta = new HTable(getConfiguration(), HConstants.META_TABLE_NAME);
+  public void waitUntilAllRegionsAssigned(final byte[] tableName) throws IOException {
+    waitUntilAllRegionsAssigned(tableName, 60000);
+  }
+
+  /**
+   * Wait until all regions for a table in .META. have a non-empty
+   * info:server, or until timeout.  This means all regions have been deployed,
+   * master has been informed and updated .META. with the regions deployed
+   * server.
+   * @param tableName the table name
+   * @param timeout timeout, in milliseconds
+   * @throws IOException
+   */
+  public void waitUntilAllRegionsAssigned(final byte[] tableName, final long timeout)
+      throws IOException {
+    final HTable meta = new HTable(getConfiguration(), HConstants.META_TABLE_NAME);
     try {
-      do {
-        Scan scan = new Scan();
-        scan.addColumn(HConstants.CATALOG_FAMILY, HConstants.REGIONINFO_QUALIFIER);
-        scan.addColumn(HConstants.CATALOG_FAMILY, HConstants.SERVER_QUALIFIER);
-        ResultScanner s = meta.getScanner(scan);
-        try {
-          for (Result r = null; (r = s.next()) != null;) {
-            byte[] b = r.getValue(HConstants.CATALOG_FAMILY, HConstants.REGIONINFO_QUALIFIER);
-            HRegionInfo hri = HRegionInfo.parseFromOrNull(b);
-            if (hri != null && Bytes.equals(hri.getTableName(), tableName)) {
-              b = r.getValue(HConstants.CATALOG_FAMILY, HConstants.SERVER_QUALIFIER);
-              if (b == null || b.length <= 0) {
-                continue;
+      waitFor(timeout, 200, true, new Predicate<IOException>() {
+        @Override
+        public boolean evaluate() throws IOException {
+          boolean allRegionsAssigned = true;
+          Scan scan = new Scan();
+          scan.addFamily(HConstants.CATALOG_FAMILY);
+          ResultScanner s = meta.getScanner(scan);
+          try {
+            Result r;
+            while ((r = s.next()) != null) {
+              byte [] b = r.getValue(HConstants.CATALOG_FAMILY, HConstants.REGIONINFO_QUALIFIER);
+              HRegionInfo info = HRegionInfo.parseFromOrNull(b);
+              if (info != null && Bytes.equals(info.getTableName(), tableName)) {
+                b = r.getValue(HConstants.CATALOG_FAMILY, HConstants.SERVER_QUALIFIER);
+                allRegionsAssigned &= (b != null);
               }
-              rows++;
             }
+          } finally {
+            s.close();
           }
-        } finally {
-          s.close();
+          return allRegionsAssigned;
         }
-        // If I get to here and all rows have a Server, then all have been assigned.
-        if (rows == countOfRegions) {
-          break;
-        }
-        LOG.info("Found=" + rows);
-        Threads.sleep(1000);
-      } while (--retries > 0);
+      });
     } finally {
       meta.close();
-    }
-    if (rows != countOfRegions) {
-      throw new IOException("Timed out waiting for " + countOfRegions + " regions of " +
-        Bytes.toStringBinary(tableName) + " to come online");
     }
   }
 
