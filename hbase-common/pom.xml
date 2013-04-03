@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 <!--
 /**
@@ -22,7 +23,7 @@
   <parent>
     <artifactId>hbase</artifactId>
     <groupId>org.apache.hbase</groupId>
-    <version>0.97-SNAPSHOT</version>
+    <version>0.97.0-SNAPSHOT</version>
     <relativePath>..</relativePath>
   </parent>
 
@@ -37,13 +38,44 @@
           <includes>
               <include>hbase-default.xml</include>
           </includes>
-          <filtering>true</filtering>
       </resource>
     </resources>
     <plugins>
         <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-site-plugin</artifactId>
+          <configuration>
+            <skip>true</skip>
+          </configuration>
+        </plugin>
+      <plugin>
+        <!--Make it so assembly:single does nothing in here-->
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>${maven.assembly.version}</version>
+        <configuration>
+          <skipAssembly>true</skipAssembly>
+        </configuration>
+      </plugin>
+        <plugin>
             <artifactId>maven-antrun-plugin</artifactId>
             <executions>
+          <execution>
+            <phase>process-resources</phase>
+            <configuration>
+              <target>
+                <replace file="${project.build.outputDirectory}/hbase-default.xml"
+                  token="@@@VERSION@@@" value="${project.version}" />
+                <mkdir dir="${project.build.directory}/nativelib"/>
+                <exec executable="tar" dir="${project.build.directory}/nativelib" failonerror="false">
+                  <arg value="xf"/>
+                  <arg value="hadoop-snappy-nativelibs.tar"/>
+                </exec>
+              </target>
+            </configuration>
+            <goals>
+              <goal>run</goal>
+            </goals>
+          </execution>
                 <!-- Generate web app sources -->
                 <execution>
                     <id>generate</id>
@@ -107,10 +139,15 @@
               </execution>
             </executions>
           </plugin>
+        <!-- Make a jar and put the sources in the jar -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-source-plugin</artifactId>
+        </plugin>
     </plugins>
     <pluginManagement>
       <plugins>
-       <!--This plugin's configuration is used to store Eclipse m2e settings only. It 
+       <!--This plugin's configuration is used to store Eclipse m2e settings only. It
       has no influence on the Maven build itself. -->
         <plugin>
           <groupId>org.eclipse.m2e</groupId>
@@ -129,7 +166,7 @@
                     </goals>
                   </pluginExecutionFilter>
                   <action>
-                    <execute />
+                    <execute/>
                   </action>
                 </pluginExecution>
               </pluginExecutions>
