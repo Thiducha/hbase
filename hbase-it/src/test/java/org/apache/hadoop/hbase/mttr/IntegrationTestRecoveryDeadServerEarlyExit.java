@@ -33,7 +33,9 @@ import java.io.IOException;
 /**
  * Test the fix for HBASE-7590: we expect the client to see immediately that the region server
  * is dead because of the notification from the master.
+
  */
+
 public class IntegrationTestRecoveryDeadServerEarlyExit extends AbstractIntegrationTestRecovery {
   private int zkTimeout;
   private Configuration conf;

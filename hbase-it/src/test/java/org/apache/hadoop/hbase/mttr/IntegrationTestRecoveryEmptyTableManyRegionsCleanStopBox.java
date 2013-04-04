@@ -26,8 +26,10 @@ import org.junit.experimental.categories.Category;
 
 /**
  * test the recovery time when we have a lot of empty regions. This shows the time spent in
- *  assignment: the detection time is zero, as we're doing a clean stop, and the data recory time
+ *  assignment: the detection time is zero, as we're doing a clean stop, and the data recovery time
  *  is minimal as well as the table is empty.
+ *
+ * Measure April '13 with hdfs 2.0.3: ~115s for the recovery (and this is bad).
  */
 @Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableManyRegionsCleanStopBox

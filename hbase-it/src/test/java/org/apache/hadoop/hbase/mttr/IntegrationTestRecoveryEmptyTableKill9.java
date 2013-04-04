@@ -26,7 +26,8 @@ import org.junit.experimental.categories.Category;
 /**
  * On a kill 9, we cannot rely on the shutdown hooks. On 0.94, we rely on the ZK timeout. On 0.96,
  * the scripts include a mechanism to cleanup the ZK status when the regionserver or the master
- * dies. This allows an immediate recovery.
+ * dies. This allows an immediate recovery.  As a consequence, both the detection and the
+ * recovery should take ~1s, as with a kill 15 (measure taken with hdfs 2.0.3, april '13).
  */
 @Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableKill9

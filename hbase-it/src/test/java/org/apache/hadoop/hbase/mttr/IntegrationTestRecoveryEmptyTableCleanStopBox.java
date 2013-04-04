@@ -25,6 +25,7 @@ import org.junit.experimental.categories.Category;
 
 /**
  * Clean stop: MTTR should be minimal, as a clean stop includes closing properly the regions.
+ * Measure april '13: 1 second for each step with hdfs 2.0.3
  */
 @Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableCleanStopBox

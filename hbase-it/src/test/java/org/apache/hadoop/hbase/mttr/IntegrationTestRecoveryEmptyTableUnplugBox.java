@@ -25,6 +25,7 @@ import org.junit.experimental.categories.Category;
  * When we unplug a box, we rely on the ZK timeout. So the recovery time will be roughly the
  * ZK time + split time + assignment time. Here, the table is empty and there are just a
  * small number of region, so we expect the recovery time to equals the ZK time.
+ * Measure April '13: ~180s to detect the error (i.e. zk timeout), a few seconds to reaasign.
  */
 @Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableUnplugBox

@@ -180,7 +180,7 @@ public abstract class AbstractIntegrationTestRecovery {
    * Kill the services running on them
    * if the 'destructive test' flag is set, delete the existing data
    */
-  protected void prepareCluster() throws Exception{
+  protected void prepareCluster() throws Exception {
     util.initializeCluster(0);
     dhc = util.getHBaseClusterInterface();
     hcm = util.createClusterManager();
@@ -209,10 +209,10 @@ public abstract class AbstractIntegrationTestRecovery {
   /**
    * Do the following tasks, in this order:
    * start the cluster, with:
-   *  main box: 1 ZooKeeper, 1 Namenode, 1 Master, 1 Region Server, 1 Datanode
-   *  willDieBox: 1 1 region server
-   *  willSurviveBox: 1 datanode
-   *  lateBox: 1 datanode
+   * main box: 1 ZooKeeper, 1 Namenode, 1 Master, 1 Region Server, 1 Datanode
+   * willDieBox: 1 1 region server
+   * willSurviveBox: 1 datanode
+   * lateBox: 1 datanode
    */
   protected void genericStart() throws Exception {
     // Let's start ZK immediately, it will initialize itself while the NN and the DN are starting
@@ -288,7 +288,7 @@ public abstract class AbstractIntegrationTestRecovery {
     }
 
     // This is not satisfying, but it seems that we need to redo it sometimes.
-    if (remaining != 0){
+    if (remaining != 0) {
       moveToSecondRSSync();
     }
 
@@ -318,14 +318,28 @@ public abstract class AbstractIntegrationTestRecovery {
     final long failureDetectedTime;
     final long failureFixedTime;
 
-    final int nbReg = dhc.getClusterStatus().getRegionsCount();
+    final int nbReg = 1 + this.regionCount;
+    long lastLog = System.currentTimeMillis();
+    while (nbReg != dhc.getClusterStatus().getRegionsCount()) {
+      if (lastLog + 10000 < System.currentTimeMillis()) {
+        lastLog = System.currentTimeMillis();
+        LOG.info("Waiting: we want the cluster status to contain " + nbReg +
+            " regions, it contains " + dhc.getClusterStatus().getRegionsCount() + " regions");
+      }
+      Thread.sleep(400);
+    }
 
     kill(willDieBox);
     try {
       // Check that the RS is really killed. We do that by trying to connect to the server with
       //  a minimum connect timeout. If it succeeds, it means it's still there...
+      lastLog = System.currentTimeMillis();
       int rsport = util.getConfiguration().getInt("hbase.regionserver.port", 60020);
       while (ClusterManager.isReachablePort(willDieBox, rsport)) {
+        if (lastLog + 10000 < System.currentTimeMillis()) {
+          lastLog = System.currentTimeMillis();
+          LOG.info("Waiting: we can still reach the port " + rsport + " on " + willDieBox);
+        }
         Thread.sleep(400);
       }
 
@@ -334,7 +348,12 @@ public abstract class AbstractIntegrationTestRecovery {
       afterKill();
 
       // How long does it take to discover that we need to do something?
+      lastLog = System.currentTimeMillis();
       while (admin.getClusterStatus().getDeadServers() == 0) {
+        if (lastLog + 10000 < System.currentTimeMillis()) {
+          lastLog = System.currentTimeMillis();
+          LOG.info("Waiting: the master is not aware of any dead server yet");
+        }
         Thread.sleep(200);
       }
       failureDetectedTime = System.currentTimeMillis();
@@ -343,10 +362,23 @@ public abstract class AbstractIntegrationTestRecovery {
 
       // Now, how long does it take to recover?
       boolean ok;
+      lastLog = System.currentTimeMillis();
       do {
+
         waitForNoTransition();
-        ok =  dhc.getClusterStatus().getRegionsCount() == nbReg;
+        int newRegCount = dhc.getClusterStatus().getRegionsCount();
+        ok = newRegCount >= nbReg;
+        if (nbReg < newRegCount) {
+          LOG.warn("We have now more regions than before the server stop! nbReg=" +
+              nbReg + ", newRegCount=" + newRegCount);
+        }
+        if (!ok && lastLog + 10000 < System.currentTimeMillis()) {
+          lastLog = System.currentTimeMillis();
+          LOG.info("Waiting: we want the cluster status to contain " + nbReg +
+              " regions, it contains " + newRegCount + " regions only");
+        }
       } while (!ok);
+
 
       failureFixedTime = System.currentTimeMillis();
       LOG.info(("Failure fix took: " + (failureFixedTime - failureDetectedTime)));

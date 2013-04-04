@@ -32,8 +32,9 @@ import java.util.Set;
 
 /**
  * Test the data recovery time. We're doing a kill -9, so the regions are not flushed. However, in
- *  0.96, the failure should be detected immediately. Lastly, there is only 10 regions, so we're
- *  no testing the assignment here.
+ *  0.96, the failure should be detected immediately. Lastly, there are only 10 regions, so we're
+ *  no testing the assignment here. Measure April '13: ~180s to detect the error (i.e. zk timeout),
+ *  reassign + recovery takes around 10 seconds.
  */
 @Category(IntegrationTests.class)
 public class IntegrationTestRecoveryWALFewRegionsKill9 extends AbstractIntegrationTestRecovery {
@@ -51,7 +52,7 @@ public class IntegrationTestRecoveryWALFewRegionsKill9 extends AbstractIntegrati
 
     @Override
     public byte[] getDeterministicUniqueKey(long keyBase) {
-      return new byte[0];
+      return Bytes.toBytes(keyBase);
     }
 
     @Override
@@ -95,7 +96,7 @@ public class IntegrationTestRecoveryWALFewRegionsKill9 extends AbstractIntegrati
 
     writer.setMultiPut(true);
     LOG.info("Starting data insert");
-    writer.start(1, 150000, 5);
+    writer.start(1L, 500000L, 5);
     writer.waitForFinish();
     LOG.info("Data inserted");
   }

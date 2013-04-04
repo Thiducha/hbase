@@ -26,6 +26,8 @@ import org.junit.experimental.categories.Category;
 /**
  * On a kill 15, we rely on the shutdown hooks included in the region server. These hooks will
  * cancel our lease to ZK, so the recovery will start immediately.
+ * Both the detection and the recovery should take ~1 second.
+ *  (measure taken with hdfs 2.0.3, april '13).
  */
 @Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableKill15 extends AbstractIntegrationTestRecovery {
