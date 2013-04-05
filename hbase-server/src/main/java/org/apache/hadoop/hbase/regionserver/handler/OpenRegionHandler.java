@@ -20,7 +20,6 @@ package org.apache.hadoop.hbase.regionserver.handler;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -296,7 +295,7 @@ public class OpenRegionHandler extends EventHandler {
    * Thread to run region post open tasks. Call {@link #getException()} after
    * the thread finishes to check for exceptions running
    * {@link RegionServerServices#postOpenDeployTasks(
-   * HRegion, org.apache.hadoop.hbase.catalog.CatalogTracker, boolean)}
+   * HRegion, org.apache.hadoop.hbase.catalog.CatalogTracker)}
    * .
    */
   static class PostOpenDeployTasksThread extends Thread {
@@ -523,12 +522,7 @@ public class OpenRegionHandler extends EventHandler {
    * @param context Some context to add to logs if failure
    * @return True if successful transition.
    */
-  static AtomicInteger ct = new AtomicInteger(0);
   boolean tickleOpening(final String context) {
-    int v = ct.incrementAndGet();
-    if (v % 100 == 0){
-      LOG.warn("\n\n\n**************tickleOpening #" + v);
-    }
     if (!isRegionStillOpening()) {
       LOG.warn("Open region aborted since it isn't opening any more");
       return false;

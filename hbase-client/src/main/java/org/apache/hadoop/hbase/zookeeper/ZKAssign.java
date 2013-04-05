@@ -585,21 +585,22 @@ public class ZKAssign {
    * @param zkw zk reference
    * @param region region to be transitioned to opening
    * @param serverName server transition happens on
+   * @param updateZNode write the znode. If false, we only check.
    * @return version of node after transition, -1 if unsuccessful transition
    * @throws KeeperException if unexpected zookeeper exception
    */
   public static int retransitionNodeOpening(ZooKeeperWatcher zkw,
-      HRegionInfo region, ServerName serverName, int expectedVersion, boolean alwaysWrite)
+      HRegionInfo region, ServerName serverName, int expectedVersion, boolean updateZNode)
   throws KeeperException {
 
     String encoded = region.getEncodedName();
     if(LOG.isDebugEnabled()) {
-      LOG.debug(zkw.prefix("Attempting to retransitionNodeOpening node " +
+      LOG.debug(zkw.prefix("Attempting to retransition the opening state of node " +
           HRegionInfo.prettyPrint(encoded)));
     }
 
     String node = getNodeName(zkw, encoded);
-    //zkw.sync(node);
+    zkw.sync(node);
 
     // Read existing data of the node
     Stat stat = new Stat();
@@ -612,7 +613,7 @@ public class ZKAssign {
 
     // Verify it is the expected version
     if (expectedVersion != -1 && stat.getVersion() != expectedVersion) {
-      LOG.warn(zkw.prefix("Attempt to retransitionNodeOpening the " +
+      LOG.warn(zkw.prefix("Attempt to retransition the opening state of the " +
           "unassigned node for " + encoded + " failed, " +
           "the node existed but was version " + stat.getVersion() +
           " not the expected version " + expectedVersion));
@@ -624,14 +625,14 @@ public class ZKAssign {
     if (!et.equals(EventType.RS_ZK_REGION_OPENING)) {
       String existingServer = (rt.getServerName() == null)
           ? "<unknown>" : rt.getServerName().toString();
-      LOG.warn(zkw.prefix("Attempt to retransitionNodeOpening the unassigned node for " + encoded
-          + " failed, the node existed but was in the state " + et +
+      LOG.warn(zkw.prefix("Attempt to retransition the opening state of the unassigned node for "
+          + encoded + " failed, the node existed but was in the state " + et +
           " set by the server " + existingServer));
       return -1;
     }
 
     // We don't have to write the new state: the check is complete.
-    if (!alwaysWrite){
+    if (!updateZNode){
       return expectedVersion;
     }
 
@@ -640,18 +641,18 @@ public class ZKAssign {
       rt = RegionTransition.createRegionTransition(
           EventType.RS_ZK_REGION_OPENING, region.getRegionName(), serverName, null);
       if(!ZKUtil.setData(zkw, node, rt.toByteArray(), stat.getVersion())) {
-        LOG.warn(zkw.prefix("Attempt to retransitionNodeOpening the " +
+        LOG.warn(zkw.prefix("Attempt to retransition the opening state of the " +
             "unassigned node for " + encoded + " failed, " +
             "the node existed and was in the expected state but then when " +
             "setting data we got a version mismatch"));
         return -1;
       }
       if(LOG.isDebugEnabled()) {
-        LOG.debug(zkw.prefix("Successfully retransitionNodeOpening node " + encoded));
+        LOG.debug(zkw.prefix("Successfully retransition the opening state of node " + encoded));
       }
       return stat.getVersion() + 1;
     } catch (KeeperException.NoNodeException nne) {
-      LOG.warn(zkw.prefix("Attempt to retransitionNodeOpening the " +
+      LOG.warn(zkw.prefix("Attempt to retransition the opening state of the " +
           "unassigned node for " + encoded + " failed, " +
           "the node existed and was in the expected state but then when " +
           "setting data it no longer existed"));
@@ -788,7 +789,7 @@ public class ZKAssign {
     }
 
     String node = getNodeName(zkw, encoded);
-    //zkw.sync(node);
+    zkw.sync(node);
 
     // Read existing data of the node
     Stat stat = new Stat();

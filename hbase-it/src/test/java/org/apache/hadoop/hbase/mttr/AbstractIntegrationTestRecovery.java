@@ -108,7 +108,7 @@ public abstract class AbstractIntegrationTestRecovery {
    * When not destructive, the test will no touch the data on the cluster (it will kill nodes
    * however, so if there is a bug in the recovery you may lose data).
    */
-  protected static boolean destructiveTest = true;
+  protected static boolean destructiveTest = false;
 
 
   /**
@@ -138,7 +138,7 @@ public abstract class AbstractIntegrationTestRecovery {
     performanceChecker = new PerformanceChecker(c);
 
     String s = System.getenv("HBASE_IT_DESTRUCTIVE_TEST");
-    if (s != null && Boolean.parseBoolean(s)) {
+    if (s == null || Boolean.parseBoolean(s)) {
       destructiveTest = true;
     }
   }

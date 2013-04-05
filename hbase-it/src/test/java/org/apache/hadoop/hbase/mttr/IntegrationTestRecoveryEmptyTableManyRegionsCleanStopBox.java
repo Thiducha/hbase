@@ -21,7 +21,6 @@ package org.apache.hadoop.hbase.mttr;
 
 import org.apache.hadoop.hbase.ClusterManager;
 import org.apache.hadoop.hbase.IntegrationTests;
-import org.junit.Assert;
 import org.junit.experimental.categories.Category;
 
 /**
@@ -29,7 +28,7 @@ import org.junit.experimental.categories.Category;
  *  assignment: the detection time is zero, as we're doing a clean stop, and the data recovery time
  *  is minimal as well as the table is empty.
  *
- * Measure April '13 with hdfs 2.0.3: ~115s for the recovery (and this is bad).
+ * Measure April '13 with hdfs 2.0.3: ~120s for the recovery (and this is bad). 85s with HBASE-7247
  */
 @Category(IntegrationTests.class)
 public class IntegrationTestRecoveryEmptyTableManyRegionsCleanStopBox

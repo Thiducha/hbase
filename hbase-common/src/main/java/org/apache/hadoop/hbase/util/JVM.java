@@ -172,7 +172,9 @@ public class JVM
   }
 
   /**
-   * @see com.sun.management.UnixOperatingSystemMXBean#getFreePhysicalMemorySize()
+   * @return the physical free memory (not the JVM one, as it's not very useful as it depends on
+   *  the GC), but the one from the OS as it allows a little bit more to guess if the machine is
+   *  overloaded or not).
    */
   public long getFreeMemory() {
     if (ibmvendor){
@@ -185,7 +187,7 @@ public class JVM
 
 
   /**
-   * Workaround to get the current number of process running.
+   * Workaround to get the current number of process running. Approach is the one described here:
    * http://stackoverflow.com/questions/54686/how-to-get-a-list-of-current-open-windows-process-with-java
    */
   public int getNumberOfRunningProcess(){

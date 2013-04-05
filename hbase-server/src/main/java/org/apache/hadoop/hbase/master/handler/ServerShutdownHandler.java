@@ -223,6 +223,7 @@ public class ServerShutdownHandler extends EventHandler {
                 LOG.info("Skip assigning region " + rit);
                 continue;
               }
+
               try{
                 //clean zk node
                 LOG.info("Reassigning region with rs = " + rit + " and deleting zk node if exists");

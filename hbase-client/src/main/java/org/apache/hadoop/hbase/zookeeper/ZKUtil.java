@@ -1281,12 +1281,8 @@ public class ZKUtil {
   private static void deleteNodeFailSilent(ZooKeeperWatcher zkw,
       DeleteNodeFailSilent dnfs) throws KeeperException {
     DeleteRequest delete = (DeleteRequest)toZooKeeperOp(zkw, dnfs).toRequestRecord();
-    try {
-      zkw.getRecoverableZooKeeper().delete(delete.getPath(), delete.getVersion());
-    } catch(KeeperException.NoNodeException nne) {
-    } catch(InterruptedException ie) {
-      zkw.interruptedException(ie);
-    }
+      //zkw.getRecoverableZooKeeper().delete(delete.getPath(), delete.getVersion());
+      zkw.getRecoverableZooKeeper().getZooKeeper().delete(delete.getPath(), delete.getVersion(), null, null);
   }
 
 

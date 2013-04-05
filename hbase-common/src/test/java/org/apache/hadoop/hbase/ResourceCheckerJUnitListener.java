@@ -132,7 +132,6 @@ public class ResourceCheckerJUnitListener extends RunListener {
     }
   }
 
-
   /**
    * To be implemented by sub classes if they want to add specific ResourceAnalyzer.
    */
