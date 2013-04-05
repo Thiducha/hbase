@@ -49,18 +49,19 @@ import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.fs.permission.FsAction;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hbase.ClusterId;
-import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HDFSBlocksDistribution;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.RemoteExceptionHandler;
+import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.exceptions.FileSystemVersionException;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.generated.FSProtos;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
+import org.apache.hadoop.hdfs.protocol.FSConstants;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.io.SequenceFile;
 import org.apache.hadoop.security.AccessControlException;
@@ -450,10 +451,11 @@ public abstract class FSUtils {
 
     // version is deprecated require migration
     // Output on stdout so user sees it in terminal.
-    String msg = "File system needs to be upgraded."
+    String msg = "HBase file layout needs to be upgraded."
       + "  You have version " + version
       + " and I want version " + HConstants.FILE_SYSTEM_VERSION
-      + ".  Run the '${HBASE_HOME}/bin/hbase migrate' script.";
+      + ".  Is your hbase.rootdir valid?  If so, you may need to run "
+      + "'hbase hbck -fixVersionFile'.";
     if (message) {
       System.out.println("WARNING! " + msg);
     }
@@ -1310,6 +1312,57 @@ public abstract class FSUtils {
     return getRootDir(conf).getFileSystem(conf);
   }
 
+
+  /**
+   * Runs through the HBase rootdir/tablename and creates a reverse lookup map for
+   * table StoreFile names to the full Path.
+   * <br>
+   * Example...<br>
+   * Key = 3944417774205889744  <br>
+   * Value = hdfs://localhost:51169/user/userid/-ROOT-/70236052/info/3944417774205889744
+   *
+   * @param map map to add values.  If null, this method will create and populate one to return
+   * @param fs  The file system to use.
+   * @param hbaseRootDir  The root directory to scan.
+   * @param tablename name of the table to scan.
+   * @return Map keyed by StoreFile name with a value of the full Path.
+   * @throws IOException When scanning the directory fails.
+   */
+  public static Map<String, Path> getTableStoreFilePathMap(Map<String, Path> map, 
+    final FileSystem fs, final Path hbaseRootDir, byte[] tablename)
+  throws IOException {
+    if (map == null) {
+      map = new HashMap<String, Path>();
+    }
+
+    // only include the directory paths to tables
+    Path tableDir = new Path(hbaseRootDir, Bytes.toString(tablename));
+    // Inside a table, there are compaction.dir directories to skip.  Otherwise, all else
+    // should be regions. 
+    PathFilter df = new BlackListDirFilter(fs, HConstants.HBASE_NON_TABLE_DIRS);
+    FileStatus[] regionDirs = fs.listStatus(tableDir);
+    for (FileStatus regionDir : regionDirs) {
+      Path dd = regionDir.getPath();
+      if (dd.getName().equals(HConstants.HREGION_COMPACTIONDIR_NAME)) {
+        continue;
+      }
+      // else its a region name, now look in region for families
+      FileStatus[] familyDirs = fs.listStatus(dd, df);
+      for (FileStatus familyDir : familyDirs) {
+        Path family = familyDir.getPath();
+        // now in family, iterate over the StoreFiles and
+        // put in map
+        FileStatus[] familyStatus = fs.listStatus(family);
+        for (FileStatus sfStatus : familyStatus) {
+          Path sf = sfStatus.getPath();
+          map.put( sf.getName(), sf);
+        }
+      }
+    }
+    return map;
+  }
+
+  
   /**
    * Runs through the HBase rootdir and creates a reverse lookup map for
    * table StoreFile names to the full Path.
@@ -1335,28 +1388,8 @@ public abstract class FSUtils {
     PathFilter df = new BlackListDirFilter(fs, HConstants.HBASE_NON_TABLE_DIRS);
     FileStatus [] tableDirs = fs.listStatus(hbaseRootDir, df);
     for (FileStatus tableDir : tableDirs) {
-      // Inside a table, there are compaction.dir directories to skip.  Otherwise, all else
-      // should be regions. 
-      FileStatus[] regionDirs = fs.listStatus(tableDir.getPath(), df);
-      for (FileStatus regionDir : regionDirs) {
-        Path dd = regionDir.getPath();
-        if (dd.getName().equals(HConstants.HREGION_COMPACTIONDIR_NAME)) {
-          continue;
-        }
-        // else its a region name, now look in region for families
-        FileStatus[] familyDirs = fs.listStatus(dd, df);
-        for (FileStatus familyDir : familyDirs) {
-          Path family = familyDir.getPath();
-          // now in family, iterate over the StoreFiles and
-          // put in map
-          FileStatus[] familyStatus = fs.listStatus(family);
-          for (FileStatus sfStatus : familyStatus) {
-            Path sf = sfStatus.getPath();
-            map.put( sf.getName(), sf);
-          }
-
-        }
-      }
+      byte[] tablename = Bytes.toBytes(tableDir.getPath().getName());
+      getTableStoreFilePathMap(map, fs, hbaseRootDir, tablename);
     }
       return map;
   }
