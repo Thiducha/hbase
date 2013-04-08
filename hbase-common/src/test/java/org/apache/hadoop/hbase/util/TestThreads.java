@@ -58,9 +58,9 @@ public class TestThreads {
     sleeper.interrupt();
     Threads.sleep(500);
 
-    LOG.debug("Interrupting the sleeper thread and sleeping for 1000 ms");
+    LOG.debug("Interrupting the sleeper thread and sleeping for 800 ms");
     sleeper.interrupt();
-    Threads.sleep(1000);
+    Threads.sleep(800);
 
     LOG.debug("Interrupting the sleeper thread again");
     sleeper.interrupt();
@@ -72,7 +72,7 @@ public class TestThreads {
     long timeElapsed = System.currentTimeMillis() - startTime;
     // We expect to wait at least SLEEP_TIME_MS, but we can wait more if there is a GC.
     assertTrue("Elapsed time " + timeElapsed + " ms is out of the expected " +
-        " sleep time og " + SLEEP_TIME_MS, SLEEP_TIME_MS - timeElapsed < TOLERANCE_MS);
+        " sleep time of " + SLEEP_TIME_MS, SLEEP_TIME_MS - timeElapsed < TOLERANCE_MS);
     LOG.debug("Target sleep time: " + SLEEP_TIME_MS + ", time elapsed: " +
         timeElapsed);
   }

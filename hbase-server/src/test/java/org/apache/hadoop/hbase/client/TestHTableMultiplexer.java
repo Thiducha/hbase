@@ -68,8 +68,8 @@ public class TestHTableMultiplexer {
     byte[] TABLE = Bytes.toBytes("testHTableMultiplexer");
     final int NUM_REGIONS = 10;
     final int VERSION = 3;
-    List<Put> failedPuts = null;
-    boolean success = false;
+    List<Put> failedPuts;
+    boolean success;
     
     HTableMultiplexer multiplexer = new HTableMultiplexer(TEST_UTIL.getConfiguration(), 
         PER_REGIONSERVER_QUEUE_SIZE);
