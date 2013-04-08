@@ -1975,7 +1975,7 @@ public class HConnectionManager {
      * This code should be move to HTable once processBatchCallback is not supported anymore in
      * the HConnection interface.
      */
-    private static class Process<R> {
+    public static class Process<R> {
       // Info on the queries and their context
       private final HConnectionImplementation hci;
       private final List<? extends Row> rows;
@@ -2299,6 +2299,355 @@ public class HConnectionManager {
 
       private Callable<MultiResponse> createDelayedCallable(
         final long delay, final HRegionLocation loc, final MultiAction<R> multi) {
+
+        final Callable<MultiResponse> delegate = hci.createCallable(loc, multi, tableName);
+
+        return new Callable<MultiResponse>() {
+          private final long creationTime = System.currentTimeMillis();
+
+          @Override
+          public MultiResponse call() throws Exception {
+            try {
+              final long waitingTime = delay + creationTime - System.currentTimeMillis();
+              if (waitingTime > 0) {
+                Thread.sleep(waitingTime);
+              }
+              return delegate.call();
+            } finally {
+              synchronized (finishedTasks) {
+                finishedTasks.add(multi);
+                finishedTasks.notifyAll();
+              }
+            }
+          }
+        };
+      }
+    }
+
+
+    /**
+     * Methods and attributes to manage a batch process are grouped into this single class.
+     * This allows, by creating a Process<R> per batch process to ensure multithread safety.
+     *
+     * This code should be move to HTable once processBatchCallback is not supported anymore in
+     * the HConnection interface.
+     */
+    public static class AsyncProcess<R> {
+      // Info on the queries and their context
+      private final HConnectionImplementation hci;
+      private final List<? extends Row> rows;
+      private final byte[] tableName;
+      private final ExecutorService pool;
+      private final Batch.Callback<R> callback;
+
+      // Used during the batch process
+      private final List<Action<R>> toReplay;
+      private final LinkedList<Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>>
+          inProgress;
+
+      private ServerErrorTracker errorsByServer = null;
+      private int curNumRetries;
+
+      // Notified when a tasks is done
+      private final List<MultiAction<R>> finishedTasks = new ArrayList<MultiAction<R>>();
+
+      private AsyncProcess(HConnectionImplementation hci, List<? extends Row> list,
+                      byte[] tableName, ExecutorService pool, Batch.Callback<R> callback){
+        this.hci = hci;
+        this.rows = list;
+        this.tableName = tableName;
+        this.pool = pool;
+        this.callback = callback;
+        this.toReplay = new ArrayList<Action<R>>();
+        this.inProgress =
+            new LinkedList<Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>>();
+        this.curNumRetries = 0;
+      }
+
+
+      /**
+       * Group a list of actions per region servers, and send them. The created MultiActions are
+       *  added to the inProgress list.
+       * @param actionsList
+       * @param isRetry Whether we are retrying these actions. If yes, backoff
+       *                time may be applied before new requests.
+       * @throws IOException - if we can't locate a region after multiple retries.
+       */
+      private void submit(List<Action<R>> actionsList, final boolean isRetry) throws IOException {
+        // group per location => regions server
+        final Map<HRegionLocation, MultiAction<R>> actionsByServer =
+            new HashMap<HRegionLocation, MultiAction<R>>();
+        for (Action<R> aAction : actionsList) {
+          final Row row = aAction.getAction();
+
+          if (row != null) {
+            final HRegionLocation loc = hci.locateRegion(this.tableName, row.getRow());
+            if (loc == null) {
+              throw new IOException("No location found, aborting submit.");
+            }
+
+            final byte[] regionName = loc.getRegionInfo().getRegionName();
+            MultiAction<R> actions = actionsByServer.get(loc);
+            if (actions == null) {
+              actions = new MultiAction<R>();
+              actionsByServer.put(loc, actions);
+            }
+            actions.add(regionName, aAction);
+          }
+        }
+
+        // Send the queries and add them to the inProgress list
+        for (Entry<HRegionLocation, MultiAction<R>> e : actionsByServer.entrySet()) {
+          long backoffTime = 0;
+          if (isRetry) {
+            if (hci.isUsingServerTrackerForRetries()) {
+              assert this.errorsByServer != null;
+              backoffTime = this.errorsByServer.calculateBackoffTime(e.getKey(), hci.pause);
+            } else {
+              // curNumRetries starts with one, subtract to start from 0.
+              backoffTime = ConnectionUtils.getPauseTime(hci.pause, curNumRetries - 1);
+            }
+          }
+          Callable<MultiResponse> callable =
+              createDelayedCallable(backoffTime, e.getKey(), e.getValue());
+          if (LOG.isTraceEnabled() && isRetry) {
+            StringBuilder sb = new StringBuilder();
+            for (Action<R> action : e.getValue().allActions()) {
+              sb.append(Bytes.toStringBinary(action.getAction().getRow())).append(';');
+            }
+            LOG.trace("Will retry requests to [" + e.getKey().getHostnamePort()
+                + "] after delay of [" + backoffTime + "] for rows [" + sb.toString() + "]");
+          }
+          Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> p =
+              new Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>(
+                  e.getValue(), e.getKey(), this.pool.submit(callable));
+          this.inProgress.addLast(p);
+        }
+      }
+
+      /**
+       * Resubmit the actions which have failed, after a sleep time.
+       * @throws IOException
+       */
+      private void doRetry() throws IOException{
+        submit(this.toReplay, true);
+        this.toReplay.clear();
+      }
+
+      /**
+       * Parameterized batch processing, allowing varying return types for
+       * different {@link Row} implementations.
+       * Throws an exception on error. If there are no exceptions, it means that the 'results'
+       *  array is clean.
+       */
+      private void processBatchCallback() throws IOException, InterruptedException {
+        if (this.rows.isEmpty()) {
+          return;
+        }
+
+        boolean isTraceEnabled = LOG.isTraceEnabled();
+        BatchErrors errors = new BatchErrors();
+        BatchErrors retriedErrors = null;
+        if (isTraceEnabled) {
+          retriedErrors = new BatchErrors();
+        }
+
+        // We keep the number of retry per action.
+        int[] nbRetries = new int[this.rows.size()];
+
+        // Build the action list. This list won't change after being created, hence the
+        //  indexes will remain constant, allowing a direct lookup.
+        final List<Action<R>> listActions = new ArrayList<Action<R>>(this.rows.size());
+        for (int i = 0; i < this.rows.size(); i++) {
+          Action<R> action = new Action<R>(this.rows.get(i), i);
+          listActions.add(action);
+        }
+
+        // execute the actions. We will analyze and resubmit the actions in a 'while' loop.
+        submit(listActions, false);
+
+        // LastRetry is true if, either:
+        //  we had an exception 'DoNotRetry'
+        //  we had more than numRetries for any action
+        //  In this case, we will finish the current retries but we won't start new ones.
+        boolean lastRetry = false;
+        // despite its name numRetries means number of tries. So if numRetries == 1 it means we
+        //  won't retry. And we compare vs. 2 in case someone set it to zero.
+        boolean noRetry = (hci.numTries < 2);
+
+        // Analyze and resubmit until all actions are done successfully or failed after numRetries
+        while (!this.inProgress.isEmpty()) {
+          // We need the original multi action to find out what actions to replay if
+          //  we have a 'total' failure of the Future<MultiResponse>
+          // We need the HRegionLocation as we give it back if we go out of retries
+          Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> currentTask =
+              removeFirstDone();
+
+          // Get the answer, keep the exception if any as we will use it for the analysis
+          MultiResponse responses = null;
+          ExecutionException exception = null;
+          try {
+            responses = currentTask.getThird().get();
+          } catch (ExecutionException e) {
+            exception = e;
+          }
+          HRegionLocation location = currentTask.getSecond();
+          // Error case: no result at all for this multi action. We need to redo all actions
+          if (responses == null) {
+            for (List<Action<R>> actions : currentTask.getFirst().actions.values()) {
+              for (Action<R> action : actions) {
+                Row row = action.getAction();
+                // Do not use the exception for updating cache because it might be coming from
+                // any of the regions in the MultiAction.
+                hci.updateCachedLocations(tableName, row, null, location);
+                if (noRetry) {
+                  errors.add(exception, row, location);
+                } else {
+                  if (isTraceEnabled) {
+                    retriedErrors.add(exception, row, location);
+                  }
+                  lastRetry = addToReplay(nbRetries, action, location);
+                }
+              }
+            }
+          } else { // Success or partial success
+            // Analyze detailed results. We can still have individual failures to be redo.
+            // two specific exceptions are managed:
+            //  - DoNotRetryIOException: we continue to retry for other actions
+            //  - RegionMovedException: we update the cache with the new region location
+            for (Entry<byte[], List<Pair<Integer, Object>>> resultsForRS :
+                responses.getResults().entrySet()) {
+              for (Pair<Integer, Object> regionResult : resultsForRS.getValue()) {
+                Action<R> correspondingAction = listActions.get(regionResult.getFirst());
+                Object result = regionResult.getSecond();
+
+
+                // Failure: retry if it's make sense else update the errors lists
+                if (result == null || result instanceof Throwable) {
+                  Row row = correspondingAction.getAction();
+                  hci.updateCachedLocations(this.tableName, row, result, location);
+                  if (result instanceof DoNotRetryIOException || noRetry) {
+                    errors.add((Exception)result, row, location);
+                  } else {
+                    if (isTraceEnabled) {
+                      retriedErrors.add((Exception)result, row, location);
+                    }
+                    lastRetry = addToReplay(nbRetries, correspondingAction, location);
+                  }
+                } else // success
+                  if (callback != null) {
+                    this.callback.update(resultsForRS.getKey(),
+                        this.rows.get(regionResult.getFirst()).getRow(), (R) result);
+                  }
+              }
+            }
+          }
+
+          // Retry all actions in toReplay then clear it.
+          if (!noRetry && !toReplay.isEmpty()) {
+            if (isTraceEnabled) {
+              LOG.trace("Retrying due to errors" + (lastRetry ? " (one last time)" : "")
+                  + ": " + retriedErrors.getDescriptionAndClear());
+            }
+            doRetry();
+            if (lastRetry) {
+              noRetry = true;
+            }
+          }
+        }
+
+        errors.rethrowIfAny();
+      }
+
+
+      private class BatchErrors {
+        private List<Throwable> exceptions = new ArrayList<Throwable>();
+        private List<Row> actions = new ArrayList<Row>();
+        private List<String> addresses = new ArrayList<String>();
+
+        public void add(Exception ex, Row row, HRegionLocation location) {
+          exceptions.add(ex);
+          actions.add(row);
+          addresses.add(location.getHostnamePort());
+        }
+
+        public void rethrowIfAny() throws RetriesExhaustedWithDetailsException {
+          if (!exceptions.isEmpty()) {
+            throw makeException();
+          }
+        }
+
+        public String getDescriptionAndClear(){
+          if (exceptions.isEmpty()) {
+            return "";
+          }
+          String result = makeException().getExhaustiveDescription();
+          exceptions.clear();
+          actions.clear();
+          addresses.clear();
+          return result;
+        }
+
+        private RetriesExhaustedWithDetailsException makeException() {
+          return new RetriesExhaustedWithDetailsException(exceptions, actions, addresses);
+        }
+      }
+
+      /**
+       * Put the action that has to be retried in the Replay list.
+       * @return true if we're out of numRetries and it's the last retry.
+       */
+      private boolean addToReplay(int[] nbRetries, Action<R> action, HRegionLocation source) {
+        this.toReplay.add(action);
+        nbRetries[action.getOriginalIndex()]++;
+        if (nbRetries[action.getOriginalIndex()] > this.curNumRetries) {
+          this.curNumRetries = nbRetries[action.getOriginalIndex()];
+        }
+        if (hci.isUsingServerTrackerForRetries()) {
+          if (this.errorsByServer == null) {
+            this.errorsByServer = hci.createServerErrorTracker();
+          }
+          this.errorsByServer.reportServerError(source);
+          return !this.errorsByServer.canRetryMore();
+        } else {
+          // We need to add 1 to make tries and retries comparable. And as we look for
+          // the last try we compare with '>=' and not '>'. And we need curNumRetries
+          // to means what it says as we don't want to initialize it to 1.
+          return ((this.curNumRetries + 1) >= hci.numTries);
+        }
+      }
+
+      /**
+       * Wait for one of tasks to be done, and remove it from the list.
+       * @return the tasks done.
+       */
+      private Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>
+      removeFirstDone() throws InterruptedException {
+        while (true) {
+          synchronized (finishedTasks) {
+            if (!finishedTasks.isEmpty()) {
+              MultiAction<R> done = finishedTasks.remove(finishedTasks.size() - 1);
+
+              // We now need to remove it from the inProgress part.
+              Iterator<Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>> it =
+                  inProgress.iterator();
+              while (it.hasNext()) {
+                Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> task = it.next();
+                if (task.getFirst() == done) { // We have the exact object. No java equals here.
+                  it.remove();
+                  return task;
+                }
+              }
+              LOG.error("Development error: We didn't see a task in the list. " +
+                  done.getRegions());
+            }
+            finishedTasks.wait(10);
+          }
+        }
+      }
+
+      private Callable<MultiResponse> createDelayedCallable(
+          final long delay, final HRegionLocation loc, final MultiAction<R> multi) {
 
         final Callable<MultiResponse> delegate = hci.createCallable(loc, multi, tableName);
 

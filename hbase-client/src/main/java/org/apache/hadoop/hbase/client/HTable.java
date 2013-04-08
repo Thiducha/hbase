@@ -695,6 +695,14 @@ public class HTable implements HTableInterface {
     }
   }
 
+
+  private void backgroundFlushCommits(){
+
+  }
+
+
+
+
   /**
    * {@inheritDoc}
    */
