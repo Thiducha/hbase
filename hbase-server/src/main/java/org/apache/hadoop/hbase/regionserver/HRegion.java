@@ -1401,7 +1401,6 @@ public class HRegion implements HeapSize { // , Writable{
     // We also set the memstore size to zero here before we allow updates
     // again so its value will represent the size of the updates received
     // during the flush
-    long sequenceId = -1L;
     MultiVersionConsistencyControl.WriteEntry w = null;
 
     // We have to take a write lock during snapshot, or else a write could
@@ -1446,6 +1445,12 @@ public class HRegion implements HeapSize { // , Writable{
       ", commencing wait for mvcc, flushsize=" + flushsize;
     status.setStatus(s);
     LOG.debug(s);
+
+    // sync unflushed WAL changes when deferred log sync is enabled
+    // see HBASE-8208 for details
+    if (wal != null && isDeferredLogSyncEnabled()) {
+      wal.sync();
+    }
 
     // wait for all in-progress transactions to commit to HLog before
     // we can start the flush. This prevents
@@ -1523,7 +1528,7 @@ public class HRegion implements HeapSize { // , Writable{
       StringUtils.humanReadableInt(flushsize) + "/" + flushsize +
       ", currentsize=" +
       StringUtils.humanReadableInt(memstoresize) + "/" + memstoresize +
-      " for region " + this + " in " + time + "ms, sequenceid=" + sequenceId +
+      " for region " + this + " in " + time + "ms, sequenceid=" + flushSeqId +
       ", compaction requested=" + compactionRequested +
       ((wal == null)? "; wal=null": "");
     LOG.info(msg);
@@ -5333,10 +5338,16 @@ public class HRegion implements HeapSize { // , Writable{
    * @throws IOException If anything goes wrong with DFS
    */
   private void syncOrDefer(long txid) throws IOException {
-    if (this.getRegionInfo().isMetaRegion() ||
-      !this.htableDescriptor.isDeferredLogFlush() || this.deferredLogSyncDisabled) {
+    if (this.getRegionInfo().isMetaRegion() || !isDeferredLogSyncEnabled()) {
       this.log.sync(txid);
     }
+  }
+
+  /**
+   * check if current region is deferred sync enabled.
+   */
+  private boolean isDeferredLogSyncEnabled() {
+    return (this.htableDescriptor.isDeferredLogFlush() && !this.deferredLogSyncDisabled);
   }
 
   /**
