@@ -317,7 +317,7 @@ public class TestTableLockManager {
     final byte[] family = Bytes.toBytes("test_cf");
     desc.addFamily(new HColumnDescriptor(family));
     admin.createTable(desc); // create with one region
-
+                         /*
     // write some data, not much
     int ret = loadTool.run(new String[] { "-tn", Bytes.toString(tableName), "-write",
         String.format("%d:%d:%d", 1, 10, 10), "-num_keys", String.valueOf(numKeys), "-skip_init" });
@@ -325,7 +325,7 @@ public class TestTableLockManager {
       String errorMsg = "Load failed with error code " + ret;
       LOG.error(errorMsg);
       fail(errorMsg);
-    }
+    }           */
 
     int familyValues = admin.getTableDescriptor(tableName).getFamily(family).getValues().size();
     StoppableImplementation stopper = new StoppableImplementation();
@@ -395,14 +395,14 @@ public class TestTableLockManager {
     LOG.info(String.format("Altered the table %d times", newFamilyValues - familyValues));
     assertTrue(newFamilyValues > familyValues); // at least one alter went
                                                 // through
-
+                     /*
     ret = loadTool.run(new String[] { "-tn", Bytes.toString(tableName), "-read", "100:10",
         "-num_keys", String.valueOf(numKeys), "-skip_init" });
     if (0 != ret) {
       String errorMsg = "Verify failed with error code " + ret;
       LOG.error(errorMsg);
       fail(errorMsg);
-    }
+    }                   */
 
     admin.close();
   }
