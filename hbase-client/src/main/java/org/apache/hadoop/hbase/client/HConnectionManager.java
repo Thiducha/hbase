@@ -40,12 +40,14 @@ import java.util.NavigableMap;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -2324,7 +2326,6 @@ public class HConnectionManager {
       }
     }
 
-
     /**
      * Methods and attributes to manage a batch process are grouped into this single class.
      * This allows, by creating a Process<R> per batch process to ensure multithread safety.
@@ -2332,13 +2333,15 @@ public class HConnectionManager {
      * This code should be move to HTable once processBatchCallback is not supported anymore in
      * the HConnection interface.
      */
-    public static class AsyncProcess<R> {
+    public class AsyncProcess<R> {
       // Info on the queries and their context
       private final HConnectionImplementation hci;
       private final List<? extends Row> rows;
       private final byte[] tableName;
       private final ExecutorService pool;
       private final Batch.Callback<R> callback;
+      private final BatchErrors errors = new BatchErrors();
+      private final BatchErrors retriedErrors = new BatchErrors();
 
       // Used during the batch process
       private final List<Action<R>> toReplay;
@@ -2425,14 +2428,6 @@ public class HConnectionManager {
         }
       }
 
-      /**
-       * Resubmit the actions which have failed, after a sleep time.
-       * @throws IOException
-       */
-      private void doRetry() throws IOException{
-        submit(this.toReplay, true);
-        this.toReplay.clear();
-      }
 
       /**
        * Parameterized batch processing, allowing varying return types for
@@ -2445,16 +2440,6 @@ public class HConnectionManager {
           return;
         }
 
-        boolean isTraceEnabled = LOG.isTraceEnabled();
-        BatchErrors errors = new BatchErrors();
-        BatchErrors retriedErrors = null;
-        if (isTraceEnabled) {
-          retriedErrors = new BatchErrors();
-        }
-
-        // We keep the number of retry per action.
-        int[] nbRetries = new int[this.rows.size()];
-
         // Build the action list. This list won't change after being created, hence the
         //  indexes will remain constant, allowing a direct lookup.
         final List<Action<R>> listActions = new ArrayList<Action<R>>(this.rows.size());
@@ -2465,98 +2450,76 @@ public class HConnectionManager {
 
         // execute the actions. We will analyze and resubmit the actions in a 'while' loop.
         submit(listActions, false);
+      }
 
-        // LastRetry is true if, either:
-        //  we had an exception 'DoNotRetry'
-        //  we had more than numRetries for any action
-        //  In this case, we will finish the current retries but we won't start new ones.
-        boolean lastRetry = false;
-        // despite its name numRetries means number of tries. So if numRetries == 1 it means we
-        //  won't retry. And we compare vs. 2 in case someone set it to zero.
-        boolean noRetry = (hci.numTries < 2);
+      Map<Integer, Action<R>> actionsInProgress;
 
-        // Analyze and resubmit until all actions are done successfully or failed after numRetries
+      private void receiveMultiAction(Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> task) throws InterruptedException {
+        boolean lastRetry;
+        MultiResponse responses = null;
+        ExecutionException exception = null;
+        try {
+          responses = task.getThird().get();
+        } catch (ExecutionException e) {
+          exception = e;
+        }
+        HRegionLocation location = task.getSecond();
+        // Error case: no result at all for this multi action. We need to redo all actions
+        if (responses == null) {
+          for (List<Action<R>> actions : task.getFirst().actions.values()) {
+            for (Action<R> action : actions) {
+              Row row = action.getAction();
+              // Do not use the exception for updating cache because it might be coming from
+              // any of the regions in the MultiAction.
+              hci.updateCachedLocations(tableName, row, null, location);
+              if (LOG.isTraceEnabled()) {
+                retriedErrors.add(exception, row, location);
+              }
+              lastRetry = addToReplay(action, location);
+            }
+          }
+        } else { // Success or partial success
+          // Analyze detailed results. We can still have individual failures to be redo.
+          // two specific exceptions are managed:
+          //  - DoNotRetryIOException: we continue to retry for other actions
+          //  - RegionMovedException: we update the cache with the new region location
+          for (Entry<byte[], List<Pair<Integer, Object>>> resultsForRS :
+              responses.getResults().entrySet()) {
+            for (Pair<Integer, Object> regionResult : resultsForRS.getValue()) {
+              Object result = regionResult.getSecond();
+
+              // Failure: retry if it's make sense else update the errors lists
+              if (result == null || result instanceof Throwable) {
+                Action<R> correspondingAction = actionsInProgress.get(regionResult.getFirst());
+                Row row = correspondingAction.getAction();
+                hci.updateCachedLocations(this.tableName, row, result, location);
+                if (result instanceof DoNotRetryIOException || correspondingAction.incNbRetry() > hci.numTries) {
+                  errors.add((Exception)result, row, location);
+                } else {
+                  if (LOG.isTraceEnabled()) {
+                    retriedErrors.add((Exception)result, row, location);
+                  }
+                  addToReplay(correspondingAction, location);
+                }
+              } else // success
+                if (callback != null) {
+                  this.callback.update(resultsForRS.getKey(),
+                      this.rows.get(regionResult.getFirst()).getRow(), (R) result);
+                }
+            }
+          }
+        }
+      }
+
+      void getResult() throws InterruptedException {
         while (!this.inProgress.isEmpty()) {
           // We need the original multi action to find out what actions to replay if
           //  we have a 'total' failure of the Future<MultiResponse>
           // We need the HRegionLocation as we give it back if we go out of retries
           Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> currentTask =
               removeFirstDone();
-
-          // Get the answer, keep the exception if any as we will use it for the analysis
-          MultiResponse responses = null;
-          ExecutionException exception = null;
-          try {
-            responses = currentTask.getThird().get();
-          } catch (ExecutionException e) {
-            exception = e;
-          }
-          HRegionLocation location = currentTask.getSecond();
-          // Error case: no result at all for this multi action. We need to redo all actions
-          if (responses == null) {
-            for (List<Action<R>> actions : currentTask.getFirst().actions.values()) {
-              for (Action<R> action : actions) {
-                Row row = action.getAction();
-                // Do not use the exception for updating cache because it might be coming from
-                // any of the regions in the MultiAction.
-                hci.updateCachedLocations(tableName, row, null, location);
-                if (noRetry) {
-                  errors.add(exception, row, location);
-                } else {
-                  if (isTraceEnabled) {
-                    retriedErrors.add(exception, row, location);
-                  }
-                  lastRetry = addToReplay(nbRetries, action, location);
-                }
-              }
-            }
-          } else { // Success or partial success
-            // Analyze detailed results. We can still have individual failures to be redo.
-            // two specific exceptions are managed:
-            //  - DoNotRetryIOException: we continue to retry for other actions
-            //  - RegionMovedException: we update the cache with the new region location
-            for (Entry<byte[], List<Pair<Integer, Object>>> resultsForRS :
-                responses.getResults().entrySet()) {
-              for (Pair<Integer, Object> regionResult : resultsForRS.getValue()) {
-                Action<R> correspondingAction = listActions.get(regionResult.getFirst());
-                Object result = regionResult.getSecond();
-
-
-                // Failure: retry if it's make sense else update the errors lists
-                if (result == null || result instanceof Throwable) {
-                  Row row = correspondingAction.getAction();
-                  hci.updateCachedLocations(this.tableName, row, result, location);
-                  if (result instanceof DoNotRetryIOException || noRetry) {
-                    errors.add((Exception)result, row, location);
-                  } else {
-                    if (isTraceEnabled) {
-                      retriedErrors.add((Exception)result, row, location);
-                    }
-                    lastRetry = addToReplay(nbRetries, correspondingAction, location);
-                  }
-                } else // success
-                  if (callback != null) {
-                    this.callback.update(resultsForRS.getKey(),
-                        this.rows.get(regionResult.getFirst()).getRow(), (R) result);
-                  }
-              }
-            }
-          }
-
-          // Retry all actions in toReplay then clear it.
-          if (!noRetry && !toReplay.isEmpty()) {
-            if (isTraceEnabled) {
-              LOG.trace("Retrying due to errors" + (lastRetry ? " (one last time)" : "")
-                  + ": " + retriedErrors.getDescriptionAndClear());
-            }
-            doRetry();
-            if (lastRetry) {
-              noRetry = true;
-            }
-          }
+          receiveMultiAction(currentTask);
         }
-
-        errors.rethrowIfAny();
       }
 
 
@@ -2597,12 +2560,8 @@ public class HConnectionManager {
        * Put the action that has to be retried in the Replay list.
        * @return true if we're out of numRetries and it's the last retry.
        */
-      private boolean addToReplay(int[] nbRetries, Action<R> action, HRegionLocation source) {
+      private boolean addToReplay(Action<R> action, HRegionLocation source) {
         this.toReplay.add(action);
-        nbRetries[action.getOriginalIndex()]++;
-        if (nbRetries[action.getOriginalIndex()] > this.curNumRetries) {
-          this.curNumRetries = nbRetries[action.getOriginalIndex()];
-        }
         if (hci.isUsingServerTrackerForRetries()) {
           if (this.errorsByServer == null) {
             this.errorsByServer = hci.createServerErrorTracker();
@@ -2613,7 +2572,7 @@ public class HConnectionManager {
           // We need to add 1 to make tries and retries comparable. And as we look for
           // the last try we compare with '>=' and not '>'. And we need curNumRetries
           // to means what it says as we don't want to initialize it to 1.
-          return ((this.curNumRetries + 1) >= hci.numTries);
+          return (action.incNbRetry() >= hci.numTries);
         }
       }
 

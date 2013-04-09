@@ -669,9 +669,11 @@ public class HTable implements HTableInterface {
   public void put(final Put put) throws IOException {
     doPut(put);
     if (autoFlush) {
-      flushCommits();
+      ap.flushCommits();
     }
   }
+
+  private HConnectionManager.HConnectionImplementation.AsyncProcess ap = new HConnectionManager.HConnectionImplementation.AsyncProcess();
 
   /**
    * {@inheritDoc}
@@ -682,22 +684,18 @@ public class HTable implements HTableInterface {
       doPut(put);
     }
     if (autoFlush) {
-      flushCommits();
+      ap.flushCommits();
     }
   }
 
   private void doPut(Put put) throws IOException{
     validatePut(put);
-    writeBuffer.add(put);
-    currentWriteBufferSize += put.heapSize();
-    if (currentWriteBufferSize > writeBufferSize) {
-      flushCommits();
-    }
+    ap.add(put);
   }
 
 
   private void backgroundFlushCommits(){
-
+    currentWriteBufferSize += put.heapSize();
   }
 
 
