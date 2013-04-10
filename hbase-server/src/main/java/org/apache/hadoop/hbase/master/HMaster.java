@@ -764,12 +764,12 @@ Server {
     if (!assignMeta(status)) return;
     enableServerShutdownHandler();
 
-    // Update meta with new PB serialization if required. i.e migrate all HRI
-    // to PB serialization in meta and update the status in ROOT. This must happen
-    // before we assign all user regions or else the assignment will fail.
+    // Update meta with new PB serialization if required. i.e migrate all HRI to PB serialization
+    // in meta. This must happen before we assign all user regions or else the assignment will 
+    // fail.
     // TODO: Remove this after 0.96, when we do 0.98.
     org.apache.hadoop.hbase.catalog.MetaMigrationConvertingToPB
-      .updateRootAndMetaIfNecessary(this);
+      .updateMetaIfNecessary(this);
 
     this.balancer.setMasterServices(this);
     // Fix up assignment manager status
@@ -1193,7 +1193,7 @@ Server {
       RpcController controller, ReportRSFatalErrorRequest request) throws ServiceException {
     String errorText = request.getErrorMessage();
     ServerName sn = ProtobufUtil.toServerName(request.getServer());
-    String msg = "Region server " + Bytes.toString(sn.getVersionedBytes()) +
+    String msg = "Region server " + sn +
       " reported a fatal error:\n" + errorText;
     LOG.error(msg);
     rsFatals.add(msg);
