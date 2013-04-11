@@ -117,7 +117,7 @@
                 </property>
             </activation>
             <properties>
-                <surefire.skipFirstPart>true</surefire.skipFirstPart>
+                <surefire.part1.skip>true</surefire.part1.skip>
             </properties>
         </profile>
         <!-- profile against Hadoop 1.0.x: This is the default. It has to have the same

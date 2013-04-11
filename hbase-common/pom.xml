@@ -207,7 +207,7 @@
         </property>
       </activation>
       <properties>
-        <surefire.skipFirstPart>true</surefire.skipFirstPart>
+        <surefire.part1.skip>true</surefire.part1.skip>
       </properties>
     </profile>
 

@@ -86,6 +86,13 @@ limitations under the License.
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-common</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-core</artifactId>
       <version>${hadoop-one.version}</version><!--$NO-MVN-MAN-VER$-->
@@ -140,7 +147,7 @@ limitations under the License.
             </property>
         </activation>
         <properties>
-            <surefire.skipFirstPart>true</surefire.skipFirstPart>
+            <surefire.part1.skip>true</surefire.part1.skip>
         </properties>
     </profile>
   </profiles>
