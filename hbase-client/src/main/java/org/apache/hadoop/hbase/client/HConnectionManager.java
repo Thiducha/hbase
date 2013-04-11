@@ -2352,21 +2352,21 @@ public class HConnectionManager {
         this.tableName = tableName;
         this.pool = pool;
         this.callback = callback;
+        this.errorsByServer =  this.hci.createServerErrorTracker();
       }
 
       public void submit(List<Action<R>> actionsList) throws IOException {
-        submit(actionsList, false);
+        submit(actionsList, 1);
       }
 
       /**
        * Group a list of actions per region servers, and send them. The created MultiActions are
        *  added to the inProgress list.
        * @param actionsList
-       * @param isRetry Whether we are retrying these actions. If yes, backoff
-       *                time may be applied before new requests.
+       * @param numAttempt
        * @throws IOException - if we can't locate a region after multiple retries.
        */
-      private void submit(List<Action<R>> actionsList, final boolean isRetry) throws IOException {
+      private void submit(List<Action<R>> actionsList, int numAttempt) throws IOException {
         // group per location => regions server
         final Map<HRegionLocation, MultiAction<R>> actionsByServer =
             new HashMap<HRegionLocation, MultiAction<R>>();
@@ -2392,12 +2392,12 @@ public class HConnectionManager {
         // Send the queries and add them to the inProgress list
         for (Entry<HRegionLocation, MultiAction<R>> e : actionsByServer.entrySet()) {
           long backoffTime = 0;
-          if (isRetry) {
-            backoffTime = this.errorsByServer.calculateBackoffTime(e.getKey(), hci.pause);
+          if (numAttempt > 1) {
+            backoffTime = ConnectionUtils.getPauseTime(hci.pause, numAttempt - 1);
           }
           Runnable runnable =
-              createDelayedRunnable(actionsList, backoffTime, e.getKey(), e.getValue());
-          if (LOG.isTraceEnabled() && isRetry) {
+              createDelayedRunnable(actionsList, backoffTime, e.getKey(), e.getValue(), numAttempt);
+          if (LOG.isTraceEnabled() && numAttempt > 0) {
             StringBuilder sb = new StringBuilder();
             for (Action<R> action : e.getValue().allActions()) {
               sb.append(Bytes.toStringBinary(action.getAction().getRow())).append(';');
@@ -2411,21 +2411,23 @@ public class HConnectionManager {
       }
 
       private void receiveMultiAction(List<Action<R>> originalActionsList,
-         MultiAction<R> rsActions, HRegionLocation location, MultiResponse responses )
+         MultiAction<R> rsActions, HRegionLocation location, MultiResponse responses,
+         int numAttempt)
           throws InterruptedException, IOException {
         final List<Action<R>> toReplay = new ArrayList<Action<R>>();
         ExecutionException exception = null;
 
         // Error case: no result at all for this multi action. We need to redo all actions
         if (responses == null) {
+          if (numAttempt >= hci.numTries) {
+            this.hasError.set(true);
+          }
           for (List<Action<R>> actions : rsActions.actions.values()) {
             for (Action<R> action : actions) {
               // Do not use the exception for updating cache because it might be coming from
               // any of the regions in the MultiAction.
               hci.updateCachedLocations(tableName, action.getAction(), null, location);
-              if (action.incNbRetry() > hci.numTries) {
-                this.hasError.set(true);
-              } else {
+              if (numAttempt < hci.numTries) {
                 toReplay.add(action);
                 if (LOG.isTraceEnabled()) {
                   retriedErrors.add(exception, action.getAction(), location);
@@ -2448,7 +2450,7 @@ public class HConnectionManager {
                 Action<R> correspondingAction = originalActionsList.get(regionResult.getFirst());
                 Row row = correspondingAction.getAction();
                 hci.updateCachedLocations(this.tableName, row, result, location);
-                if (result instanceof DoNotRetryIOException || correspondingAction.incNbRetry() > hci.numTries) {
+                if (result instanceof DoNotRetryIOException || numAttempt >= hci.numTries) {
                   errors.add((Exception)result, row, location);
                   this.hasError.set(true);
                 } else {
@@ -2467,7 +2469,7 @@ public class HConnectionManager {
           }
         }
         if (!toReplay.isEmpty()){
-          submit(toReplay, true);
+          submit(toReplay, numAttempt + 1);
         }
       }
 
@@ -2492,6 +2494,7 @@ public class HConnectionManager {
           RetriesExhaustedWithDetailsException exception = errors.makeException();
           errors  = new BatchErrors();
           retriedErrors = new BatchErrors();
+          this.errorsByServer = this.hci.createServerErrorTracker();
           hasError.set(false);
           throw exception;
         }
@@ -2533,7 +2536,8 @@ public class HConnectionManager {
 
 
       private Runnable createDelayedRunnable(
-          final List<Action<R>> originalActionsList, final long delay, final HRegionLocation loc, final MultiAction<R> multi) {
+          final List<Action<R>> originalActionsList, final long delay, final HRegionLocation loc,
+          final MultiAction<R> multi, final int numAttempt) {
 
         final Callable<MultiResponse> delegate = hci.createCallable(loc, multi, tableName);
         taskCounter.incrementAndGet();
@@ -2548,7 +2552,7 @@ public class HConnectionManager {
                 Thread.sleep(waitingTime);
               }
               MultiResponse res =  delegate.call();
-              receiveMultiAction( originalActionsList, multi, loc, res);
+              receiveMultiAction(originalActionsList, multi, loc, res, numAttempt);
             } catch (InterruptedException e) {
               hasError.set(true);
             } catch (Exception e) {

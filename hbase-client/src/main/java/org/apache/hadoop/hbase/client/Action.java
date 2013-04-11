@@ -32,16 +32,11 @@ public class Action<R> implements Comparable<R> {
   private Row action;
   private int originalIndex;
   private R result;
-  private int nbRetry = 0;
 
   public Action(Row action, int originalIndex) {
     super();
     this.action = action;
     this.originalIndex = originalIndex;    
-  }
-
-  public int incNbRetry(){
-    return ++nbRetry;
   }
 
   public R getResult() {
