@@ -29,7 +29,6 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import java.io.IOException;
-import java.security.PrivilegedAction;
 import java.security.PrivilegedExceptionAction;
 
 @Category(SmallTests.class)

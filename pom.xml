@@ -107,10 +107,7 @@
           <configuration>
             <reuseForks>${surefire.part1.reuseForks}</reuseForks>
             <forkCount>${surefire.part1.forkCount}</forkCount>
-	          <groups>org.apache.hadoop.hbase.SmallTests</groups>
-
-            <argLine>-enableassertions -Xmx1900m
-              -Djava.security.egd=file:/dev/./urandom -Djava.net.preferIPv4Stack=true</argLine>
+	          <groups>org.apache.hadoop.hbase.S1Tests</groups>
             <redirectTestOutputToFile>${test.output.tofile}</redirectTestOutputToFile>
           </configuration>
         </plugin>

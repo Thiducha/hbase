@@ -19,9 +19,6 @@ package org.apache.hadoop.hbase.regionserver;
 
 import org.apache.hadoop.hbase.CompatibilityFactory;
 import org.apache.hadoop.hbase.SmallTests;
-import org.apache.hadoop.hbase.regionserver.MetricsRegionServer;
-import org.apache.hadoop.hbase.regionserver.MetricsRegionServerWrapperStub;
-import org.apache.hadoop.hbase.regionserver.MetricsRegionServerSource;
 import org.apache.hadoop.hbase.test.MetricsAssertHelper;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;

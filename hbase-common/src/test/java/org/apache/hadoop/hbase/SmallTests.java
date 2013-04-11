@@ -1,4 +1,4 @@
-/*
+package org.apache.hadoop.hbase;/*
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -17,8 +17,6 @@
  * limitations under the License.
  */
 
-package org.apache.hadoop.hbase;
-
 /**
  * Tag a test as 'small', meaning that the test class has the following
  * characteristics:
@@ -26,9 +24,9 @@ package org.apache.hadoop.hbase;
  *  - ideally, last less than 15 seconds
  *  - does not use a cluster
  *
- * @see MediumTests
- * @see LargeTests
- * @see IntegrationTests
+ * @see org.apache.hadoop.hbase.MediumTests
+ * @see org.apache.hadoop.hbase.LargeTests
+ * @see org.apache.hadoop.hbase.IntegrationTests
  */
 public interface SmallTests {
 }

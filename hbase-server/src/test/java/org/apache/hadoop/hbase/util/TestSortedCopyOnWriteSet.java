@@ -21,7 +21,6 @@ package org.apache.hadoop.hbase.util;
 
 import static org.junit.Assert.*;
 
-import java.util.Arrays;
 import java.util.Iterator;
 
 import com.google.common.collect.Lists;

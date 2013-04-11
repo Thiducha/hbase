@@ -24,7 +24,6 @@ import java.util.Random;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import junit.framework.Test;
 import junit.framework.TestCase;
 
 import org.apache.hadoop.hbase.SmallTests;

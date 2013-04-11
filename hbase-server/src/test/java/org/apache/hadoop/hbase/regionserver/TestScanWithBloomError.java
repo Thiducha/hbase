@@ -33,11 +33,10 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.HBaseTestingUtility;
+import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.KeyValueTestUtil;
-import org.apache.hadoop.hbase.SmallTests;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.compress.Compression;
@@ -58,7 +57,7 @@ import static org.junit.Assert.*;
  * This is needed for the multi-column Bloom filter optimization.
  */
 @RunWith(Parameterized.class)
-@Category(SmallTests.class)
+@Category(S1Tests.class)
 public class TestScanWithBloomError {
 
   private static final Log LOG =

@@ -32,7 +32,6 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.executor.ExecutorService.Executor;
 import org.apache.hadoop.hbase.executor.ExecutorService.ExecutorStatus;
-import org.apache.hadoop.hbase.executor.ExecutorType;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 

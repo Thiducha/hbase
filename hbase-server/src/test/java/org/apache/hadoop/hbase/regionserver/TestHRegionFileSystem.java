@@ -27,8 +27,6 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.Collection;
 
-import javax.management.RuntimeErrorException;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -45,10 +43,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.util.Progressable;
 
 import org.junit.Test;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
 import org.junit.experimental.categories.Category;
-import junit.framework.TestCase;
 
 @Category(SmallTests.class)
 public class TestHRegionFileSystem {

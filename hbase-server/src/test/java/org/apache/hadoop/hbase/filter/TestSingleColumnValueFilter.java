@@ -18,10 +18,6 @@
  */
 package org.apache.hadoop.hbase.filter;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.util.regex.Pattern;
 
 import org.apache.hadoop.hbase.KeyValue;
