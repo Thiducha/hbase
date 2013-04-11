@@ -120,7 +120,8 @@ public class HTable implements HTableInterface {
   private HConnection connection;
   private final byte [] tableName;
   private volatile Configuration configuration;
-  private final ArrayList<Put> writeBuffer = new ArrayList<Put>();
+  private ArrayList<Put> writeBuffer = new ArrayList<Put>();
+  private ArrayList<Action<Put>> writeAsyncBuffer = new ArrayList<Action<Put>>();
   private long writeBufferSize;
   private boolean clearBufferOnFail;
   private boolean autoFlush;
@@ -248,7 +249,9 @@ public class HTable implements HTableInterface {
         : this.configuration.getInt(HConstants.HBASE_CLIENT_OPERATION_TIMEOUT,
             HConstants.DEFAULT_HBASE_CLIENT_OPERATION_TIMEOUT);
     this.writeBufferSize = this.configuration.getLong(
-        "hbase.client.write.buffer", 2097152);
+        "hbase.client.write.buffer", 2097152 * 2);
+    this.backgroundSendSize = configuration.getLong(
+        "hbase.client.write.background.buffer", writeBufferSize / 2);
     this.clearBufferOnFail = true;
     this.autoFlush = true;
     this.currentWriteBufferSize = 0;
@@ -256,9 +259,12 @@ public class HTable implements HTableInterface {
         HConstants.HBASE_CLIENT_SCANNER_CACHING,
         HConstants.DEFAULT_HBASE_CLIENT_SCANNER_CACHING);
 
+    ap = new HConnectionManager.HConnectionImplementation.AsyncProcess<Put>(
+        connection, tableName, pool, null);
     this.maxKeyValueSize = this.configuration.getInt(
         "hbase.client.keyvalue.maxsize", -1);
     this.closed = false;
+
   }
 
   /**
@@ -669,11 +675,9 @@ public class HTable implements HTableInterface {
   public void put(final Put put) throws IOException {
     doPut(put);
     if (autoFlush) {
-      ap.flushCommits();
+      flushCommits();
     }
   }
-
-  private HConnectionManager.HConnectionImplementation.AsyncProcess ap = new HConnectionManager.HConnectionImplementation.AsyncProcess();
 
   /**
    * {@inheritDoc}
@@ -684,22 +688,44 @@ public class HTable implements HTableInterface {
       doPut(put);
     }
     if (autoFlush) {
-      ap.flushCommits();
+      flushCommits();
     }
   }
 
+  private long backgroundSendSize;
+  private HConnectionManager.HConnectionImplementation.AsyncProcess<Put> ap;
+
   private void doPut(Put put) throws IOException{
     validatePut(put);
-    ap.add(put);
-  }
-
-
-  private void backgroundFlushCommits(){
     currentWriteBufferSize += put.heapSize();
+
+    if (!autoFlush && backgroundSendSize > 0){
+      writeAsyncBuffer.add(new Action<Put>(put, 0));
+      if (currentWriteBufferSize > backgroundSendSize){
+        backgroundFlushCommits();
+      }
+      if (ap.hasError()) {
+        flushCommits();
+      }
+    } else {
+      writeBuffer.add(put);
+      if (currentWriteBufferSize > writeBufferSize) {
+        flushCommits();
+      }
+    }
   }
 
 
+  public void backgroundFlushCommits() throws IOException {
+    if (writeAsyncBuffer.isEmpty()) {
+      // Early exit: we can be called on empty buffers.
+      return;
+    }
 
+    ap.submit(writeAsyncBuffer);
+    currentWriteBufferSize = 0;
+    writeAsyncBuffer = new ArrayList<Action<Put>>();
+  }
 
   /**
    * {@inheritDoc}
@@ -1030,6 +1056,12 @@ public class HTable implements HTableInterface {
    */
   @Override
   public void flushCommits() throws IOException {
+    if (backgroundSendSize > 0){
+      backgroundFlushCommits();
+      ap.waitUntilDone();
+    }
+
+
     if (writeBuffer.isEmpty()){
       // Early exit: we can be called on empty buffers.
       return;

@@ -20,6 +20,7 @@ package org.apache.hadoop.hbase.client;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -40,7 +41,6 @@ import java.util.NavigableMap;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -2328,40 +2328,35 @@ public class HConnectionManager {
      * This code should be move to HTable once processBatchCallback is not supported anymore in
      * the HConnection interface.
      */
-    public class AsyncProcess<R> {
+    public static class AsyncProcess<R> {
       // Info on the queries and their context
       private final HConnectionImplementation hci;
-      private final List<? extends Row> rows;
       private final byte[] tableName;
       private final ExecutorService pool;
       private final Batch.Callback<R> callback;
-      private final BatchErrors errors = new BatchErrors();
-      private final BatchErrors retriedErrors = new BatchErrors();
-
-      // Used during the batch process
-      private final List<Action<R>> toReplay;
-      private final LinkedList<Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>>
-          inProgress;
-
+      private BatchErrors errors = new BatchErrors();
+      private BatchErrors retriedErrors = new BatchErrors();
+      private final AtomicBoolean hasError = new AtomicBoolean(false);
+      private final AtomicLong taskCounter = new AtomicLong(0);
       private ServerErrorTracker errorsByServer = null;
-      private int curNumRetries;
 
-      // Notified when a tasks is done
-      private final List<MultiAction<R>> finishedTasks = new ArrayList<MultiAction<R>>();
 
-      private AsyncProcess(HConnectionImplementation hci, List<? extends Row> list,
-                      byte[] tableName, ExecutorService pool, Batch.Callback<R> callback){
-        this.hci = hci;
-        this.rows = list;
+      public boolean hasError(){
+        return hasError.get();
+      }
+
+
+      public AsyncProcess(HConnection hci, byte[] tableName, ExecutorService pool,
+                          Batch.Callback<R> callback){
+        this.hci = (HConnectionImplementation)hci;
         this.tableName = tableName;
         this.pool = pool;
         this.callback = callback;
-        this.toReplay = new ArrayList<Action<R>>();
-        this.inProgress =
-            new LinkedList<Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>>();
-        this.curNumRetries = 0;
       }
 
+      public void submit(List<Action<R>> actionsList) throws IOException {
+        submit(actionsList, false);
+      }
 
       /**
        * Group a list of actions per region servers, and send them. The created MultiActions are
@@ -2398,16 +2393,10 @@ public class HConnectionManager {
         for (Entry<HRegionLocation, MultiAction<R>> e : actionsByServer.entrySet()) {
           long backoffTime = 0;
           if (isRetry) {
-            if (hci.isUsingServerTrackerForRetries()) {
-              assert this.errorsByServer != null;
-              backoffTime = this.errorsByServer.calculateBackoffTime(e.getKey(), hci.pause);
-            } else {
-              // curNumRetries starts with one, subtract to start from 0.
-              backoffTime = ConnectionUtils.getPauseTime(hci.pause, curNumRetries - 1);
-            }
+            backoffTime = this.errorsByServer.calculateBackoffTime(e.getKey(), hci.pause);
           }
-          Callable<MultiResponse> callable =
-              createDelayedCallable(backoffTime, e.getKey(), e.getValue());
+          Runnable runnable =
+              createDelayedRunnable(actionsList, backoffTime, e.getKey(), e.getValue());
           if (LOG.isTraceEnabled() && isRetry) {
             StringBuilder sb = new StringBuilder();
             for (Action<R> action : e.getValue().allActions()) {
@@ -2416,52 +2405,27 @@ public class HConnectionManager {
             LOG.trace("Will retry requests to [" + e.getKey().getHostnamePort()
                 + "] after delay of [" + backoffTime + "] for rows [" + sb.toString() + "]");
           }
-          Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> p =
-              new Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>(
-                  e.getValue(), e.getKey(), this.pool.submit(callable));
-          this.inProgress.addLast(p);
+
+          this.pool.submit(runnable);
         }
       }
 
-
-      /**
-       * Parameterized batch processing, allowing varying return types for
-       * different {@link Row} implementations.
-       * Throws an exception on error. If there are no exceptions, it means that the 'results'
-       *  array is clean.
-       */
-      private void processBatchCallback() throws IOException, InterruptedException {
-        if (this.rows.isEmpty()) {
-          return;
-        }
-
-        // Build the action list. This list won't change after being created, hence the
-        //  indexes will remain constant, allowing a direct lookup.
-        final List<Action<R>> listActions = new ArrayList<Action<R>>(this.rows.size());
-        for (int i = 0; i < this.rows.size(); i++) {
-          Action<R> action = new Action<R>(this.rows.get(i), i);
-          listActions.add(action);
-        }
-
-        // execute the actions. We will analyze and resubmit the actions in a 'while' loop.
-        submit(listActions, false);
+      private void receiveMultiAction(List<Action<R>> originalActionsList,
+                                      MultiAction<R> rsActions, HRegionLocation location,
+                                      MultiResponse responses)
+          throws InterruptedException, IOException {
+          doReceiveMultiAction(originalActionsList, rsActions, location, responses);
       }
 
-      Map<Integer, Action<R>> actionsInProgress;
-
-      private void receiveMultiAction(Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> task) throws InterruptedException {
-        boolean lastRetry;
-        MultiResponse responses = null;
+      private void doReceiveMultiAction(List<Action<R>> originalActionsList,
+         MultiAction<R> rsActions, HRegionLocation location, MultiResponse responses )
+          throws InterruptedException, IOException {
+        final List<Action<R>> toReplay = new ArrayList<Action<R>>();
         ExecutionException exception = null;
-        try {
-          responses = task.getThird().get();
-        } catch (ExecutionException e) {
-          exception = e;
-        }
-        HRegionLocation location = task.getSecond();
+
         // Error case: no result at all for this multi action. We need to redo all actions
         if (responses == null) {
-          for (List<Action<R>> actions : task.getFirst().actions.values()) {
+          for (List<Action<R>> actions : rsActions.actions.values()) {
             for (Action<R> action : actions) {
               Row row = action.getAction();
               // Do not use the exception for updating cache because it might be coming from
@@ -2470,7 +2434,9 @@ public class HConnectionManager {
               if (LOG.isTraceEnabled()) {
                 retriedErrors.add(exception, row, location);
               }
-              lastRetry = addToReplay(action, location);
+              if (!addToReplay(toReplay, action, location)){
+                this.hasError.set(true);
+              }
             }
           }
         } else { // Success or partial success
@@ -2485,7 +2451,7 @@ public class HConnectionManager {
 
               // Failure: retry if it's make sense else update the errors lists
               if (result == null || result instanceof Throwable) {
-                Action<R> correspondingAction = actionsInProgress.get(regionResult.getFirst());
+                Action<R> correspondingAction = originalActionsList.get(regionResult.getFirst());
                 Row row = correspondingAction.getAction();
                 hci.updateCachedLocations(this.tableName, row, result, location);
                 if (result instanceof DoNotRetryIOException || correspondingAction.incNbRetry() > hci.numTries) {
@@ -2494,26 +2460,42 @@ public class HConnectionManager {
                   if (LOG.isTraceEnabled()) {
                     retriedErrors.add((Exception)result, row, location);
                   }
-                  addToReplay(correspondingAction, location);
+                  if (!addToReplay(toReplay, correspondingAction, location)){
+                    this.hasError.set(true);
+                  }
                 }
               } else // success
                 if (callback != null) {
-                  this.callback.update(resultsForRS.getKey(),
-                      this.rows.get(regionResult.getFirst()).getRow(), (R) result);
+                  Action<R> correspondingAction = originalActionsList.get(regionResult.getFirst());
+                  Row row = correspondingAction.getAction();
+                  this.callback.update(resultsForRS.getKey(), row.getRow(), (R) result);
                 }
             }
           }
         }
+        if (!toReplay.isEmpty()){
+          submit(toReplay, true);
+        }
       }
 
-      void getResult() throws InterruptedException {
-        while (!this.inProgress.isEmpty()) {
-          // We need the original multi action to find out what actions to replay if
-          //  we have a 'total' failure of the Future<MultiResponse>
-          // We need the HRegionLocation as we give it back if we go out of retries
-          Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> currentTask =
-              removeFirstDone();
-          receiveMultiAction(currentTask);
+      public void waitUntilDone() throws RetriesExhaustedWithDetailsException,
+          InterruptedIOException  {
+        while (! (this.taskCounter.get() == 0)){
+          try {
+            synchronized (this.taskCounter){
+              this.taskCounter.wait(100);
+            }
+          } catch (InterruptedException e) {
+            throw new InterruptedIOException();
+          }
+        }
+
+        if (hasError()){
+          retriedErrors = new BatchErrors();
+          RetriesExhaustedWithDetailsException exception = errors.makeException();
+          errors  = new BatchErrors();
+          hasError.set(false);
+          throw exception;
         }
       }
 
@@ -2555,71 +2537,46 @@ public class HConnectionManager {
        * Put the action that has to be retried in the Replay list.
        * @return true if we're out of numRetries and it's the last retry.
        */
-      private boolean addToReplay(Action<R> action, HRegionLocation source) {
-        this.toReplay.add(action);
-        if (hci.isUsingServerTrackerForRetries()) {
-          if (this.errorsByServer == null) {
-            this.errorsByServer = hci.createServerErrorTracker();
-          }
-          this.errorsByServer.reportServerError(source);
-          return !this.errorsByServer.canRetryMore();
-        } else {
+      private boolean addToReplay(List<Action<R>> toReplay, Action<R> action, HRegionLocation source) {
+        boolean tooMuchFailure;
+
           // We need to add 1 to make tries and retries comparable. And as we look for
           // the last try we compare with '>=' and not '>'. And we need curNumRetries
           // to means what it says as we don't want to initialize it to 1.
-          return (action.incNbRetry() >= hci.numTries);
+          tooMuchFailure = (action.incNbRetry() >= hci.numTries);
+
+        if (!tooMuchFailure){
+          toReplay.add(action);
         }
+        return tooMuchFailure;
       }
 
-      /**
-       * Wait for one of tasks to be done, and remove it from the list.
-       * @return the tasks done.
-       */
-      private Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>
-      removeFirstDone() throws InterruptedException {
-        while (true) {
-          synchronized (finishedTasks) {
-            if (!finishedTasks.isEmpty()) {
-              MultiAction<R> done = finishedTasks.remove(finishedTasks.size() - 1);
 
-              // We now need to remove it from the inProgress part.
-              Iterator<Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>> it =
-                  inProgress.iterator();
-              while (it.hasNext()) {
-                Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> task = it.next();
-                if (task.getFirst() == done) { // We have the exact object. No java equals here.
-                  it.remove();
-                  return task;
-                }
-              }
-              LOG.error("Development error: We didn't see a task in the list. " +
-                  done.getRegions());
-            }
-            finishedTasks.wait(10);
-          }
-        }
-      }
-
-      private Callable<MultiResponse> createDelayedCallable(
-          final long delay, final HRegionLocation loc, final MultiAction<R> multi) {
+      private Runnable createDelayedRunnable(
+          final List<Action<R>> originalActionsList, final long delay, final HRegionLocation loc, final MultiAction<R> multi) {
 
         final Callable<MultiResponse> delegate = hci.createCallable(loc, multi, tableName);
-
-        return new Callable<MultiResponse>() {
+        taskCounter.incrementAndGet();
+        return new Runnable() {
           private final long creationTime = System.currentTimeMillis();
 
           @Override
-          public MultiResponse call() throws Exception {
+          public void run()  {
             try {
               final long waitingTime = delay + creationTime - System.currentTimeMillis();
               if (waitingTime > 0) {
                 Thread.sleep(waitingTime);
               }
-              return delegate.call();
+              MultiResponse res =  delegate.call();
+              receiveMultiAction( originalActionsList, multi, loc, res);
+            } catch (InterruptedException e) {
+              hasError.set(true);
+            } catch (Exception e) {
+              hasError.set(true);
             } finally {
-              synchronized (finishedTasks) {
-                finishedTasks.add(multi);
-                finishedTasks.notifyAll();
+              taskCounter.decrementAndGet();
+              synchronized (taskCounter) {
+                taskCounter.notifyAll();
               }
             }
           }
