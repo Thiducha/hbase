@@ -18,41 +18,27 @@
  */
 package org.apache.hadoop.hbase.regionserver;
 
-import org.apache.hadoop.hbase.S1Tests;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.experimental.categories.Category;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+import java.util.*;
 
+@org.junit.runner.RunWith(org.junit.runners.Parameterized.class)
+@org.junit.experimental.categories.Category(org.apache.hadoop.hbase.S1Tests.class)
+public class TestSurefire {
 
-@RunWith(Parameterized.class)
-@Category(S1Tests.class)
-public class TestScanWithBloomError {
-
-  @Parameters
+  @org.junit.runners.Parameterized.Parameters
   public static Collection<Object[]> parameters() {
-    List<Object[]> configurations = new ArrayList<Object[]>();
+    ArrayList<Object[]> configurations = new ArrayList<Object[]>();
     for (int i = 1; i < 10; i++) {
       configurations.add(new Object[] { i });
     }
     return configurations;
   }
 
-  public TestScanWithBloomError(Object o) {
+  public TestSurefire(Object o) {
   }
 
-  @Before
-  public void setUp() {
-  }
-
-  @Test
-  public void testThreeStoreFiles()  {
+  @org.junit.Test
+  public void testM()  {
   }
 
 }
