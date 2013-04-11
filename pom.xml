@@ -105,10 +105,10 @@
           <version>${surefire.version}</version>
           <!-- Generic testing configuration for all packages -->
           <configuration>
-            <reuseForks>${surefire.part1.reuseForks}</reuseForks>
-            <forkCount>${surefire.part1.forkCount}</forkCount>
+            <reuseForks>true</reuseForks>
+            <forkCount>2</forkCount>
 	          <groups>org.apache.hadoop.hbase.S1Tests</groups>
-            <redirectTestOutputToFile>${test.output.tofile}</redirectTestOutputToFile>
+            <redirectTestOutputToFile>true</redirectTestOutputToFile>
           </configuration>
         </plugin>
         <plugin>
