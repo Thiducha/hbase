@@ -52,10 +52,7 @@ import org.junit.experimental.categories.Category;
 @Category(MediumTests.class)
 public class TestMultiParallel {
   private static final Log LOG = LogFactory.getLog(TestMultiParallel.class);
-  {
-    ((Log4JLogger)HBaseServer.LOG).getLogger().setLevel(Level.ALL);
-    ((Log4JLogger)HBaseClient.LOG).getLogger().setLevel(Level.ALL);
-  }
+
   private static final HBaseTestingUtility UTIL = new HBaseTestingUtility();
   private static final byte[] VALUE = Bytes.toBytes("value");
   private static final byte[] QUALIFIER = Bytes.toBytes("qual");
@@ -238,7 +235,6 @@ public class TestMultiParallel {
    */
   @Test (timeout=300000)
   public void testFlushCommitsWithAbort() throws Exception {
-    LOG.info("test=testFlushCommitsWithAbort");
     doTestFlushCommits(true);
   }
 
@@ -261,8 +257,7 @@ public class TestMultiParallel {
     }
     LOG.info("puts");
     table.flushCommits();
-    final int liveRScount = UTIL.getMiniHBaseCluster().getLiveRegionServerThreads()
-        .size();
+    final int liveRScount = UTIL.getMiniHBaseCluster().getLiveRegionServerThreads().size();
     assert liveRScount > 0;
     JVMClusterUtil.RegionServerThread liveRS = UTIL.getMiniHBaseCluster()
         .getLiveRegionServerThreads().get(0);
@@ -360,8 +355,8 @@ public class TestMultiParallel {
 
     // Deletes
     List<Row> deletes = new ArrayList<Row>();
-    for (int i = 0; i < KEYS.length; i++) {
-      Delete delete = new Delete(KEYS[i]);
+    for (byte[] KEY : KEYS) {
+      Delete delete = new Delete(KEY);
       delete.deleteFamily(BYTES_FAMILY);
       deletes.add(delete);
     }
@@ -389,8 +384,8 @@ public class TestMultiParallel {
 
     // Deletes
     ArrayList<Delete> deletes = new ArrayList<Delete>();
-    for (int i = 0; i < KEYS.length; i++) {
-      Delete delete = new Delete(KEYS[i]);
+    for (byte[] KEY : KEYS) {
+      Delete delete = new Delete(KEY);
       delete.deleteFamily(BYTES_FAMILY);
       deletes.add(delete);
     }

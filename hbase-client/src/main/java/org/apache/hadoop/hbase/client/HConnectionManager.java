@@ -2411,13 +2411,6 @@ public class HConnectionManager {
       }
 
       private void receiveMultiAction(List<Action<R>> originalActionsList,
-                                      MultiAction<R> rsActions, HRegionLocation location,
-                                      MultiResponse responses)
-          throws InterruptedException, IOException {
-          doReceiveMultiAction(originalActionsList, rsActions, location, responses);
-      }
-
-      private void doReceiveMultiAction(List<Action<R>> originalActionsList,
          MultiAction<R> rsActions, HRegionLocation location, MultiResponse responses )
           throws InterruptedException, IOException {
         final List<Action<R>> toReplay = new ArrayList<Action<R>>();
@@ -2427,15 +2420,16 @@ public class HConnectionManager {
         if (responses == null) {
           for (List<Action<R>> actions : rsActions.actions.values()) {
             for (Action<R> action : actions) {
-              Row row = action.getAction();
               // Do not use the exception for updating cache because it might be coming from
               // any of the regions in the MultiAction.
-              hci.updateCachedLocations(tableName, row, null, location);
-              if (LOG.isTraceEnabled()) {
-                retriedErrors.add(exception, row, location);
-              }
-              if (!addToReplay(toReplay, action, location)){
+              hci.updateCachedLocations(tableName, action.getAction(), null, location);
+              if (action.incNbRetry() > hci.numTries) {
                 this.hasError.set(true);
+              } else {
+                toReplay.add(action);
+                if (LOG.isTraceEnabled()) {
+                  retriedErrors.add(exception, action.getAction(), location);
+                }
               }
             }
           }
@@ -2456,13 +2450,12 @@ public class HConnectionManager {
                 hci.updateCachedLocations(this.tableName, row, result, location);
                 if (result instanceof DoNotRetryIOException || correspondingAction.incNbRetry() > hci.numTries) {
                   errors.add((Exception)result, row, location);
+                  this.hasError.set(true);
                 } else {
                   if (LOG.isTraceEnabled()) {
                     retriedErrors.add((Exception)result, row, location);
                   }
-                  if (!addToReplay(toReplay, correspondingAction, location)){
-                    this.hasError.set(true);
-                  }
+                  toReplay.add(correspondingAction);
                 }
               } else // success
                 if (callback != null) {
@@ -2478,9 +2471,13 @@ public class HConnectionManager {
         }
       }
 
+      /**
+       * Wait until all tasks are executed, successfully or not. If some of the tasks failed
+       *  after all retries, a RetriesExhaustedWithDetailsException is thrown.
+       */
       public void waitUntilDone() throws RetriesExhaustedWithDetailsException,
           InterruptedIOException  {
-        while (! (this.taskCounter.get() == 0)){
+        while (this.taskCounter.get() > 0){
           try {
             synchronized (this.taskCounter){
               this.taskCounter.wait(100);
@@ -2494,6 +2491,7 @@ public class HConnectionManager {
           retriedErrors = new BatchErrors();
           RetriesExhaustedWithDetailsException exception = errors.makeException();
           errors  = new BatchErrors();
+          retriedErrors = new BatchErrors();
           hasError.set(false);
           throw exception;
         }
@@ -2531,24 +2529,6 @@ public class HConnectionManager {
         private RetriesExhaustedWithDetailsException makeException() {
           return new RetriesExhaustedWithDetailsException(exceptions, actions, addresses);
         }
-      }
-
-      /**
-       * Put the action that has to be retried in the Replay list.
-       * @return true if we're out of numRetries and it's the last retry.
-       */
-      private boolean addToReplay(List<Action<R>> toReplay, Action<R> action, HRegionLocation source) {
-        boolean tooMuchFailure;
-
-          // We need to add 1 to make tries and retries comparable. And as we look for
-          // the last try we compare with '>=' and not '>'. And we need curNumRetries
-          // to means what it says as we don't want to initialize it to 1.
-          tooMuchFailure = (action.incNbRetry() >= hci.numTries);
-
-        if (!tooMuchFailure){
-          toReplay.add(action);
-        }
-        return tooMuchFailure;
       }
 
 
