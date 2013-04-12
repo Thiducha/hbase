@@ -2338,7 +2338,6 @@ public class HConnectionManager {
       private BatchErrors retriedErrors = new BatchErrors();
       private final AtomicBoolean hasError = new AtomicBoolean(false);
       private final AtomicLong taskCounter = new AtomicLong(0);
-      private ServerErrorTracker errorsByServer = null;
 
 
       public boolean hasError(){
@@ -2352,11 +2351,14 @@ public class HConnectionManager {
         this.tableName = tableName;
         this.pool = pool;
         this.callback = callback;
-        this.errorsByServer =  this.hci.createServerErrorTracker();
       }
 
       public void submit(List<Action<R>> actionsList) throws IOException {
-        submit(actionsList, 1);
+        waitForMaximumTaskNumber(10);
+
+        if (!hasError()){
+          submit(actionsList, 1);
+        }
       }
 
       /**
@@ -2473,28 +2475,42 @@ public class HConnectionManager {
         }
       }
 
+      private void waitForMaximumTaskNumber(int max) throws InterruptedIOException {
+        long nextLog = 0;
+        while (this.taskCounter.get() > max){
+          if (nextLog == 0){
+            nextLog = EnvironmentEdgeManager.currentTimeMillis() + 3000;
+          } else {
+            if (EnvironmentEdgeManager.currentTimeMillis() > nextLog) {
+              LOG.info(Bytes.toString(tableName) +
+                  ": Waiting for number of tasks to be equals or less than " + max +
+                  ", currently it's " + this.taskCounter.get());
+            }
+            nextLog = EnvironmentEdgeManager.currentTimeMillis() + 5000;
+          }
+          try {
+            synchronized (this.taskCounter){
+              this.taskCounter.wait(200);
+            }
+          } catch (InterruptedException e) {
+            throw new InterruptedIOException();
+          }
+        }
+      }
+
       /**
        * Wait until all tasks are executed, successfully or not. If some of the tasks failed
        *  after all retries, a RetriesExhaustedWithDetailsException is thrown.
        */
       public void waitUntilDone() throws RetriesExhaustedWithDetailsException,
           InterruptedIOException  {
-        while (this.taskCounter.get() > 0){
-          try {
-            synchronized (this.taskCounter){
-              this.taskCounter.wait(100);
-            }
-          } catch (InterruptedException e) {
-            throw new InterruptedIOException();
-          }
-        }
+        waitForMaximumTaskNumber(0);
 
         if (hasError()){
           retriedErrors = new BatchErrors();
           RetriesExhaustedWithDetailsException exception = errors.makeException();
           errors  = new BatchErrors();
           retriedErrors = new BatchErrors();
-          this.errorsByServer = this.hci.createServerErrorTracker();
           hasError.set(false);
           throw exception;
         }
