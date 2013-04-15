@@ -53,6 +53,7 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.RowMutations;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.io.hfile.CacheConfig;
 import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.mapreduce.LoadIncrementalHFiles;
@@ -324,24 +325,12 @@ public class TestRegionObserverInterface {
         }
 
         @Override
-        public boolean next(List<KeyValue> results, String metric)
-            throws IOException {
-          return next(results, -1, metric);
-        }
-
-        @Override
         public boolean next(List<KeyValue> results, int limit)
             throws IOException{
-          return next(results, limit, null);
-        }
-
-        @Override
-        public boolean next(List<KeyValue> results, int limit, String metric)
-            throws IOException {
           List<KeyValue> internalResults = new ArrayList<KeyValue>();
           boolean hasMore;
           do {
-            hasMore = scanner.next(internalResults, limit, metric);
+            hasMore = scanner.next(internalResults, limit);
             if (!internalResults.isEmpty()) {
               long row = Bytes.toLong(internalResults.get(0).getRow());
               if (row % 2 == 0) {
@@ -399,7 +388,7 @@ public class TestRegionObserverInterface {
     for (long i=1; i<=10; i++) {
       byte[] iBytes = Bytes.toBytes(i);
       Put put = new Put(iBytes);
-      put.setWriteToWAL(false);
+      put.setDurability(Durability.SKIP_WAL);
       put.add(A, A, iBytes);
       table.put(put);
     }
