@@ -2338,6 +2338,7 @@ public class HConnectionManager {
       private BatchErrors retriedErrors = new BatchErrors();
       private final AtomicBoolean hasError = new AtomicBoolean(false);
       private final AtomicLong taskCounter = new AtomicLong(0);
+      private final int maxConcurrentTasks;
 
 
       public boolean hasError(){
@@ -2351,10 +2352,11 @@ public class HConnectionManager {
         this.tableName = tableName;
         this.pool = pool;
         this.callback = callback;
+        this.maxConcurrentTasks = hci.getConfiguration().getInt("hbase.client.max.tasks", 50) ;
       }
 
       public void submit(List<Action<R>> actionsList) throws IOException {
-        waitForMaximumTaskNumber(10);
+        waitForMaximumTaskNumber(maxConcurrentTasks);
 
         if (!hasError()){
           submit(actionsList, 1);
