@@ -47,6 +47,7 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.io.DataOutputBuffer;
@@ -56,7 +57,6 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 /**
- * TODO reenable the tests once a migration path is figured without ROOT
  * Test migration that changes HRI serialization into PB. Tests by bringing up a cluster from actual
  * data from a 0.92 cluster, as well as manually downgrading and then upgrading the META info.
  * @deprecated Remove after 0.96
@@ -169,16 +169,16 @@ public class TestMetaMigrationConvertingToPB {
     TEST_UTIL.shutdownMiniCluster();
   }
 
-  //@Test
+  @Test
   public void testMetaUpdatedFlagInROOT() throws Exception {
     HMaster master = TEST_UTIL.getMiniHBaseCluster().getMaster();
     boolean metaUpdated = MetaMigrationConvertingToPB.
-      isMetaHRIUpdated(master.getCatalogTracker());
+      isMetaTableUpdated(master.getCatalogTracker());
     assertEquals(true, metaUpdated);
     verifyMetaRowsAreUpdated(master.getCatalogTracker());
   }
 
-  //@Test
+  @Test
   public void testMetaMigration() throws Exception {
     LOG.info("Starting testMetaMigration");
     final byte [] FAMILY = Bytes.toBytes("family");
@@ -207,7 +207,7 @@ public class TestMetaMigrationConvertingToPB {
 
     // Assert that the flag in ROOT is updated to reflect the correct status
     boolean metaUpdated =
-        MetaMigrationConvertingToPB.isMetaHRIUpdated(
+        MetaMigrationConvertingToPB.isMetaTableUpdated(
         TEST_UTIL.getMiniHBaseCluster().getMaster().getCatalogTracker());
     assertEquals(true, metaUpdated);
     verifyMetaRowsAreUpdated(ct);
@@ -225,7 +225,7 @@ public class TestMetaMigrationConvertingToPB {
    * rows and migrate any pending rows at startup.
    * @throws Exception
    */
-  //@Test
+  @Test
   public void testMasterCrashDuringMetaMigration() throws Exception {
     final byte[] FAMILY = Bytes.toBytes("family");
     HTableDescriptor htd = new HTableDescriptor("testMasterCrashDuringMetaMigration");
@@ -245,13 +245,13 @@ public class TestMetaMigrationConvertingToPB {
     LOG.info("Meta Print completed.testUpdatesOnMetaWithLegacyHRI");
 
     long numMigratedRows =
-        MetaMigrationConvertingToPB.updateRootAndMetaIfNecessary(
+        MetaMigrationConvertingToPB.updateMetaIfNecessary(
             TEST_UTIL.getHBaseCluster().getMaster());
     assertEquals(numMigratedRows, 10);
 
     // Assert that the flag in ROOT is updated to reflect the correct status
     boolean metaUpdated = MetaMigrationConvertingToPB.
-      isMetaHRIUpdated(TEST_UTIL.getMiniHBaseCluster().getMaster().getCatalogTracker());
+      isMetaTableUpdated(TEST_UTIL.getMiniHBaseCluster().getMaster().getCatalogTracker());
     assertEquals(true, metaUpdated);
 
     verifyMetaRowsAreUpdated(ct);
@@ -331,7 +331,7 @@ public class TestMetaMigrationConvertingToPB {
       int j = (i + 1) % startKeys.length;
       HRegionInfo hri = new HRegionInfo(tableName, startKeys[i], startKeys[j]);
       Put put = new Put(hri.getRegionName());
-      put.setWriteToWAL(false);
+      put.setDurability(Durability.SKIP_WAL);
       put.add(HConstants.CATALOG_FAMILY, HConstants.REGIONINFO_QUALIFIER,
         getBytes(hri)); //this is the old Writable serialization
 
@@ -398,7 +398,7 @@ public class TestMetaMigrationConvertingToPB {
       int j = (i + 1) % startKeys.length;
       HRegionInfo hri = new HRegionInfo(tableName, startKeys[i], startKeys[j]);
       Put put = MetaEditor.makePutFromRegionInfo(hri);
-      put.setWriteToWAL(false);
+      put.setDurability(Durability.SKIP_WAL);
       meta.put(put);
       LOG.info("createMultiRegionsWithPBSerialization: PUT inserted " + hri.toString());
 

@@ -797,7 +797,7 @@
     <name>hbase.defaults.for.version</name>
     <value>@@@VERSION@@@</value>
     <description>
-    This defaults file was compiled for version ${pom.version}. This variable is used
+    This defaults file was compiled for version ${project.version}. This variable is used
     to make sure that a user doesn't have an old version of hbase-default.xml on the
     classpath.
     </description>
@@ -980,6 +980,16 @@
         The thread pool always has at least these number of threads so
         the REST server is ready to serve incoming requests. The default
         is 2.
+    </description>
+  </property>
+  <property>
+    <name>hbase.rpc.timeout</name>
+    <value>60000</value>
+    <description>
+        This is for the RPC layer to define how long HBase client applications
+        take for a remote call to time out. It uses pings to check connections
+        but will eventually throw a TimeoutException. 
+        The default value is 60000ms(60s).
     </description>
   </property>
 </configuration>

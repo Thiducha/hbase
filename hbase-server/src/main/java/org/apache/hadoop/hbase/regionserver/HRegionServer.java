@@ -2761,7 +2761,7 @@ public class HRegionServer implements ClientProtocol,
             processed = result;
           }
         } else {
-          region.delete(delete, delete.getWriteToWAL());
+          region.delete(delete);
           processed = Boolean.TRUE;
         }
         break;
@@ -3706,7 +3706,7 @@ public class HRegionServer implements ClientProtocol,
       r = region.getCoprocessorHost().preAppend(append);
     }
     if (r == null) {
-      r = region.append(append, append.getWriteToWAL());
+      r = region.append(append);
       if (region.getCoprocessorHost() != null) {
         region.getCoprocessorHost().postAppend(append, r);
       }
@@ -3733,7 +3733,7 @@ public class HRegionServer implements ClientProtocol,
       r = region.getCoprocessorHost().preIncrement(increment);
     }
     if (r == null) {
-      r = region.increment(increment, increment.getWriteToWAL());
+      r = region.increment(increment);
       if (region.getCoprocessorHost() != null) {
         r = region.getCoprocessorHost().postIncrement(increment, r);
       }
@@ -3887,6 +3887,10 @@ public class HRegionServer implements ClientProtocol,
   private static final int TIMEOUT_REGION_MOVED = (2 * 60 * 1000);
 
   protected void addToMovedRegions(String encodedName, ServerName destination, long closeSeqNum) {
+    if (ServerName.isSameHostnameAndPort(destination, this.getServerName())) {
+      LOG.warn("Not adding moved region record: " + encodedName + " to self.");
+      return;
+    }
     LOG.info("Adding moved region record: " + encodedName + " to "
         + destination.getServerName() + ":" + destination.getPort()
         + " as of " + closeSeqNum);

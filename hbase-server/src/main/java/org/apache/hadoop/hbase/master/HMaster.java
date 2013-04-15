@@ -618,7 +618,7 @@ Server {
         ", cluster-up flag was=" + wasUp);
 
     // create the snapshot manager
-    this.snapshotManager = new SnapshotManager(this);
+    this.snapshotManager = new SnapshotManager(this, this.metricsMaster);
   }
 
   /**
@@ -721,7 +721,7 @@ Server {
     //are invalidated
     this.tableLockManager = TableLockManager.createTableLockManager(conf, zooKeeper, serverName);
     if (!masterRecovery) {
-      this.tableLockManager.reapAllTableWriteLocks();
+      this.tableLockManager.reapWriteLocks();
     }
 
     status.setStatus("Initializing ZK system trackers");
@@ -764,12 +764,12 @@ Server {
     if (!assignMeta(status)) return;
     enableServerShutdownHandler();
 
-    // Update meta with new PB serialization if required. i.e migrate all HRI
-    // to PB serialization in meta and update the status in ROOT. This must happen
-    // before we assign all user regions or else the assignment will fail.
+    // Update meta with new PB serialization if required. i.e migrate all HRI to PB serialization
+    // in meta. This must happen before we assign all user regions or else the assignment will 
+    // fail.
     // TODO: Remove this after 0.96, when we do 0.98.
     org.apache.hadoop.hbase.catalog.MetaMigrationConvertingToPB
-      .updateRootAndMetaIfNecessary(this);
+      .updateMetaIfNecessary(this);
 
     this.balancer.setMasterServices(this);
     // Fix up assignment manager status
@@ -1193,7 +1193,7 @@ Server {
       RpcController controller, ReportRSFatalErrorRequest request) throws ServiceException {
     String errorText = request.getErrorMessage();
     ServerName sn = ProtobufUtil.toServerName(request.getServer());
-    String msg = "Region server " + Bytes.toString(sn.getVersionedBytes()) +
+    String msg = "Region server " + sn +
       " reported a fatal error:\n" + errorText;
     LOG.error(msg);
     rsFatals.add(msg);
@@ -1241,10 +1241,10 @@ Server {
     int balancerCutoffTime =
       getConfiguration().getInt("hbase.balancer.max.balancing", -1);
     if (balancerCutoffTime == -1) {
-      // No time period set so create one -- do half of balancer period.
+      // No time period set so create one
       int balancerPeriod =
         getConfiguration().getInt("hbase.balancer.period", 300000);
-      balancerCutoffTime = balancerPeriod / 2;
+      balancerCutoffTime = balancerPeriod;
       // If nonsense period, set it to balancerPeriod
       if (balancerCutoffTime <= 0) balancerCutoffTime = balancerPeriod;
     }
@@ -1261,7 +1261,6 @@ Server {
     if (!this.loadBalancerTracker.isBalancerOn()) return false;
     // Do this call outside of synchronized block.
     int maximumBalanceTime = getBalancerCutoffTime();
-    long cutoffTime = System.currentTimeMillis() + maximumBalanceTime;
     boolean balancerRan;
     synchronized (this.balancer) {
       // Only allow one balance run at at time.
@@ -1296,6 +1295,7 @@ Server {
         List<RegionPlan> partialPlans = this.balancer.balanceCluster(assignments);
         if (partialPlans != null) plans.addAll(partialPlans);
       }
+      long cutoffTime = System.currentTimeMillis() + maximumBalanceTime;
       int rpCount = 0;  // number of RegionPlans balanced so far
       long totalRegPlanExecTime = 0;
       balancerRan = plans != null;
@@ -1303,12 +1303,14 @@ Server {
         for (RegionPlan plan: plans) {
           LOG.info("balance " + plan);
           long balStartTime = System.currentTimeMillis();
+          //TODO: bulk assign
           this.assignmentManager.balance(plan);
           totalRegPlanExecTime += System.currentTimeMillis()-balStartTime;
           rpCount++;
           if (rpCount < plans.size() &&
               // if performing next balance exceeds cutoff time, exit the loop
               (System.currentTimeMillis() + (totalRegPlanExecTime / rpCount)) > cutoffTime) {
+            //TODO: After balance, there should not be a cutoff time (keeping it as a security net for now)
             LOG.debug("No more balancing till next balance run; maximumBalanceTime=" +
               maximumBalanceTime);
             break;
@@ -2267,11 +2269,14 @@ Server {
           return urr;
         }
       }
-      if (force) {
-        this.assignmentManager.regionOffline(hri);
+      LOG.debug("Close region " + hri.getRegionNameAsString()
+          + " on current location if it is online and reassign.force=" + force);
+      this.assignmentManager.unassign(hri, force);
+      if (!this.assignmentManager.getRegionStates().isRegionInTransition(hri)
+          && !this.assignmentManager.getRegionStates().isRegionAssigned(hri)) {
+        LOG.debug("Region " + hri.getRegionNameAsString()
+            + " is not online on any region server, reassigning it.");
         assignRegion(hri);
-      } else {
-        this.assignmentManager.unassign(hri, force);
       }
       if (cpHost != null) {
         cpHost.postUnassign(hri, force);

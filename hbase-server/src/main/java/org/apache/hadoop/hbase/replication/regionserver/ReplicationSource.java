@@ -52,6 +52,7 @@ import org.apache.hadoop.hbase.Stoppable;
 import org.apache.hadoop.hbase.client.AdminProtocol;
 import org.apache.hadoop.hbase.client.HConnection;
 import org.apache.hadoop.hbase.client.HConnectionManager;
+import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.ReplicationProtbufUtil;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
@@ -621,9 +622,14 @@ public class ReplicationSource extends Thread
     } catch (IOException ioe) {
       LOG.warn(peerClusterZnode + " Got: ", ioe);
       this.reader = null;
-      // TODO Need a better way to determinate if a file is really gone but
-      // TODO without scanning all logs dir
-      if (sleepMultiplier == this.maxRetriesMultiplier) {
+      if (ioe.getCause() instanceof NullPointerException) {
+        // Workaround for race condition in HDFS-4380
+        // which throws a NPE if we open a file before any data node has the most recent block
+        // Just sleep and retry. Will require re-reading compressed HLogs for compressionContext.
+        LOG.warn("Got NPE opening reader, will retry.");
+      } else if (sleepMultiplier == this.maxRetriesMultiplier) {
+        // TODO Need a better way to determine if a file is really gone but
+        // TODO without scanning all logs dir
         LOG.warn("Waited too long for this file, considering dumping");
         return !processEndOfFile();
       }
@@ -722,6 +728,12 @@ public class ReplicationSource extends Thread
         if (ioe instanceof RemoteException) {
           ioe = ((RemoteException) ioe).unwrapRemoteException();
           LOG.warn("Can't replicate because of an error on the remote cluster: ", ioe);
+          if (ioe instanceof TableNotFoundException) {
+            if (sleepForRetries("A table is missing in the peer cluster. "
+                + "Replication cannot proceed without losing data.", sleepMultiplier)) {
+              sleepMultiplier++;
+            }
+          }
         } else {
           if (ioe instanceof SocketTimeoutException) {
             // This exception means we waited for more than 60s and nothing

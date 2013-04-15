@@ -47,9 +47,11 @@ import com.google.protobuf.ServiceException;
 import com.google.protobuf.TextFormat;
 
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CellScanner;
 import org.apache.hadoop.hbase.CellUtil;
+import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
@@ -67,6 +69,7 @@ import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.metrics.ScanMetrics;
 import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.exceptions.DoNotRetryIOException;
@@ -119,6 +122,7 @@ import org.apache.hadoop.hbase.security.access.TablePermission;
 import org.apache.hadoop.hbase.security.access.UserPermission;
 import org.apache.hadoop.hbase.security.token.AuthenticationTokenIdentifier;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.DynamicClassLoader;
 import org.apache.hadoop.hbase.util.Methods;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.io.Text;
@@ -138,7 +142,16 @@ public final class ProtobufUtil {
   private final static Map<String, Class<?>>
     PRIMITIVES = new HashMap<String, Class<?>>();
 
+  /**
+   * Dynamic class loader to load filter/comparators
+   */
+  private final static ClassLoader CLASS_LOADER;
+
   static {
+    ClassLoader parent = ProtobufUtil.class.getClassLoader();
+    Configuration conf = HBaseConfiguration.create();
+    CLASS_LOADER = new DynamicClassLoader(conf, parent);
+
     PRIMITIVES.put(Boolean.TYPE.getName(), Boolean.TYPE);
     PRIMITIVES.put(Byte.TYPE.getName(), Byte.TYPE);
     PRIMITIVES.put(Character.TYPE.getName(), Character.TYPE);
@@ -284,6 +297,48 @@ public final class ProtobufUtil {
   }
 
   /**
+   * Convert a protobuf Durability into a client Durability
+   */
+  public static Durability toDurability(
+      final ClientProtos.MutationProto.Durability proto) {
+    switch(proto) {
+    case USE_DEFAULT:
+      return Durability.USE_DEFAULT;
+    case SKIP_WAL:
+      return Durability.SKIP_WAL;
+    case ASYNC_WAL:
+      return Durability.ASYNC_WAL;
+    case SYNC_WAL:
+      return Durability.SYNC_WAL;
+    case FSYNC_WAL:
+      return Durability.FSYNC_WAL;
+    default:
+      return Durability.USE_DEFAULT;
+    }
+  }
+
+  /**
+   * Convert a client Durability into a protbuf Durability
+   */
+  public static ClientProtos.MutationProto.Durability toDurability(
+      final Durability d) {
+    switch(d) {
+    case USE_DEFAULT:
+      return ClientProtos.MutationProto.Durability.USE_DEFAULT;
+    case SKIP_WAL:
+      return ClientProtos.MutationProto.Durability.SKIP_WAL;
+    case ASYNC_WAL:
+      return ClientProtos.MutationProto.Durability.ASYNC_WAL;
+    case SYNC_WAL:
+      return ClientProtos.MutationProto.Durability.SYNC_WAL;
+    case FSYNC_WAL:
+      return ClientProtos.MutationProto.Durability.FSYNC_WAL;
+    default:
+      return ClientProtos.MutationProto.Durability.USE_DEFAULT;
+    }
+  }
+
+  /**
    * Convert a protocol buffer Get to a client Get
    *
    * @param proto the protocol buffer Get to convert
@@ -407,7 +462,7 @@ public final class ProtobufUtil {
         }
       }
     }
-    put.setWriteToWAL(proto.getWriteToWAL());
+    put.setDurability(toDurability(proto.getDurability()));
     for (NameBytesPair attribute: proto.getAttributeList()) {
       put.setAttribute(attribute.getName(), attribute.getValue().toByteArray());
     }
@@ -487,7 +542,7 @@ public final class ProtobufUtil {
         }
       }
     }
-    delete.setWriteToWAL(proto.getWriteToWAL());
+    delete.setDurability(toDurability(proto.getDurability()));
     for (NameBytesPair attribute: proto.getAttributeList()) {
       delete.setAttribute(attribute.getName(), attribute.getValue().toByteArray());
     }
@@ -540,7 +595,7 @@ public final class ProtobufUtil {
         }
       }
     }
-    append.setWriteToWAL(proto.getWriteToWAL());
+    append.setDurability(toDurability(proto.getDurability()));
     for (NameBytesPair attribute: proto.getAttributeList()) {
       append.setAttribute(attribute.getName(), attribute.getValue().toByteArray());
     }
@@ -625,7 +680,7 @@ public final class ProtobufUtil {
       }
       increment.setTimeRange(minStamp, maxStamp);
     }
-    increment.setWriteToWAL(proto.getWriteToWAL());
+    increment.setDurability(toDurability(proto.getDurability()));
     return increment;
   }
 
@@ -845,7 +900,7 @@ public final class ProtobufUtil {
     MutationProto.Builder builder = MutationProto.newBuilder();
     builder.setRow(ByteString.copyFrom(increment.getRow()));
     builder.setMutateType(MutationType.INCREMENT);
-    builder.setWriteToWAL(increment.getWriteToWAL());
+    builder.setDurability(toDurability(increment.getDurability()));
     TimeRange timeRange = increment.getTimeRange();
     if (!timeRange.isAllTime()) {
       HBaseProtos.TimeRange.Builder timeRangeBuilder =
@@ -932,7 +987,7 @@ public final class ProtobufUtil {
     MutationProto.Builder builder = MutationProto.newBuilder();
     builder.setRow(ByteString.copyFrom(mutation.getRow()));
     builder.setMutateType(type);
-    builder.setWriteToWAL(mutation.getWriteToWAL());
+    builder.setDurability(toDurability(mutation.getDurability()));
     builder.setTimestamp(mutation.getTimeStamp());
     Map<String, byte[]> attributes = mutation.getAttributesMap();
     if (!attributes.isEmpty()) {
@@ -1046,7 +1101,7 @@ public final class ProtobufUtil {
     byte [] value = proto.getSerializedComparator().toByteArray();
     try {
       Class<? extends ByteArrayComparable> c =
-        (Class<? extends ByteArrayComparable>)(Class.forName(type));
+        (Class<? extends ByteArrayComparable>)Class.forName(type, true, CLASS_LOADER);
       Method parseFrom = c.getMethod(funcName, byte[].class);
       if (parseFrom == null) {
         throw new IOException("Unable to locate function: " + funcName + " in type: " + type);
@@ -1070,7 +1125,7 @@ public final class ProtobufUtil {
     String funcName = "parseFrom";
     try {
       Class<? extends Filter> c =
-        (Class<? extends Filter>)Class.forName(type);
+        (Class<? extends Filter>)Class.forName(type, true, CLASS_LOADER);
       Method parseFrom = c.getMethod(funcName, byte[].class);
       if (parseFrom == null) {
         throw new IOException("Unable to locate function: " + funcName + " in type: " + type);
@@ -1130,7 +1185,7 @@ public final class ProtobufUtil {
     String type = parameter.getName();
     try {
       Class<? extends Throwable> c =
-        (Class<? extends Throwable>)Class.forName(type);
+        (Class<? extends Throwable>)Class.forName(type, true, CLASS_LOADER);
       Constructor<? extends Throwable> cn =
         c.getDeclaredConstructor(String.class);
       return cn.newInstance(desc);
