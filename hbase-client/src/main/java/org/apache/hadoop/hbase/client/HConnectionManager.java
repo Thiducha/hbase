@@ -2374,11 +2374,11 @@ public class HConnectionManager {
         this.tableName = tableName;
         this.pool = pool;
         this.callback = callback;
-        this.maxConcurrentTasks = hci.getConfiguration().getInt("hbase.client.max.tasks", 50) ;
+        this.maxConcurrentTasks = hci.getConfiguration().getInt("hbase.client.max.tasks", 200) ;
       }
 
       public void submit(List<Action<R>> actionsList) throws IOException {
-        //waitForMaximumTaskNumber(maxConcurrentTasks);
+        waitForMaximumTaskNumber(maxConcurrentTasks);
 
         if (!hasError()){
           submit(actionsList, 1);
