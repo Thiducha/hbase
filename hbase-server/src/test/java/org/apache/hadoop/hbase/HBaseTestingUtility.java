@@ -65,6 +65,7 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
 import org.apache.hadoop.hbase.exceptions.TableExistsException;
 import org.apache.hadoop.hbase.exceptions.TableNotEnabledException;
@@ -74,6 +75,7 @@ import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.compress.Compression.Algorithm;
 import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
 import org.apache.hadoop.hbase.io.hfile.ChecksumUtil;
+import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.mapreduce.MapreduceTestingShim;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.master.RegionStates;
@@ -84,6 +86,7 @@ import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.regionserver.HStore;
 import org.apache.hadoop.hbase.regionserver.InternalScanner;
 import org.apache.hadoop.hbase.regionserver.MultiVersionConsistencyControl;
+import org.apache.hadoop.hbase.regionserver.StoreFile;
 import org.apache.hadoop.hbase.security.User;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.FSUtils;
@@ -1307,7 +1310,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
           k[2] = b3;
           Put put = new Put(k);
           put.add(f, null, k);
-          if (r.getLog() == null) put.setWriteToWAL(false);
+          if (r.getLog() == null) put.setDurability(Durability.SKIP_WAL);
           r.put(put);
           rowCount++;
         }
@@ -1648,6 +1651,17 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
 
     forceChangeTaskLogDir();
 
+    //// hadoop2 specific settings
+    // Tests were failing because this process used 6GB of virtual memory and was getting killed.
+    // we up the VM usable so that processes don't get killed.
+    conf.setFloat("yarn.nodemanager.vmem-pmem-ratio", 8.0f);
+
+    // Tests were failing due to MAPREDUCE-4880 / MAPREDUCE-4607 against hadoop 2.0.2-alpha and
+    // this avoids the problem by disabling speculative task execution in tests.
+    conf.setBoolean("mapreduce.map.speculative", false);
+    conf.setBoolean("mapreduce.reduce.speculative", false);
+    ////
+
     // Allow the user to override FS URI for this map-reduce cluster to use.
     mrCluster = new MiniMRCluster(servers,
       FS_URI != null ? FS_URI : FileSystem.get(conf).getUri().toString(), 1,
@@ -1656,6 +1670,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     if (jobConf == null) {
       jobConf = mrCluster.createJobConf();
     }
+
     jobConf.set("mapred.local.dir",
       conf.get("mapred.local.dir")); //Hadoop MiniMR overwrites this while it should not
     LOG.info("Mini mapreduce cluster started");
@@ -1664,14 +1679,14 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     conf.set("mapred.job.tracker", jobConf.get("mapred.job.tracker"));
     // this for mrv2 support; mr1 ignores this
     conf.set("mapreduce.framework.name", "yarn");
-    String rmAdress = jobConf.get("yarn.resourcemanager.address");
-    if (rmAdress != null) {
-      conf.set("yarn.resourcemanager.address", rmAdress);
+    String rmAddress = jobConf.get("yarn.resourcemanager.address");
+    if (rmAddress != null) {
+      conf.set("yarn.resourcemanager.address", rmAddress);
     }
-    String schedulerAdress =
+    String schedulerAddress =
       jobConf.get("yarn.resourcemanager.scheduler.address");
-    if (schedulerAdress != null) {
-      conf.set("yarn.resourcemanager.scheduler.address", schedulerAdress);
+    if (schedulerAddress != null) {
+      conf.set("yarn.resourcemanager.scheduler.address", schedulerAddress);
     }
   }
 
@@ -2656,4 +2671,56 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
     };
   }
 
+  /**
+   * Create a set of column descriptors with the combination of compression,
+   * encoding, bloom codecs available.
+   * @return the list of column descriptors
+   */
+  public static List<HColumnDescriptor> generateColumnDescriptors() {
+    return generateColumnDescriptors("");
+  }
+
+  /**
+   * Create a set of column descriptors with the combination of compression,
+   * encoding, bloom codecs available.
+   * @param prefix family names prefix
+   * @return the list of column descriptors
+   */
+  public static List<HColumnDescriptor> generateColumnDescriptors(final String prefix) {
+    List<HColumnDescriptor> htds = new ArrayList<HColumnDescriptor>();
+    long familyId = 0;
+    for (Compression.Algorithm compressionType: getSupportedCompressionAlgorithms()) {
+      for (DataBlockEncoding encodingType: DataBlockEncoding.values()) {
+        for (BloomType bloomType: BloomType.values()) {
+          String name = String.format("%s-cf-!@#&-%d!@#", prefix, familyId);
+          HColumnDescriptor htd = new HColumnDescriptor(name);
+          htd.setCompressionType(compressionType);
+          htd.setDataBlockEncoding(encodingType);
+          htd.setBloomFilterType(bloomType);
+          htds.add(htd);
+          familyId++;
+        }
+      }
+    }
+    return htds;
+  }
+
+  /**
+   * Get supported compression algorithms.
+   * @return supported compression algorithms.
+   */
+  public static Compression.Algorithm[] getSupportedCompressionAlgorithms() {
+    String[] allAlgos = HFile.getSupportedCompressionAlgorithms();
+    List<Compression.Algorithm> supportedAlgos = new ArrayList<Compression.Algorithm>();
+    for (String algoName : allAlgos) {
+      try {
+        Compression.Algorithm algo = Compression.getCompressionAlgorithmByName(algoName);
+        algo.getCompressor();
+        supportedAlgos.add(algo);
+      } catch (Throwable t) {
+        // this algo is not available
+      }
+    }
+    return supportedAlgos.toArray(new Compression.Algorithm[0]);
+  }
 }

@@ -66,7 +66,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CompoundConfiguration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
@@ -78,7 +77,7 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.KeyValueUtil;
-import org.apache.hadoop.hbase.catalog.MetaReader;
+import org.apache.hadoop.hbase.backup.HFileArchiver;
 import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Get;
@@ -90,6 +89,7 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Row;
 import org.apache.hadoop.hbase.client.RowMutations;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.errorhandling.ForeignExceptionSnare;
 import org.apache.hadoop.hbase.exceptions.DroppedSnapshotException;
 import org.apache.hadoop.hbase.exceptions.FailedSanityCheckException;
@@ -185,7 +185,6 @@ import com.google.protobuf.Service;
 @InterfaceAudience.Private
 public class HRegion implements HeapSize { // , Writable{
   public static final Log LOG = LogFactory.getLog(HRegion.class);
-  private static final String MERGEDIR = ".merges";
 
   public static final String LOAD_CFS_ON_DEMAND_CONFIG_KEY =
       "hbase.hregion.scan.loadColumnFamiliesOnDemand";
@@ -442,7 +441,7 @@ public class HRegion implements HeapSize { // , Writable{
     this.rowLockWaitDuration = conf.getInt("hbase.rowlock.wait.duration",
                     DEFAULT_ROWLOCK_WAIT_DURATION);
 
-    this.isLoadingCfsOnDemandDefault = conf.getBoolean(LOAD_CFS_ON_DEMAND_CONFIG_KEY, false);
+    this.isLoadingCfsOnDemandDefault = conf.getBoolean(LOAD_CFS_ON_DEMAND_CONFIG_KEY, true);
     this.htableDescriptor = htd;
     this.rsServices = rsServices;
     this.threadWakeFrequency = conf.getLong(HConstants.THREAD_WAKE_FREQUENCY, 10 * 1000);
@@ -1667,17 +1666,16 @@ public class HRegion implements HeapSize { // , Writable{
   //////////////////////////////////////////////////////////////////////////////
   /**
    * @param delete delete object
-   * @param writeToWAL append to the write ahead lock or not
    * @throws IOException read exceptions
    */
-  public void delete(Delete delete, boolean writeToWAL)
+  public void delete(Delete delete)
   throws IOException {
     checkReadOnly();
     checkResources();
     startRegionOperation();
     this.writeRequestsCount.increment();
     try {
-      byte [] row = delete.getRow();
+      delete.getRow();
       // All edits for the given row (across all column families) must happen atomically.
       doBatchMutate(delete, null);
     } finally {
@@ -1692,15 +1690,16 @@ public class HRegion implements HeapSize { // , Writable{
   /**
    * This is used only by unit tests. Not required to be a public API.
    * @param familyMap map of family to edits for the given family.
-   * @param writeToWAL
+   * @param clusterId
+   * @param durability
    * @throws IOException
    */
   void delete(NavigableMap<byte[], List<? extends Cell>> familyMap, UUID clusterId,
-      boolean writeToWAL) throws IOException {
+      Durability durability) throws IOException {
     Delete delete = new Delete(FOR_UNIT_TESTS_ONLY);
     delete.setFamilyMap(familyMap);
     delete.setClusterId(clusterId);
-    delete.setWriteToWAL(writeToWAL);
+    delete.setDurability(durability);
     doBatchMutate(delete, null);
   }
 
@@ -1763,16 +1762,7 @@ public class HRegion implements HeapSize { // , Writable{
    * @param put
    * @throws IOException
    */
-  public void put(Put put) throws IOException {
-    this.put(put, put.getWriteToWAL());
-  }
-
-  /**
-   * @param put
-   * @param writeToWAL
-   * @throws IOException
-   */
-  public void put(Put put, boolean writeToWAL)
+  public void put(Put put)
   throws IOException {
     checkReadOnly();
 
@@ -1784,13 +1774,6 @@ public class HRegion implements HeapSize { // , Writable{
     startRegionOperation();
     this.writeRequestsCount.increment();
     try {
-      // We obtain a per-row lock, so other clients will block while one client
-      // performs an update. The read lock is released by the client calling
-      // #commit or #abort or if the HRegionServer lease on the lock expires.
-      // See HRegionServer#RegionListener for how the expire on HRegionServer
-      // invokes a HRegion#abort.
-      byte [] row = put.getRow();
-
       // All edits for the given row (across all column families) must happen atomically.
       doBatchMutate(put, null);
     } finally {
@@ -1885,13 +1868,13 @@ public class HRegion implements HeapSize { // , Writable{
         Pair<Mutation, Integer> nextPair = batchOp.operations[i];
         Mutation m = nextPair.getFirst();
         if (m instanceof Put) {
-          if (coprocessorHost.prePut((Put) m, walEdit, m.getWriteToWAL())) {
+          if (coprocessorHost.prePut((Put) m, walEdit, m.getDurability())) {
             // pre hook says skip this Put
             // mark as success and skip in doMiniBatchMutation
             batchOp.retCodeDetails[i] = OperationStatus.SUCCESS;
           }
         } else if (m instanceof Delete) {
-          if (coprocessorHost.preDelete((Delete) m, walEdit, m.getWriteToWAL())) {
+          if (coprocessorHost.preDelete((Delete) m, walEdit, m.getDurability())) {
             // pre hook says skip this Delete
             // mark as success and skip in doMiniBatchMutation
             batchOp.retCodeDetails[i] = OperationStatus.SUCCESS;
@@ -2093,6 +2076,7 @@ public class HRegion implements HeapSize { // , Writable{
       // ------------------------------------
       // STEP 4. Build WAL edit
       // ----------------------------------
+      Durability durability = Durability.USE_DEFAULT;
       for (int i = firstIndex; i < lastIndexExclusive; i++) {
         // Skip puts that were determined to be invalid during preprocessing
         if (batchOp.retCodeDetails[i].getOperationStatusCode()
@@ -2102,12 +2086,17 @@ public class HRegion implements HeapSize { // , Writable{
         batchOp.retCodeDetails[i] = OperationStatus.SUCCESS;
 
         Mutation m = batchOp.operations[i].getFirst();
-        if (!m.getWriteToWAL()) {
+        Durability tmpDur = m.getDurability(); 
+        if (tmpDur.ordinal() > durability.ordinal()) {
+          durability = tmpDur;
+        }
+        if (tmpDur == Durability.SKIP_WAL) {
           if (m instanceof Put) {
             recordPutWithoutWal(m.getFamilyMap());
           }
           continue;
         }
+
         // Add WAL edits by CP
         WALEdit fromCP = batchOp.walEditsFromCoprocessors[i];
         if (fromCP != null) {
@@ -2116,7 +2105,6 @@ public class HRegion implements HeapSize { // , Writable{
           }
         }
         addFamilyMapToWALEdit(familyMaps[i], walEdit);
-
       }
 
       // -------------------------
@@ -2143,7 +2131,7 @@ public class HRegion implements HeapSize { // , Writable{
       // STEP 7. Sync wal.
       // -------------------------
       if (walEdit.size() > 0) {
-        syncOrDefer(txid);
+        syncOrDefer(txid, durability);
       }
       walSyncSuccessful = true;
       // calling the post CP hook for batch mutation
@@ -2175,9 +2163,9 @@ public class HRegion implements HeapSize { // , Writable{
           }
           Mutation m = batchOp.operations[i].getFirst();
           if (m instanceof Put) {
-            coprocessorHost.postPut((Put) m, walEdit, m.getWriteToWAL());
+            coprocessorHost.postPut((Put) m, walEdit, m.getDurability());
           } else {
-            coprocessorHost.postDelete((Delete) m, walEdit, m.getWriteToWAL());
+            coprocessorHost.postDelete((Delete) m, walEdit, m.getDurability());
           }
         }
       }
@@ -2512,7 +2500,6 @@ public class HRegion implements HeapSize { // , Writable{
     Put p = new Put(row);
     p.setFamilyMap(familyMap);
     p.setClusterId(HConstants.DEFAULT_CLUSTER_ID);
-    p.setWriteToWAL(true);
     doBatchMutate(p, null);
   }
 
@@ -3422,14 +3409,14 @@ public class HRegion implements HeapSize { // , Writable{
     }
 
     @Override
-    public boolean next(List<KeyValue> outResults, int limit)
+    public boolean next(List<KeyValue> outResults)
         throws IOException {
-      return next(outResults, limit, null);
+      // apply the batching limit by default
+      return next(outResults, batch);
     }
 
     @Override
-    public synchronized boolean next(List<KeyValue> outResults, int limit,
-        String metric) throws IOException {
+    public synchronized boolean next(List<KeyValue> outResults, int limit) throws IOException {
       if (this.filterClosed) {
         throw new UnknownScannerException("Scanner was closed (timed out?) " +
             "after we renewed it. Could be caused by a very slow scanner " +
@@ -3442,7 +3429,7 @@ public class HRegion implements HeapSize { // , Writable{
         // This could be a new thread from the last time we called next().
         MultiVersionConsistencyControl.setThreadReadPoint(this.readPt);
 
-        return nextRaw(outResults, limit, metric);
+        return nextRaw(outResults, limit);
       } finally {
         closeRegionOperation();
       }
@@ -3451,49 +3438,44 @@ public class HRegion implements HeapSize { // , Writable{
     @Override
     public boolean nextRaw(List<KeyValue> outResults)
         throws IOException {
-      return nextRaw(outResults, batch, null);
+      return nextRaw(outResults, batch);
     }
 
     @Override
-    public boolean nextRaw(List<KeyValue> outResults, int limit,
-        String metric) throws IOException {
+    public boolean nextRaw(List<KeyValue> outResults, int limit) throws IOException {
       boolean returnResult;
       if (outResults.isEmpty()) {
         // Usually outResults is empty. This is true when next is called
         // to handle scan or get operation.
-        returnResult = nextInternal(outResults, limit, metric);
+        returnResult = nextInternal(outResults, limit);
       } else {
         List<KeyValue> tmpList = new ArrayList<KeyValue>();
-        returnResult = nextInternal(tmpList, limit, metric);
+        returnResult = nextInternal(tmpList, limit);
         outResults.addAll(tmpList);
       }
       resetFilters();
       if (isFilterDone()) {
         return false;
       }
+      if (region != null && region.metricsRegion != null) {
+        long totalSize = 0;
+        if (outResults != null) {
+          for(KeyValue kv:outResults) {
+            totalSize += kv.getLength();
+          }
+        }
+        region.metricsRegion.updateScanNext(totalSize);
+      }
       return returnResult;
     }
 
-    @Override
-    public boolean next(List<KeyValue> outResults)
-        throws IOException {
-      // apply the batching limit by default
-      return next(outResults, batch, null);
-    }
 
-    @Override
-    public boolean next(List<KeyValue> outResults, String metric)
-        throws IOException {
-      // apply the batching limit by default
-      return next(outResults, batch, metric);
-    }
-
-    private void populateFromJoinedHeap(List<KeyValue> results, int limit, String metric)
+    private void populateFromJoinedHeap(List<KeyValue> results, int limit)
         throws IOException {
       assert joinedContinuationRow != null;
       KeyValue kv = populateResult(results, this.joinedHeap, limit,
           joinedContinuationRow.getBuffer(), joinedContinuationRow.getRowOffset(),
-          joinedContinuationRow.getRowLength(), metric);
+          joinedContinuationRow.getRowLength());
       if (kv != KV_LIMIT) {
         // We are done with this row, reset the continuation.
         joinedContinuationRow = null;
@@ -3511,14 +3493,13 @@ public class HRegion implements HeapSize { // , Writable{
      * @param currentRow Byte array with key we are fetching.
      * @param offset offset for currentRow
      * @param length length for currentRow
-     * @param metric Metric key to be passed into KeyValueHeap::next().
      * @return KV_LIMIT if limit reached, next KeyValue otherwise.
      */
     private KeyValue populateResult(List<KeyValue> results, KeyValueHeap heap, int limit,
-        byte[] currentRow, int offset, short length, String metric) throws IOException {
+        byte[] currentRow, int offset, short length) throws IOException {
       KeyValue nextKv;
       do {
-        heap.next(results, limit - results.size(), metric);
+        heap.next(results, limit - results.size());
         if (limit > 0 && results.size() == limit) {
           return KV_LIMIT;
         }
@@ -3535,7 +3516,7 @@ public class HRegion implements HeapSize { // , Writable{
       return this.filter != null && this.filter.filterAllRemaining();
     }
 
-    private boolean nextInternal(List<KeyValue> results, int limit, String metric)
+    private boolean nextInternal(List<KeyValue> results, int limit)
     throws IOException {
       if (!results.isEmpty()) {
         throw new IllegalArgumentException("First parameter should be an empty list");
@@ -3588,7 +3569,7 @@ public class HRegion implements HeapSize { // , Writable{
           }
 
           KeyValue nextKv = populateResult(results, this.storeHeap, limit, currentRow, offset,
-              length, metric);
+              length);
           // Ok, we are good, let's try to get some results from the main heap.
           if (nextKv == KV_LIMIT) {
             if (this.filter != null && filter.hasFilterRow()) {
@@ -3627,17 +3608,18 @@ public class HRegion implements HeapSize { // , Writable{
             // If joinedHeap is pointing to some other row, try to seek to a correct one.
             boolean mayHaveData =
               (nextJoinedKv != null && nextJoinedKv.matchingRow(currentRow, offset, length))
-              || (this.joinedHeap.seek(KeyValue.createFirstOnRow(currentRow, offset, length))
-                  && joinedHeap.peek() != null
-                  && joinedHeap.peek().matchingRow(currentRow, offset, length));
+              || (this.joinedHeap.requestSeek(KeyValue.createFirstOnRow(currentRow, offset, length), 
+                true, true)
+                && joinedHeap.peek() != null
+                && joinedHeap.peek().matchingRow(currentRow, offset, length));
             if (mayHaveData) {
               joinedContinuationRow = current;
-              populateFromJoinedHeap(results, limit, metric);
+              populateFromJoinedHeap(results, limit);
             }
           }
         } else {
           // Populating from the joined heap was stopped by limits, populate some more.
-          populateFromJoinedHeap(results, limit, metric);
+          populateFromJoinedHeap(results, limit);
         }
 
         // We may have just called populateFromJoinedMap and hit the limits. If that is
@@ -4219,7 +4201,6 @@ public class HRegion implements HeapSize { // , Writable{
     }
 
     FileSystem fs = a.getRegionFileSystem().getFileSystem();
-
     // Make sure each region's cache is empty
     a.flushcache();
     b.flushcache();
@@ -4235,85 +4216,42 @@ public class HRegion implements HeapSize { // , Writable{
       LOG.debug("Files for region: " + b);
       b.getRegionFileSystem().logFileSystemState(LOG);
     }
-
-    Configuration conf = a.baseConf;
-    HTableDescriptor tabledesc = a.getTableDesc();
-    HLog log = a.getLog();
-    Path tableDir = a.getRegionFileSystem().getTableDir();
-
-    // Presume both are of same region type -- i.e. both user or catalog
-    // table regions.  This way can use comparator.
-    final byte[] startKey =
-      (a.comparator.matchingRows(a.getStartKey(), 0, a.getStartKey().length,
-           HConstants.EMPTY_BYTE_ARRAY, 0, HConstants.EMPTY_BYTE_ARRAY.length)
-       || b.comparator.matchingRows(b.getStartKey(), 0,
-              b.getStartKey().length, HConstants.EMPTY_BYTE_ARRAY, 0,
-              HConstants.EMPTY_BYTE_ARRAY.length))
-      ? HConstants.EMPTY_BYTE_ARRAY
-      : (a.comparator.compareRows(a.getStartKey(), 0, a.getStartKey().length,
-             b.getStartKey(), 0, b.getStartKey().length) <= 0
-         ? a.getStartKey()
-         : b.getStartKey());
-    final byte[] endKey =
-      (a.comparator.matchingRows(a.getEndKey(), 0, a.getEndKey().length,
-           HConstants.EMPTY_BYTE_ARRAY, 0, HConstants.EMPTY_BYTE_ARRAY.length)
-       || a.comparator.matchingRows(b.getEndKey(), 0, b.getEndKey().length,
-              HConstants.EMPTY_BYTE_ARRAY, 0,
-              HConstants.EMPTY_BYTE_ARRAY.length))
-      ? HConstants.EMPTY_BYTE_ARRAY
-      : (a.comparator.compareRows(a.getEndKey(), 0, a.getEndKey().length,
-             b.getEndKey(), 0, b.getEndKey().length) <= 0
-         ? b.getEndKey()
-         : a.getEndKey());
-
-    HRegionInfo newRegionInfo = new HRegionInfo(tabledesc.getName(), startKey, endKey);
-
-    LOG.info("Creating new region " + newRegionInfo);
-    HRegionFileSystem regionFs = HRegionFileSystem.createRegionOnFileSystem(
-        conf, fs, tableDir, newRegionInfo);
-
-    LOG.info("starting merge of regions: " + a + " and " + b +
-      " into new region " + newRegionInfo.toString() +
-        " with start key <" + Bytes.toStringBinary(startKey) + "> and end key <" +
-        Bytes.toStringBinary(endKey) + ">");
-
-    // Because we compacted the source regions we should have no more than two
-    // StoreFiles per family and there will be no reference store
-    Map<byte[], List<StoreFile>> aStoreFiles = a.close();
-    Map<byte[], List<StoreFile>> bStoreFiles = b.close();
-
-    // Move StoreFiles under new region directory
-    regionFs.commitStoreFiles(aStoreFiles);
-    regionFs.commitStoreFiles(bStoreFiles);
-
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Files for new region");
-      regionFs.logFileSystemState(LOG);
+    
+    RegionMergeTransaction rmt = new RegionMergeTransaction(a, b, true);
+    if (!rmt.prepare(null)) {
+      throw new IOException("Unable to merge regions " + a + " and " + b);
     }
-
-    // Create HRegion and update the metrics
-    HRegion dstRegion = HRegion.newHRegion(tableDir, log, fs, conf,
-        newRegionInfo, tabledesc, null);
-    dstRegion.readRequestsCount.set(a.readRequestsCount.get() + b.readRequestsCount.get());
-    dstRegion.writeRequestsCount.set(a.writeRequestsCount.get() + b.writeRequestsCount.get());
-    dstRegion.checkAndMutateChecksFailed.set(
-      a.checkAndMutateChecksFailed.get() + b.checkAndMutateChecksFailed.get());
-    dstRegion.checkAndMutateChecksPassed.set(
-      a.checkAndMutateChecksPassed.get() + b.checkAndMutateChecksPassed.get());
-    dstRegion.initialize();
-    dstRegion.compactStores();
+    HRegionInfo mergedRegionInfo = rmt.getMergedRegionInfo();
+    LOG.info("starting merge of regions: " + a + " and " + b
+        + " into new region " + mergedRegionInfo.getRegionNameAsString()
+        + " with start key <"
+        + Bytes.toStringBinary(mergedRegionInfo.getStartKey())
+        + "> and end key <"
+        + Bytes.toStringBinary(mergedRegionInfo.getEndKey()) + ">");
+    HRegion dstRegion = null;
+    try {
+      dstRegion = rmt.execute(null, null);
+    } catch (IOException ioe) {
+      rmt.rollback(null, null);
+      throw new IOException("Failed merging region " + a + " and " + b
+          + ", and succssfully rolled back");
+    }
+    dstRegion.compactStores(true);
 
     if (LOG.isDebugEnabled()) {
       LOG.debug("Files for new region");
       dstRegion.getRegionFileSystem().logFileSystemState(LOG);
     }
+    
+    if (dstRegion.getRegionFileSystem().hasReferences(dstRegion.getTableDesc())) {
+      throw new IOException("Merged region " + dstRegion
+          + " still has references after the compaction, is compaction canceled?");
+    }
 
-    // delete out the 'A' region
-    HRegionFileSystem.deleteRegionFromFileSystem(
-      a.getBaseConf(), fs, tableDir, a.getRegionInfo());
-    // delete out the 'B' region
-    HRegionFileSystem.deleteRegionFromFileSystem(
-      b.getBaseConf(), fs, tableDir, b.getRegionInfo());
+    // Archiving the 'A' region
+    HFileArchiver.archiveRegion(a.getBaseConf(), fs, a.getRegionInfo());
+    // Archiving the 'B' region
+    HFileArchiver.archiveRegion(b.getBaseConf(), fs, b.getRegionInfo());
 
     LOG.info("merge completed. New region is " + dstRegion);
     return dstRegion;
@@ -4391,7 +4329,13 @@ public class HRegion implements HeapSize { // , Writable{
 
     // do after lock
     if (this.metricsRegion != null) {
-      this.metricsRegion.updateGet();
+      long totalSize = 0l;
+      if (results != null) {
+        for (KeyValue kv:results) {
+          totalSize += kv.getLength();
+        }
+      }
+      this.metricsRegion.updateGet(totalSize);
     }
 
     return results;
@@ -4531,7 +4475,7 @@ public class HRegion implements HeapSize { // , Writable{
           }
           // 10. Sync edit log
           if (txid != 0) {
-            syncOrDefer(txid);
+            syncOrDefer(txid, processor.useDurability());
           }
           walSyncSuccessful = true;
         }
@@ -4631,15 +4575,15 @@ public class HRegion implements HeapSize { // , Writable{
    * Perform one or more append operations on a row.
    *
    * @param append
-   * @param writeToWAL
    * @return new keyvalues after increment
    * @throws IOException
    */
-  public Result append(Append append, boolean writeToWAL)
+  public Result append(Append append)
       throws IOException {
     byte[] row = append.getRow();
     checkRow(row, "append");
     boolean flush = false;
+    boolean writeToWAL = append.getDurability() != Durability.SKIP_WAL;
     WALEdit walEdits = null;
     List<KeyValue> allKVs = new ArrayList<KeyValue>(append.size());
     Map<Store, List<KeyValue>> tempMemstore = new HashMap<Store, List<KeyValue>>();
@@ -4772,7 +4716,8 @@ public class HRegion implements HeapSize { // , Writable{
         releaseRowLock(lid);
       }
       if (writeToWAL) {
-        syncOrDefer(txid); // sync the transaction log outside the rowlock
+        // sync the transaction log outside the rowlock
+        syncOrDefer(txid, append.getDurability());
       }
     } finally {
       if (w != null) {
@@ -4797,16 +4742,16 @@ public class HRegion implements HeapSize { // , Writable{
   /**
    * Perform one or more increment operations on a row.
    * @param increment
-   * @param writeToWAL
    * @return new keyvalues after increment
    * @throws IOException
    */
-  public Result increment(Increment increment, boolean writeToWAL)
+  public Result increment(Increment increment)
   throws IOException {
     byte [] row = increment.getRow();
     checkRow(row, "increment");
     TimeRange tr = increment.getTimeRange();
     boolean flush = false;
+    boolean writeToWAL = increment.getDurability() != Durability.SKIP_WAL;
     WALEdit walEdits = null;
     List<KeyValue> allKVs = new ArrayList<KeyValue>(increment.size());
     Map<Store, List<KeyValue>> tempMemstore = new HashMap<Store, List<KeyValue>>();
@@ -4915,7 +4860,8 @@ public class HRegion implements HeapSize { // , Writable{
         releaseRowLock(lid);
       }
       if (writeToWAL) {
-        syncOrDefer(txid); // sync the transaction log outside the rowlock
+        // sync the transaction log outside the rowlock
+        syncOrDefer(txid, increment.getDurability());
       }
     } finally {
       if (w != null) {
@@ -5337,9 +5283,32 @@ public class HRegion implements HeapSize { // , Writable{
    * @param txid should sync up to which transaction
    * @throws IOException If anything goes wrong with DFS
    */
-  private void syncOrDefer(long txid) throws IOException {
-    if (this.getRegionInfo().isMetaRegion() || !isDeferredLogSyncEnabled()) {
+  private void syncOrDefer(long txid, Durability durability) throws IOException {
+    if (this.getRegionInfo().isMetaRegion()) {
       this.log.sync(txid);
+    } else {
+      switch(durability) {
+      case USE_DEFAULT:
+        // do what CF defaults to
+        if (!isDeferredLogSyncEnabled()) {
+          this.log.sync(txid);
+        }
+        break;
+      case SKIP_WAL:
+        // nothing do to
+        break;
+      case ASYNC_WAL:
+        // defer the sync, unless we globally can't
+        if (this.deferredLogSyncDisabled) {
+          this.log.sync(txid);
+        }
+        break;
+      case SYNC_WAL:
+      case FSYNC_WAL:
+        // sync the WAL edit (SYNC and FSYNC treated the same for now)
+        this.log.sync(txid);
+        break;
+      }
     }
   }
 
