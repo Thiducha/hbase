@@ -143,7 +143,7 @@ public abstract class AbstractIntegrationTestRecovery {
     }
   }
 
-  private void createTable() throws Exception {
+  protected void createTable() throws Exception {
     long startTime, endTime;
     HTableDescriptor desc = new HTableDescriptor(tableName);
     desc.addFamily(new HColumnDescriptor(CF));
@@ -296,7 +296,7 @@ public abstract class AbstractIntegrationTestRecovery {
   }
 
   @Test
-  public void testKillRS() throws Exception {
+  public void testKillServer() throws Exception {
     prepareCluster();
     beforeStart();
     genericStart();
