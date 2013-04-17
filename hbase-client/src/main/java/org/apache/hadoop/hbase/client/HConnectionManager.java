@@ -2378,7 +2378,7 @@ public class HConnectionManager {
       }
 
       public void submit(List<Action<R>> actionsList) throws IOException {
-        waitForMaximumTaskNumber(maxConcurrentTasks);
+        //waitForMaximumTaskNumber(maxConcurrentTasks);
 
         if (!hasError()){
           submit(actionsList, 1);
