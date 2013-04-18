@@ -5,7 +5,7 @@
 
   <property>
     <name>hadoop.tmp.dir</name>
-    <value>/tmp/${user.name}/mttr-test-data</value>
+    <value>$HOME/tmp-recotest/mttr-test-data</value>
   </property>
 
   <property>
