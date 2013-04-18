@@ -120,7 +120,7 @@ public class HTable implements HTableInterface {
   private HConnection connection;
   private final byte [] tableName;
   private volatile Configuration configuration;
-  private final ArrayList<Put> writeBuffer = new ArrayList<Put>();
+  private ArrayList<Action<Put>> writeAsyncBuffer = new ArrayList<Action<Put>>();
   private long writeBufferSize;
   private boolean clearBufferOnFail;
   private boolean autoFlush;
@@ -248,7 +248,7 @@ public class HTable implements HTableInterface {
         : this.configuration.getInt(HConstants.HBASE_CLIENT_OPERATION_TIMEOUT,
             HConstants.DEFAULT_HBASE_CLIENT_OPERATION_TIMEOUT);
     this.writeBufferSize = this.configuration.getLong(
-        "hbase.client.write.buffer", 2097152);
+        "hbase.client.write.buffer", 2097152 * 2);
     this.clearBufferOnFail = true;
     this.autoFlush = true;
     this.currentWriteBufferSize = 0;
@@ -256,9 +256,12 @@ public class HTable implements HTableInterface {
         HConstants.HBASE_CLIENT_SCANNER_CACHING,
         HConstants.DEFAULT_HBASE_CLIENT_SCANNER_CACHING);
 
+    ap = new HConnectionManager.HConnectionImplementation.AsyncProcess<Put>(
+        connection, tableName, pool, null);
     this.maxKeyValueSize = this.configuration.getInt(
         "hbase.client.keyvalue.maxsize", -1);
     this.closed = false;
+
   }
 
   /**
@@ -686,13 +689,31 @@ public class HTable implements HTableInterface {
     }
   }
 
-  private void doPut(Put put) throws IOException{
+  private HConnectionManager.HConnectionImplementation.AsyncProcess<Put> ap;
+
+  private void doPut(Put put) throws IOException {
     validatePut(put);
-    writeBuffer.add(put);
     currentWriteBufferSize += put.heapSize();
+
+    writeAsyncBuffer.add(new Action<Put>(put, 0));
     if (currentWriteBufferSize > writeBufferSize) {
+      backgroundFlushCommits();
+    }
+    if (ap.hasError()) {
       flushCommits();
     }
+  }
+
+
+  public void backgroundFlushCommits() throws IOException {
+    if (writeAsyncBuffer.isEmpty()) {
+      // Early exit: we can be called on empty buffers.
+      return;
+    }
+
+    ap.submit(writeAsyncBuffer);
+    currentWriteBufferSize = 0;
+    writeAsyncBuffer = new ArrayList<Action<Put>>();
   }
 
   /**
@@ -1024,36 +1045,8 @@ public class HTable implements HTableInterface {
    */
   @Override
   public void flushCommits() throws IOException {
-    if (writeBuffer.isEmpty()){
-      // Early exit: we can be called on empty buffers.
-      return;
-    }
-
-    Object[] results = new Object[writeBuffer.size()];
-    boolean success = false;
-    try {
-      this.connection.processBatch(writeBuffer, tableName, pool, results);
-      success = true;
-    } catch (InterruptedException e) {
-      throw new InterruptedIOException(e.getMessage());
-    } finally {
-      // mutate list so that it is empty for complete success, or contains
-      // only failed records. Results are returned in the same order as the
-      // requests in list. Walk the list backwards, so we can remove from list
-      // without impacting the indexes of earlier members
-      currentWriteBufferSize = 0;
-      if (success || clearBufferOnFail) {
-        writeBuffer.clear();
-      } else {
-        for (int i = results.length - 1; i >= 0; i--) {
-          if (results[i] instanceof Result) {
-            writeBuffer.remove(i);
-          } else {
-            currentWriteBufferSize += writeBuffer.get(i).heapSize();
-          }
-        }
-      }
-    }
+    backgroundFlushCommits();
+    ap.waitUntilDone();
   }
 
   /**
@@ -1194,14 +1187,6 @@ public class HTable implements HTableInterface {
     if(currentWriteBufferSize > writeBufferSize) {
       flushCommits();
     }
-  }
-
-  /**
-   * Returns the write buffer.
-   * @return The current write buffer.
-   */
-  public ArrayList<Put> getWriteBuffer() {
-    return writeBuffer;
   }
 
   /**

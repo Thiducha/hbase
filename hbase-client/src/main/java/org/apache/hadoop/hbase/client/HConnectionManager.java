@@ -20,6 +20,7 @@ package org.apache.hadoop.hbase.client;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -46,6 +47,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -1996,7 +1998,7 @@ public class HConnectionManager {
      * This code should be move to HTable once processBatchCallback is not supported anymore in
      * the HConnection interface.
      */
-    private static class Process<R> {
+    public static class Process<R> {
       // Info on the queries and their context
       private final HConnectionImplementation hci;
       private final List<? extends Row> rows;
@@ -2338,6 +2340,271 @@ public class HConnectionManager {
               synchronized (finishedTasks) {
                 finishedTasks.add(multi);
                 finishedTasks.notifyAll();
+              }
+            }
+          }
+        };
+      }
+    }
+
+    /**
+     * Methods and attributes to manage a batch process are grouped into this single class.
+     * This allows, by creating a Process<R> per batch process to ensure multithread safety.
+     *
+     * This code should be move to HTable once processBatchCallback is not supported anymore in
+     * the HConnection interface.
+     */
+    public static class AsyncProcess<R> {
+      // Info on the queries and their context
+      private final HConnectionImplementation hci;
+      private final byte[] tableName;
+      private final ExecutorService pool;
+      private final Batch.Callback<R> callback;
+      private BatchErrors errors = new BatchErrors();
+      private BatchErrors retriedErrors = new BatchErrors();
+      private final AtomicBoolean hasError = new AtomicBoolean(false);
+      private final AtomicLong taskCounter = new AtomicLong(0);
+      private final int maxConcurrentTasks;
+
+
+      public boolean hasError(){
+        return hasError.get();
+      }
+
+
+      public AsyncProcess(HConnection hci, byte[] tableName, ExecutorService pool,
+                          Batch.Callback<R> callback){
+        this.hci = (HConnectionImplementation)hci;
+        this.tableName = tableName;
+        this.pool = pool;
+        this.callback = callback;
+        this.maxConcurrentTasks = hci.getConfiguration().getInt("hbase.client.max.tasks", 200) ;
+      }
+
+      public void submit(List<Action<R>> actionsList) throws IOException {
+        waitForMaximumTaskNumber(maxConcurrentTasks);
+
+        if (!hasError()){
+          submit(actionsList, 1);
+        }
+      }
+
+      /**
+       * Group a list of actions per region servers, and send them. The created MultiActions are
+       *  added to the inProgress list.
+       * @param actionsList
+       * @param numAttempt
+       * @throws IOException - if we can't locate a region after multiple retries.
+       */
+      private void submit(List<Action<R>> actionsList, int numAttempt) throws IOException {
+        // group per location => regions server
+        final Map<HRegionLocation, MultiAction<R>> actionsByServer =
+            new HashMap<HRegionLocation, MultiAction<R>>();
+        for (Action<R> aAction : actionsList) {
+          final Row row = aAction.getAction();
+
+          if (row != null) {
+            final HRegionLocation loc = hci.locateRegion(this.tableName, row.getRow());
+            if (loc == null) {
+              throw new IOException("No location found, aborting submit.");
+            }
+
+            final byte[] regionName = loc.getRegionInfo().getRegionName();
+            MultiAction<R> actions = actionsByServer.get(loc);
+            if (actions == null) {
+              actions = new MultiAction<R>();
+              actionsByServer.put(loc, actions);
+            }
+            actions.add(regionName, aAction);
+          }
+        }
+
+        // Send the queries and add them to the inProgress list
+        for (Entry<HRegionLocation, MultiAction<R>> e : actionsByServer.entrySet()) {
+          long backoffTime = 0;
+          if (numAttempt > 1) {
+            backoffTime = ConnectionUtils.getPauseTime(hci.pause, numAttempt - 1);
+          }
+          Runnable runnable =
+              createDelayedRunnable(actionsList, backoffTime, e.getKey(), e.getValue(), numAttempt);
+          if (LOG.isTraceEnabled() && numAttempt > 0) {
+            StringBuilder sb = new StringBuilder();
+            for (Action<R> action : e.getValue().allActions()) {
+              sb.append(Bytes.toStringBinary(action.getAction().getRow())).append(';');
+            }
+            LOG.trace("Will retry requests to [" + e.getKey().getHostnamePort()
+                + "] after delay of [" + backoffTime + "] for rows [" + sb.toString() + "]");
+          }
+
+          this.pool.submit(runnable);
+        }
+      }
+
+      private void receiveMultiAction(List<Action<R>> originalActionsList,
+         MultiAction<R> rsActions, HRegionLocation location, MultiResponse responses,
+         int numAttempt)
+          throws InterruptedException, IOException {
+        final List<Action<R>> toReplay = new ArrayList<Action<R>>();
+        ExecutionException exception = null;
+
+        // Error case: no result at all for this multi action. We need to redo all actions
+        if (responses == null) {
+          if (numAttempt >= hci.numTries) {
+            this.hasError.set(true);
+          }
+          for (List<Action<R>> actions : rsActions.actions.values()) {
+            for (Action<R> action : actions) {
+              // Do not use the exception for updating cache because it might be coming from
+              // any of the regions in the MultiAction.
+              hci.updateCachedLocations(tableName, action.getAction(), null, location);
+              if (numAttempt < hci.numTries) {
+                toReplay.add(action);
+                if (LOG.isTraceEnabled()) {
+                  retriedErrors.add(exception, action.getAction(), location);
+                }
+              }
+            }
+          }
+        } else { // Success or partial success
+          // Analyze detailed results. We can still have individual failures to be redo.
+          // two specific exceptions are managed:
+          //  - DoNotRetryIOException: we continue to retry for other actions
+          //  - RegionMovedException: we update the cache with the new region location
+          for (Entry<byte[], List<Pair<Integer, Object>>> resultsForRS :
+              responses.getResults().entrySet()) {
+            for (Pair<Integer, Object> regionResult : resultsForRS.getValue()) {
+              Object result = regionResult.getSecond();
+
+              // Failure: retry if it's make sense else update the errors lists
+              if (result == null || result instanceof Throwable) {
+                Action<R> correspondingAction = originalActionsList.get(regionResult.getFirst());
+                Row row = correspondingAction.getAction();
+                hci.updateCachedLocations(this.tableName, row, result, location);
+                if (result instanceof DoNotRetryIOException || numAttempt >= hci.numTries) {
+                  errors.add((Exception)result, row, location);
+                  this.hasError.set(true);
+                } else {
+                  if (LOG.isTraceEnabled()) {
+                    retriedErrors.add((Exception)result, row, location);
+                  }
+                  toReplay.add(correspondingAction);
+                }
+              } else // success
+                if (callback != null) {
+                  Action<R> correspondingAction = originalActionsList.get(regionResult.getFirst());
+                  Row row = correspondingAction.getAction();
+                  this.callback.update(resultsForRS.getKey(), row.getRow(), (R) result);
+                }
+            }
+          }
+        }
+        if (!toReplay.isEmpty()){
+          submit(toReplay, numAttempt + 1);
+        }
+      }
+
+      private void waitForMaximumTaskNumber(int max) throws InterruptedIOException {
+        long nextLog = 0;
+        while (this.taskCounter.get() > max){
+          if (nextLog == 0){
+            nextLog = EnvironmentEdgeManager.currentTimeMillis() + 3000;
+          } else {
+            if (EnvironmentEdgeManager.currentTimeMillis() > nextLog) {
+              LOG.info(Bytes.toString(tableName) +
+                  ": Waiting for number of tasks to be equals or less than " + max +
+                  ", currently it's " + this.taskCounter.get());
+            }
+            nextLog = EnvironmentEdgeManager.currentTimeMillis() + 5000;
+          }
+          try {
+            synchronized (this.taskCounter){
+              this.taskCounter.wait(200);
+            }
+          } catch (InterruptedException e) {
+            throw new InterruptedIOException();
+          }
+        }
+      }
+
+      /**
+       * Wait until all tasks are executed, successfully or not. If some of the tasks failed
+       *  after all retries, a RetriesExhaustedWithDetailsException is thrown.
+       */
+      public void waitUntilDone() throws RetriesExhaustedWithDetailsException,
+          InterruptedIOException  {
+        waitForMaximumTaskNumber(0);
+
+        if (hasError()){
+          retriedErrors = new BatchErrors();
+          RetriesExhaustedWithDetailsException exception = errors.makeException();
+          errors  = new BatchErrors();
+          retriedErrors = new BatchErrors();
+          hasError.set(false);
+          throw exception;
+        }
+      }
+
+
+      private class BatchErrors {
+        private List<Throwable> exceptions = new ArrayList<Throwable>();
+        private List<Row> actions = new ArrayList<Row>();
+        private List<String> addresses = new ArrayList<String>();
+
+        public void add(Exception ex, Row row, HRegionLocation location) {
+          exceptions.add(ex);
+          actions.add(row);
+          addresses.add(location.getHostnamePort());
+        }
+
+        public void rethrowIfAny() throws RetriesExhaustedWithDetailsException {
+          if (!exceptions.isEmpty()) {
+            throw makeException();
+          }
+        }
+
+        public String getDescriptionAndClear(){
+          if (exceptions.isEmpty()) {
+            return "";
+          }
+          String result = makeException().getExhaustiveDescription();
+          exceptions.clear();
+          actions.clear();
+          addresses.clear();
+          return result;
+        }
+
+        private RetriesExhaustedWithDetailsException makeException() {
+          return new RetriesExhaustedWithDetailsException(exceptions, actions, addresses);
+        }
+      }
+
+
+      private Runnable createDelayedRunnable(
+          final List<Action<R>> originalActionsList, final long delay, final HRegionLocation loc,
+          final MultiAction<R> multi, final int numAttempt) {
+
+        final Callable<MultiResponse> delegate = hci.createCallable(loc, multi, tableName);
+        taskCounter.incrementAndGet();
+        return new Runnable() {
+          private final long creationTime = System.currentTimeMillis();
+
+          @Override
+          public void run()  {
+            try {
+              final long waitingTime = delay + creationTime - System.currentTimeMillis();
+              if (waitingTime > 0) {
+                Thread.sleep(waitingTime);
+              }
+              MultiResponse res =  delegate.call();
+              receiveMultiAction(originalActionsList, multi, loc, res, numAttempt);
+            } catch (InterruptedException e) {
+              hasError.set(true);
+            } catch (Exception e) {
+              hasError.set(true);
+            } finally {
+              taskCounter.decrementAndGet();
+              synchronized (taskCounter) {
+                taskCounter.notifyAll();
               }
             }
           }

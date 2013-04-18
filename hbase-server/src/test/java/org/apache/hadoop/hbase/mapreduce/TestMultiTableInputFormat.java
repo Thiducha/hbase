@@ -144,7 +144,7 @@ public class TestMultiTableInputFormat {
       int count = 0;
       for (ImmutableBytesWritable value : values) {
         String val = Bytes.toStringBinary(value.get());
-        LOG.debug("reduce: key[" + count + "] -> " +
+        LOG.trace("reduce: key[" + count + "] -> " +
             Bytes.toStringBinary(key.get()) + ", value -> " + val);
         if (first == null) first = val;
         last = val;

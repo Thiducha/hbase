@@ -349,10 +349,13 @@ public abstract class HBaseServer implements RpcServer {
 
     @Override
     public String toString() {
+      String param = (this.param != null ? TextFormat.shortDebugString(this.param) : "");
+      if (param.length() > 100) {
+        param = param.substring(100) + " [...]";
+      }
       return "callId: " + this.id + " methodName: " +
-        ((this.method != null)? this.method.getName(): null) + " param: " +
-        (this.param != null? TextFormat.shortDebugString(this.param): "") +
-        " from " + connection.toString();
+          ((this.method != null) ? this.method.getName() : null) + " param: " +
+          param + " from " + connection.toString();
     }
 
     protected synchronized void setSaslTokenResponse(ByteBuffer response) {
@@ -1042,7 +1045,7 @@ public abstract class HBaseServer implements RpcServer {
                 done = true;
             }
             if (LOG.isDebugEnabled()) {
-              LOG.debug(getName() + call.toString() + " partially sent, wrote " +
+              LOG.debug(getName() + ": " + call.toString() + " partially sent, wrote " +
                 numBytes + " bytes.");
             }
           }
@@ -1050,7 +1053,7 @@ public abstract class HBaseServer implements RpcServer {
         }
       } finally {
         if (error && call != null) {
-          LOG.warn(getName() + call.toString() + ": output error");
+          LOG.warn(getName() + " : " + call.toString() + ": output error");
           done = true;               // error. no more data for this channel.
           closeConnection(call.connection);
         }

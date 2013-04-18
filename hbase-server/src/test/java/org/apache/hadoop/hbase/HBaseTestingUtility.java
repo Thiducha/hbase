@@ -1235,7 +1235,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
    * @return Count of rows loaded.
    * @throws IOException
    */
-  public int loadTable(final HTable t, final byte[] f) throws IOException {
+  public int  loadTable(final HTable t, final byte[] f) throws IOException {
     t.setAutoFlush(false);
     byte[] k = new byte[3];
     int rowCount = 0;
