@@ -32,6 +32,7 @@ wait
 echo "preparing working data dir. If the tmp-recotest exists, we keep it, but we delete the data dir"
 mkdir -p ~/tmp-recotest
 rm -rf ~/tmp-recotest/data
+mkdir -p  ~/tmp-recotest/data
 rm -rf ~/tmp-recotest/hbase/logs/*
 
 # We need to rm the previous lib dir in case the dependencies changed
