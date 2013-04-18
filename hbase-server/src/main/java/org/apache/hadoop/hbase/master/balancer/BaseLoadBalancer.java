@@ -142,7 +142,14 @@ public abstract class BaseLoadBalancer implements LoadBalancer {
             List<ServerName> loc = regionFinder.getTopBlockLocations(region);
             regionLocations[regionIndex] = new int[loc.size()];
             for (int i=0; i < loc.size(); i++) {
-              regionLocations[regionIndex][i] = serversToIndex.get(loc.get(i));
+              ServerName l = loc.get(i);
+              Integer p = serversToIndex.get(l);
+              if (p != null){
+                regionLocations[regionIndex][i] = p;
+              } else {
+                LOG.info("Warning: index null");
+                regionLocations[regionIndex][i] = 0;
+              }
             }
           }
 
