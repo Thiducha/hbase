@@ -5,7 +5,7 @@
 
   <property>
     <name>hadoop.tmp.dir</name>
-    <value>$HOME/tmp-recotest/data</value>
+    <value>/root/tmp-recotest/data</value>
   </property>
 
   <property>
