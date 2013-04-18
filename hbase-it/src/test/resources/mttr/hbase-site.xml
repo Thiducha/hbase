@@ -78,7 +78,7 @@
     <value>6100</value>
   </property>
 
-  <property>
+  <!--property>
   <name>hbase.status.publisher.class</name>
     <value>org.apache.hadoop.hbase.master.ClusterStatusPublisher$MulticastPublisher</value>
   </property>
@@ -86,7 +86,7 @@
   <property>
     <name>hbase.status.listener.class</name>
     <value>org.apache.hadoop.hbase.client.ClusterStatusListener$MulticastListener</value>
-  </property>
+  </property-->
 
 
 </configuration>
