@@ -63,7 +63,7 @@ public abstract class ClusterManager extends Configured {
     HADOOP_TASKTRACKER("tasktracker"),
     HBASE_MASTER("master"),
     HBASE_REGIONSERVER("regionserver"),
-    ZOOKEEPER("zookeeper");
+    ZOOKEEPER("-A zookeeper");
 
     private String name;
 
