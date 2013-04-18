@@ -37,10 +37,11 @@ rm -rf ~/tmp-recotest/hbase/logs/*
 # We need to rm the previous lib dir in case the dependencies changed
 rm -rf ~/tmp-recotest/hbase/lib
 
+mkdir -p $HDFS_REP
 
 echo "updating the local tmp-recotest with hdfs & hbase dirs content"
 rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude classes --exclude test-classes --exclude 'hbase/hbase-*' --exclude '*.jar' --exclude '.idea'
-rsync -az --delete $ORIG_HDFS_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude classes --exclude test-classes  --exclude '*.html' --exclude '*-sources.jar'  --exclude '.idea'
+rsync -az --delete $ORIG_HDFS_DIR/*  $HDFS_REP --exclude '.git' --exclude 'src' --exclude classes --exclude test-classes  --exclude '*.html' --exclude '*-sources.jar'  --exclude '.idea'
 
 
 echo "preparing conf dirs"

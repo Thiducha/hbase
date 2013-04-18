@@ -29,20 +29,18 @@ for CBOX in $*; do
   ssh $RCBOX "mkdir -p /grid/0/tmp-recotest"
   ssh $RCBOX "ln -s /grid/0/.m2 .m2"
   ssh $RCBOX "ln -s /grid/0/tmp-recotest tmp-recotest"
+
+
 done
 
-echo copying hbase src on $BOX1 - you will need to recompile to start the tests and get the maven repo clean
-EXCLUDE="--exclude '.idea' --exclude generated-sources --exclude '.git' --exclude '*-sources.jar' --exclude '*-javadoc.jar' --exclude '*.html'"
-ssh $BOX1 "mkdir -p dev"
-rm -rf ~/dev/hbase/logs/*
-rsync -az --delete ~/dev/hbase $BOX1:dev --exclude target $EXCLUDE
+echo "Install git on $BOX1"
+ssh $BOX1 "yum repolist"
+ssh $BOX1 "rpm -Uvh http://dl.fedoraproject.org/pub/epel/5/x86_64/epel-release-5-4.noarch.rpm"
+ssh $BOX1 "yes | yum install -y git"
 
-echo copying hadoop src on $BOX1 - we want only the files needed to start it, we won't rebuild it.
-rsync -az --delete ~/dev/hadoop-common $BOX1:dev --exclude classes --exclude src  $EXCLUDE --exclude "*.java"
-
-echo "We need the maven repo for hadoop as well if we built hadoop"
-ssh $BOX1 "mkdir -p .m2; mkdir -p .m2/repository; mkdir -p .m2/repository/org; mkdir -p .m2/repository/org/apache;"
-rsync -az ~/.m2/repository/org/apache/hadoop $BOX1:.m2/repository/org/apache
+echo "Cloning hbase repo on $BOX1"
+ssh $BOX1 "mkdir -p ~/dev"
+ssh $BOX1 "cd dev ; git clone https://github.com/nkeywal/hbase.git"
 
 echo installing maven on box1 - redhat does not have wget by default
 if ssh -o StrictHostKeyChecking=no $BOX1 "ls $MAVEN" >/dev/null 2>/dev/null; then
@@ -53,16 +51,14 @@ else
   ssh $BOX1 "mv ~/$MAVENS /opt/apache-maven"
 fi
 
+ssh $BOX1 "mkdir -p cluster"
+rsync  -az --delete ~/cluster/* $BOX1:~/cluster
+
 echo "Now  doing the global setup"
 
 echo "export JAVA_HOME=/opt/jdk1.6"          > /tmp/env.tosource
 echo "export MAVEN_HOME=/opt/apache-maven"   >> /tmp/env.tosource
 echo "PATH=$JAVA_HOME/bin:$MAVEN_HOME/bin:\$PATH"    >> /tmp/env.tosource
-echo "export HBASE_IT_MAIN_BOX=$1"           >> /tmp/env.tosource
-echo "export HBASE_IT_WILLDIE_BOX=$2"        >> /tmp/env.tosource
-echo "export HBASE_IT_WILLSURVIVE_BOX=$3"    >> /tmp/env.tosource
-echo "export HBASE_IT_LATE_BOX=$4"           >> /tmp/env.tosource
-echo "export HBASE_SSH_OPTS='-A'"             >> /tmp/env.tosource
 
 for CBOX in $*; do
   scp /tmp/env.tosource root@$CBOX:tmp-recotest/env.tosource
