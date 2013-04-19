@@ -42,16 +42,33 @@ import java.util.Map;
  */
 @InterfaceAudience.Private
 public class HBaseClusterManager extends ClusterManager {
+  private String sshUserName;
+  private String sshOptions;
+
+  @Override
+  public void setConf(Configuration conf) {
+    super.setConf(conf);
+    if (conf == null) {
+      // Configured gets passed null before real conf. Why? I don't know.
+      return;
+    }
+    sshUserName = conf.get("hbase.it.clustermanager.ssh.user", "");
+    String extraSshOptions = conf.get("hbase.it.clustermanager.ssh.opts", "");
+    sshOptions = System.getenv("HBASE_SSH_OPTS");
+    if (!extraSshOptions.isEmpty()) {
+      sshOptions = StringUtils.join(new Object[] { sshOptions, extraSshOptions }, " ");
+    }
+    LOG.info("Running with SSH user [" + sshUserName + "] and options [" + sshOptions + "]");
+  }
 
   /**
    * Executes commands over SSH
    */
-  static class RemoteShell extends Shell.ShellCommandExecutor {
+  protected class RemoteShell extends Shell.ShellCommandExecutor {
 
     private String hostname;
 
     private String sshCmd = "/usr/bin/ssh";
-    private String sshOptions = System.getenv("HBASE_SSH_OPTS"); //from conf/hbase-env.sh
 
     public RemoteShell(String hostname, String[] execString, File dir, Map<String, String> env,
                        long timeout) {
@@ -76,11 +93,12 @@ public class HBaseClusterManager extends ClusterManager {
 
     @Override
     public String[] getExecString() {
-      return new String[]{
+      String userAndHost = sshUserName.isEmpty() ? hostname : (sshUserName + "@" + hostname);
+      return new String[] {
           "bash", "-c",
-          StringUtils.join(new String[]{sshCmd,
-              sshOptions == null ? "" : sshOptions,
-              hostname,
+          StringUtils.join(new String[] { sshCmd,
+              (sshOptions == null) ? "" : sshOptions,
+              userAndHost,
               "\"" + StringUtils.join(super.getExecString(), " ") + "\""
           }, " ")};
     }
@@ -88,22 +106,6 @@ public class HBaseClusterManager extends ClusterManager {
     @Override
     public void execute() throws IOException {
       super.execute();
-    }
-
-    public void setSshCmd(String sshCmd) {
-      this.sshCmd = sshCmd;
-    }
-
-    public void setSshOptions(String sshOptions) {
-      this.sshOptions = sshOptions;
-    }
-
-    public String getSshCmd() {
-      return sshCmd;
-    }
-
-    public String getSshOptions() {
-      return sshOptions;
     }
   }
 
