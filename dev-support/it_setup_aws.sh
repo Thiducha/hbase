@@ -30,7 +30,11 @@ for CBOX in $*; do
   ssh $RCBOX "ln -s /grid/0/.m2 .m2"
   ssh $RCBOX "ln -s /grid/0/tmp-recotest tmp-recotest"
 
-
+  echo "making ssh -A the default (required for zookeeper)"
+  ssh $RCBOX "mkdir -p .~/ssh"
+  ssh $RCBOX "echo 'host *' > ~/.ssh/config"
+  ssh $RCBOX "echo 'ForwardAgent yes' >> ~/.ssh/config"
+  ssh $RCBOX "chmod 600 ~/.ssh/config"
 done
 
 echo "Install git on $BOX1"
