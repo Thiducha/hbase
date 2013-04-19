@@ -55,6 +55,7 @@ else
   ssh $BOX1 "mv ~/$MAVENS /opt/apache-maven"
 fi
 
+echo "Copying the data from the cluster (hadoop & cie)"
 ssh $BOX1 "mkdir -p cluster"
 rsync  -az --delete ~/cluster/* $BOX1:~/cluster
 
