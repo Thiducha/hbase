@@ -71,4 +71,15 @@ done
 
 echo "We don't need to set the sticky bits on dev-support firewall config here: we're root on aws"
 
+
 echo "we're done. You must now run the setup locally on $BOX1 - command: ssh -A $BOX1"
+
+echo "launch:    mvn clean install -DskipTests -Dhadoop.profile=2.0 -Dhadoop-two.version=2.0.3-alpha "
+echo "launch:    git clone https://github.com/nkeywal/YCSB.git   "
+echo "launch:    mvn clean package -DskipTests -Dhbase-96 -Dhbase.version=0.97.0-SNAPSHOT -Dhadoop.profile=2.0"
+echo "launch:    mvn verify -Dit.test=IntegrationTestLaunchYSCBCluster   -pl hbase-it -Dhadoop.profile=2.0 -Dhadoop-two.version=2.0.3-alpha -Dtest.output.tofile=false"
+
+
+
+
+
