@@ -283,7 +283,7 @@ public class HBaseClusterManager extends ClusterManager {
       return cmd + String.format("%s/bin/%s --config %s %s %s %s",
           getHDFSHome(), isHadoopOne() ? "hadoop" : "hdfs",
           getConfigDir(), service, op != null ? op : "",
-          ">" + getHadoopHome() + "/logs/" + service.getName() + "-output.log");
+          "> " + getHadoopHome() + "/logs/" + service.getName() + "-output.log");
     }
   }
 
