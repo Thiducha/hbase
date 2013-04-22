@@ -1026,7 +1026,7 @@ public class HBaseClient {
           if (responseHeader.hasCellBlockMeta()) {
             int size = responseHeader.getCellBlockMeta().getLength();
             byte [] cellBlock = new byte[size];
-            IOUtils.readFully(this.in, cellBlock, 0, cellBlock.length);
+            IPCUtil.readChunked(this.in, cellBlock, 0, size);
             cellBlockScanner = ipcUtil.createCellScanner(this.codec, this.compressor, cellBlock);
           }
           // it's possible that this call may have been cleaned up due to a RPC
@@ -1370,11 +1370,14 @@ public class HBaseClient {
         if (connection.isAlive() &&
             connection.getRemoteAddress().getPort() == port &&
             connection.getRemoteAddress().getHostName().equals(hostname)) {
-          LOG.info("The server on " + hostname + ":" + port +
-              " is dead - stopping the connection " + connection.remoteId);
-          connection.closeConnection();
-          // We could do a connection.interrupt(), but it's safer not to do it, as the
-          //  interrupted exception behavior is not defined nor enforced enough.
+          if (connection.shouldCloseConnection.compareAndSet(false, true)) {
+            LOG.info("The server on " + hostname + ":" + port +
+                " is dead - closing the connection " + connection.remoteId);
+            connection.closeException = ioe;
+            connection.close();
+            // We could do a connection.interrupt(), but it's safer not to do it, as the
+            //  interrupted exception behavior is not defined nor enforced enough.
+          }
         }
       }
     }
