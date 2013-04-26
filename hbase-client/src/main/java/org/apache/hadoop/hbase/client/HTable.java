@@ -120,7 +120,7 @@ public class HTable implements HTableInterface {
   private HConnection connection;
   private final byte [] tableName;
   private volatile Configuration configuration;
-  private final ArrayList<Action<Put>> writeAsyncBuffer = new ArrayList<Action<Put>>();
+  private List<Action<Put>> writeAsyncBuffer = new ArrayList<Action<Put>>();
   private long writeBufferSize;
   private boolean clearBufferOnFail;
   private boolean autoFlush;
@@ -732,14 +732,14 @@ public class HTable implements HTableInterface {
     }
 
     int previousSize = writeAsyncBuffer.size();
-    ap.submit(writeAsyncBuffer);
+    writeAsyncBuffer = ap.submit(writeAsyncBuffer);
     while (previousSize == writeAsyncBuffer.size()){
       try {
         Thread.sleep(1000);
       } catch (InterruptedException e) {
         throw new InterruptedIOException("Still not sent: " + writeAsyncBuffer.size() + " puts.");
       }
-      ap.submit(writeAsyncBuffer);
+      writeAsyncBuffer = ap.submit(writeAsyncBuffer);
     }
 
 

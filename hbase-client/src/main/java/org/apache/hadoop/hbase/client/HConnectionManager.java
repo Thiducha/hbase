@@ -2387,11 +2387,13 @@ public class HConnectionManager {
         this.maxConcurrentTasksPerServer = hci.getConfiguration().getInt("hbase.client.max.perserver.tasks", 599999) ;
       }
 
-      public void submit(List<Action<R>> actionsList) throws IOException {
+      public List<Action<R>>  submit(List<Action<R>> actionsList) throws IOException {
         waitForMaximumTaskNumber(maxTotalConcurrentTasks);
 
         if (!hasError()){
-          submit(actionsList, 1, false);
+          return submit(actionsList, 1, false);
+        } else {
+          return actionsList;
         }
       }
 
@@ -2402,14 +2404,13 @@ public class HConnectionManager {
        * @param numAttempt
        * @throws IOException - if we can't locate a region after multiple retries.
        */
-      private void submit(List<Action<R>> actionsList, int numAttempt, boolean force) throws IOException {
+      private List<Action<R>>  submit(List<Action<R>> actionsList, int numAttempt, boolean force) throws IOException {
         // group per location => regions server
         final Map<HRegionLocation, MultiAction<R>> actionsByServer =
             new HashMap<HRegionLocation, MultiAction<R>>();
-        Iterator<Action<R>> it = actionsList.iterator();
+        List<Action<R>> rejectedActionList = new ArrayList<Action<R>>();
         HashMap<String, Boolean> serverStatus = new HashMap<String, Boolean>();
-        while (it.hasNext()) {
-          Action<R> aAction = it.next();
+        for (Action aAction: actionsList){
           final Row row = aAction.getAction();
 
           if (row != null) {
@@ -2426,6 +2427,9 @@ public class HConnectionManager {
                 addit = (ct == null || ct.get() < maxConcurrentTasksPerServer);
                 serverStatus.put(loc.getHostnamePort(), addit);
               }
+              if (!addit){
+                rejectedActionList.add(aAction);
+              }
             }
             if (addit){
               final byte[] regionName = loc.getRegionInfo().getRegionName();
@@ -2435,17 +2439,9 @@ public class HConnectionManager {
                 actionsByServer.put(loc, actions);
               }
               actions.add(regionName, aAction);
-              if (!force){
-                it.remove();
-              }
             }
           }
         }
-
-        if (force){
-          actionsList.clear();
-        }
-        actionsList = null;
 
         // Send the queries and add them to the inProgress list
         for (Entry<HRegionLocation, MultiAction<R>> e : actionsByServer.entrySet()) {
@@ -2466,6 +2462,8 @@ public class HConnectionManager {
 
           this.pool.submit(runnable);
         }
+
+        return rejectedActionList;
       }
 
       private void receiveMultiAction(List<Action<R>> originalActionsList,
