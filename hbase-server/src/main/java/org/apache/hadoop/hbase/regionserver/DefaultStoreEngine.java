@@ -26,10 +26,10 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.KeyValue.KVComparator;
 import org.apache.hadoop.hbase.regionserver.compactions.CompactionContext;
+import org.apache.hadoop.hbase.regionserver.compactions.ExploringCompactionPolicy;
 import org.apache.hadoop.hbase.regionserver.compactions.RatioBasedCompactionPolicy;
 import org.apache.hadoop.hbase.regionserver.compactions.DefaultCompactor;
 import org.apache.hadoop.hbase.util.ReflectionUtils;
-import org.apache.hadoop.hbase.regionserver.compactions.ExploringCompactionPolicy;
 
 /**
  * Default StoreEngine creates the default compactor, policy, and store file manager, or
@@ -37,13 +37,17 @@ import org.apache.hadoop.hbase.regionserver.compactions.ExploringCompactionPolic
  */
 @InterfaceAudience.Private
 public class DefaultStoreEngine extends StoreEngine<
-    RatioBasedCompactionPolicy, DefaultCompactor, DefaultStoreFileManager> {
+  DefaultStoreFlusher, RatioBasedCompactionPolicy, DefaultCompactor, DefaultStoreFileManager> {
 
+  public static final String DEFAULT_STORE_FLUSHER_CLASS_KEY =
+      "hbase.hstore.defaultengine.storeflusher.class";
   public static final String DEFAULT_COMPACTOR_CLASS_KEY =
       "hbase.hstore.defaultengine.compactor.class";
   public static final String DEFAULT_COMPACTION_POLICY_CLASS_KEY =
       "hbase.hstore.defaultengine.compactionpolicy.class";
 
+  private static final Class<? extends DefaultStoreFlusher>
+    DEFAULT_STORE_FLUSHER_CLASS = DefaultStoreFlusher.class;
   private static final Class<? extends DefaultCompactor>
     DEFAULT_COMPACTOR_CLASS = DefaultCompactor.class;
   private static final Class<? extends RatioBasedCompactionPolicy>
@@ -69,7 +73,16 @@ public class DefaultStoreEngine extends StoreEngine<
     } catch (Exception e) {
       throw new IOException("Unable to load configured compaction policy '" + className + "'", e);
     }
+    className = conf.get(
+        DEFAULT_STORE_FLUSHER_CLASS_KEY, DEFAULT_STORE_FLUSHER_CLASS.getName());
+    try {
+      storeFlusher = ReflectionUtils.instantiateWithCustomCtor(className,
+          new Class[] { Configuration.class, Store.class }, new Object[] { conf, store });
+    } catch (Exception e) {
+      throw new IOException("Unable to load configured store flusher '" + className + "'", e);
+    }
   }
+
 
   @Override
   public CompactionContext createCompaction() {
