@@ -2366,7 +2366,10 @@ public class HConnectionManager {
       private BatchErrors retriedErrors = new BatchErrors();
       private final AtomicBoolean hasError = new AtomicBoolean(false);
       private final AtomicLong taskCounter = new AtomicLong(0);
-      private final int maxConcurrentTasks;
+      private final ConcurrentHashMap<String, AtomicInteger> taskCounterPerServer =
+          new ConcurrentHashMap<String, AtomicInteger>();
+      private final int maxTotalConcurrentTasks;
+      private final int maxConcurrentTasksPerServer;
 
 
       public boolean hasError(){
@@ -2380,14 +2383,15 @@ public class HConnectionManager {
         this.tableName = tableName;
         this.pool = pool;
         this.callback = callback;
-        this.maxConcurrentTasks = hci.getConfiguration().getInt("hbase.client.max.tasks", 200) ;
+        this.maxTotalConcurrentTasks = hci.getConfiguration().getInt("hbase.client.max.total.tasks", 200) ;
+        this.maxConcurrentTasksPerServer = hci.getConfiguration().getInt("hbase.client.max.perserver.tasks", 599999) ;
       }
 
       public void submit(List<Action<R>> actionsList) throws IOException {
-        waitForMaximumTaskNumber(maxConcurrentTasks);
+        waitForMaximumTaskNumber(maxTotalConcurrentTasks);
 
         if (!hasError()){
-          submit(actionsList, 1);
+          submit(actionsList, 1, false);
         }
       }
 
@@ -2398,11 +2402,14 @@ public class HConnectionManager {
        * @param numAttempt
        * @throws IOException - if we can't locate a region after multiple retries.
        */
-      private void submit(List<Action<R>> actionsList, int numAttempt) throws IOException {
+      private void submit(List<Action<R>> actionsList, int numAttempt, boolean force) throws IOException {
         // group per location => regions server
         final Map<HRegionLocation, MultiAction<R>> actionsByServer =
             new HashMap<HRegionLocation, MultiAction<R>>();
-        for (Action<R> aAction : actionsList) {
+        Iterator<Action<R>> it = actionsList.iterator();
+        HashMap<String, Boolean> serverStatus = new HashMap<String, Boolean>();
+        while (it.hasNext()) {
+          Action<R> aAction = it.next();
           final Row row = aAction.getAction();
 
           if (row != null) {
@@ -2411,15 +2418,34 @@ public class HConnectionManager {
               throw new IOException("No location found, aborting submit.");
             }
 
-            final byte[] regionName = loc.getRegionInfo().getRegionName();
-            MultiAction<R> actions = actionsByServer.get(loc);
-            if (actions == null) {
-              actions = new MultiAction<R>();
-              actionsByServer.put(loc, actions);
+            Boolean addit = force;
+            if (!force) { // No need to check if we add it all the time.
+              addit = serverStatus.get(loc.getHostnamePort());
+              if (addit == null) {
+                AtomicInteger ct = taskCounterPerServer.get(loc.getHostnamePort());
+                addit = (ct == null || ct.get() < maxConcurrentTasksPerServer);
+                serverStatus.put(loc.getHostnamePort(), addit);
+              }
             }
-            actions.add(regionName, aAction);
+            if (addit){
+              final byte[] regionName = loc.getRegionInfo().getRegionName();
+              MultiAction<R> actions = actionsByServer.get(loc);
+              if (actions == null) {
+                actions = new MultiAction<R>();
+                actionsByServer.put(loc, actions);
+              }
+              actions.add(regionName, aAction);
+              if (!force){
+                it.remove();
+              }
+            }
           }
         }
+
+        if (force){
+          actionsList.clear();
+        }
+        actionsList = null;
 
         // Send the queries and add them to the inProgress list
         for (Entry<HRegionLocation, MultiAction<R>> e : actionsByServer.entrySet()) {
@@ -2501,7 +2527,7 @@ public class HConnectionManager {
           }
         }
         if (!toReplay.isEmpty()){
-          submit(toReplay, numAttempt + 1);
+          submit(toReplay, numAttempt + 1, true);
         }
       }
 
@@ -2580,13 +2606,37 @@ public class HConnectionManager {
         }
       }
 
+      private void incCounters(String hostnamePort){
+        taskCounter.incrementAndGet();
+
+        AtomicInteger counterPerServer =  taskCounterPerServer.get(hostnamePort);
+        if (counterPerServer == null){
+          taskCounterPerServer.putIfAbsent(hostnamePort, new AtomicInteger());
+          counterPerServer =  taskCounterPerServer.get(hostnamePort);
+        }
+        counterPerServer.incrementAndGet();
+      }
+
+      private void decCounters(String hostnamePort){
+        taskCounter.decrementAndGet();
+
+        AtomicInteger counterPerServer =  taskCounterPerServer.get(hostnamePort);
+        counterPerServer.decrementAndGet();
+
+        synchronized (taskCounter) {
+          taskCounter.notifyAll();
+        }
+      }
+
 
       private Runnable createDelayedRunnable(
           final List<Action<R>> originalActionsList, final long delay, final HRegionLocation loc,
           final MultiAction<R> multi, final int numAttempt) {
 
         final Callable<MultiResponse> delegate = hci.createCallable(loc, multi, tableName);
-        taskCounter.incrementAndGet();
+        final String hostnamePort = loc.getHostnamePort();
+        incCounters(hostnamePort);
+
         return new Runnable() {
           private final long creationTime = System.currentTimeMillis();
 
@@ -2604,10 +2654,7 @@ public class HConnectionManager {
             } catch (Exception e) {
               hasError.set(true);
             } finally {
-              taskCounter.decrementAndGet();
-              synchronized (taskCounter) {
-                taskCounter.notifyAll();
-              }
+              decCounters(hostnamePort);
             }
           }
         };
