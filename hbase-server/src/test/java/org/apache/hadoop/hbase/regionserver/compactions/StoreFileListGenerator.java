@@ -16,37 +16,19 @@
  * limitations under the License.
  */
 
-package org.apache.hadoop.hbase.metrics;
+package org.apache.hadoop.hbase.regionserver.compactions;
 
 import java.util.List;
 
-import junit.framework.Assert;
+import org.apache.hadoop.hbase.regionserver.StoreFile;
 
-import org.apache.hadoop.hbase.util.Pair;
-import org.apache.hadoop.hbase.SmallTests;
-import org.junit.Test;
-import org.junit.experimental.categories.Category;
+public abstract class StoreFileListGenerator
+    extends MockStoreFileGenerator implements Iterable<List<StoreFile>> {
 
-@Deprecated
-@Category(SmallTests.class)
-public class TestExactCounterMetric {
+  public static final int MAX_FILE_GEN_ITERS = 10;
+  public static final int NUM_FILES_GEN = 1000;
 
-  @Test
-  public void testBasic() {
-    final ExactCounterMetric counter = new ExactCounterMetric("testCounter", null);
-    for (int i = 1; i <= 10; i++) {
-      for (int j = 0; j < i; j++) {
-        counter.update(i + "");
-      }
-    }
-    
-    List<Pair<String, Long>> topFive = counter.getTop(5);
-    Long i = 10L;
-    for (Pair<String, Long> entry : topFive) {
-      Assert.assertEquals(i + "", entry.getFirst());
-      Assert.assertEquals(i, entry.getSecond());
-      i--;
-    }
+  StoreFileListGenerator(final Class klass) {
+    super(klass);
   }
-
 }
