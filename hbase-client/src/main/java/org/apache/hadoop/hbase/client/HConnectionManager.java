@@ -2384,7 +2384,7 @@ public class HConnectionManager {
         this.pool = pool;
         this.callback = callback;
         this.maxTotalConcurrentTasks = hci.getConfiguration().getInt("hbase.client.max.total.tasks", 200) ;
-        this.maxConcurrentTasksPerServer = hci.getConfiguration().getInt("hbase.client.max.perserver.tasks", 599999) ;
+        this.maxConcurrentTasksPerServer = hci.getConfiguration().getInt("hbase.client.max.perserver.tasks", 5) ;
       }
 
       public List<Action<R>>  submit(List<Action<R>> actionsList) throws IOException {
