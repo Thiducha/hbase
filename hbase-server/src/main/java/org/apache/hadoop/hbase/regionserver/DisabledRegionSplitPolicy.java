@@ -15,22 +15,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.hbase.regionserver.wal;
 
-import org.apache.hadoop.hbase.CompatibilitySingletonFactory;
-import org.junit.Test;
+package org.apache.hadoop.hbase.regionserver;
 
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
-
-public class TestMetricsWALSourceImpl {
-
-  @Test
-  public void testGetInstance() throws Exception {
-    MetricsWALSource walSource =
-        CompatibilitySingletonFactory.getInstance(MetricsWALSource.class);
-    assertTrue(walSource instanceof MetricsWALSourceImpl);
-    assertSame(walSource,
-        CompatibilitySingletonFactory.getInstance(MetricsWALSource.class));
+/**
+ * A {@link RegionSplitPolicy} that disables region splits.
+ * This should be used with care, since it will disable automatic sharding.
+ * Most of the time, using {@link ConstantSizeRegionSplitPolicy} with a
+ * large region size (10GB, etc) is safer.
+ */
+public class DisabledRegionSplitPolicy extends RegionSplitPolicy {
+  @Override
+  protected boolean shouldSplit() {
+    return false;
   }
 }

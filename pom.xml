@@ -138,8 +138,8 @@
       <name>Anoop Sam John</name>
       <email>anoopsamjohn@apache.org</email>
       <timezone>+5</timezone>
-      <organization>Huawei</organization>
-      <organizationUrl>http://www.huawei.com</organizationUrl>
+      <organization>Intel</organization>
+      <organizationUrl>http://www.intel.com</organizationUrl>
     </developer>
     <developer>
       <id>ddas</id>
@@ -643,7 +643,6 @@
               <exclude>**/.*</exclude>
               <exclude>**/*.tgz</exclude>
               <exclude>**/*.orig</exclude>
-              <exclude>**/test/**</exclude>
               <exclude>**/8e8ab58dcf39412da19833fcd8f687ac</exclude>
               <exclude>**/.git/**</exclude>
               <exclude>**/.idea/**</exclude>
@@ -1268,23 +1267,21 @@
         <artifactId>stax-api</artifactId>
         <version>${stax-api.version}</version>
       </dependency>
-      <!-- Test dependencies -->
       <dependency>
         <groupId>junit</groupId>
         <artifactId>junit</artifactId>
         <version>${junit.version}</version>
-        <scope>test</scope>
-      </dependency>
-      <dependency>
-        <groupId>org.cloudera.htrace</groupId>
-        <artifactId>htrace</artifactId>
-        <version>${htrace.version}</version>
       </dependency>
       <dependency>
         <groupId>org.mockito</groupId>
         <artifactId>mockito-all</artifactId>
         <version>${mockito-all.version}</version>
         <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.cloudera.htrace</groupId>
+        <artifactId>htrace</artifactId>
+        <version>${htrace.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>

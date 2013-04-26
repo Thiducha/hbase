@@ -1,5 +1,4 @@
-/**
- *
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,24 +18,47 @@
 
 package org.apache.hadoop.hbase.regionserver;
 
+import java.io.IOException;
+
 import org.apache.hadoop.classification.InterfaceAudience;
+import org.apache.hadoop.hbase.monitoring.MonitoredTask;
 
 /**
- * Request a flush.
+ * A package protected interface for a store flushing.
+ * A store flush context carries the state required to prepare/flush/commit the store's cache.
  */
 @InterfaceAudience.Private
-public interface FlushRequester {
+interface StoreFlushContext {
+
   /**
-   * Tell the listener the cache needs to be flushed.
+   * Prepare for a store flush (create snapshot)
    *
-   * @param region the HRegion requesting the cache flush
+   * Requires pausing writes.
+   *
+   * A very short operation.
    */
-  void requestFlush(HRegion region);
+  void prepare();
+
   /**
-   * Tell the listener the cache needs to be flushed after a delay
+   * Flush the cache (create the new store file)
    *
-   * @param region the HRegion requesting the cache flush
-   * @param delay after how much time should the flush happen
+   * A length operation which doesn't require locking out any function
+   * of the store.
+   *
+   * @throws IOException in case the flush fails
    */
-  void requestDelayedFlush(HRegion region, long delay);
+  void flushCache(MonitoredTask status) throws IOException;
+
+  /**
+   * Commit the flush - add the store file to the store and clear the
+   * memstore snapshot.
+   *
+   * Requires pausing scans.
+   *
+   * A very short operation
+   *
+   * @return
+   * @throws IOException
+   */
+  boolean commit(MonitoredTask status) throws IOException;
 }
