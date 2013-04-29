@@ -25,35 +25,13 @@
   </property>
 
   <property>
-    <name>dfs.replication</name>
-    <value>3</value>
-  </property>
-
-  <property>
     <name>hbase.rootdir</name>
     <value>hdfs://HBASE_IT_BOX_0/hbase</value>
   </property>
 
   <property>
-    <name>hbase.regionserver.global.memstore.upperLimit</name>
-    <value>0.55</value>
-  </property>
-
-  <property>
-    <name>hbase.assignment.zkevent.workers</name>
-    <value>55</value>
-  </property>
-
-
-  <property>
     <name>hbase.filesystem.reorder.blocks</name>
     <value>true</value>
-  </property>
-
-
-  <property>
-    <name>hbase.client.scanner.caching</name>
-    <value>5000</value>
   </property>
 
 
