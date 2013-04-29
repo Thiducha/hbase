@@ -188,7 +188,7 @@ public abstract class AbstractIntegrationTestRecovery {
     // In case we stopped the previous test while is was not connected
     hcm.replug(willDieBox);
 
-    for (int nbBox = 1; ; nbBox++) {
+    for (int nbBox = 0; ; nbBox++) {
       String curBox = System.getenv("HBASE_IT_BOX_" + nbBox);
       if (curBox != null) {
         hcm.checkAccessible(curBox);
