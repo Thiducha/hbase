@@ -33,7 +33,7 @@ echo "preparing working data dir. If the tmp-recotest exists, we keep it, but we
 mkdir -p ~/tmp-recotest
 rm -rf ~/tmp-recotest/data
 mkdir -p  ~/tmp-recotest/data
-rm -rf ~/tmp-recotest/hbase/logs/*
+
 
 # We need to rm the previous lib dir in case the dependencies changed
 rm -rf ~/tmp-recotest/hbase/lib
@@ -44,6 +44,11 @@ echo "updating the local tmp-recotest with hdfs & hbase dirs content"
 rsync -az --delete $ORIG_HBASE_DIR  ~/tmp-recotest --exclude '.git' --exclude 'src' --exclude classes --exclude test-classes --exclude 'hbase/hbase-*' --exclude '*.jar' --exclude '.idea'
 rsync -az --delete $ORIG_HDFS_DIR/*  $HDFS_REP --exclude '.git' --exclude 'src' --exclude classes --exclude test-classes  --exclude '*.html' --exclude '*-sources.jar'  --exclude '.idea'
 
+rm -rf ~/tmp-recotest/hbase/logs
+mkdir -p ~/tmp-recotest/hbase/logs
+
+rm -rf $HDFS_REP/logs
+mkdir -p $HDFS_REP/logs
 
 echo "preparing conf dirs"
 mkdir -p $CONF_DIR/conf-hadoop

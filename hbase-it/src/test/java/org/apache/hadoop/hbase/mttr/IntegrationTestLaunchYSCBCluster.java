@@ -28,19 +28,28 @@ public class IntegrationTestLaunchYSCBCluster extends AbstractIntegrationTestRec
     dhc.waitForNamenodeAvailable();
 
     // Number of datanode
-    hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willSurviveBox);
-    hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, lateBox);
-    hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, willDieBox);
-    dhc.waitForDatanodesRegistered(3);
+    int nbDN = 0;
+    for (int nbBox = 1; ; nbBox++) {
+      String curBox = System.getenv("HBASE_IT_BOX_" + nbBox);
+      if (curBox != null) {
+        hcm.start(ClusterManager.ServiceType.HADOOP_DATANODE, curBox);
+        nbDN++;
+      } else {
+        break;
+      }
+    }
+    dhc.waitForDatanodesRegistered(nbDN);
 
     hcm.start(ClusterManager.ServiceType.HBASE_MASTER, mainBox);
 
-    // There is no datanode on the main box. This way, when doing the recovery, all the reads will
-    //  be done on a remote box. If the stale mode is not active, it will trigger socket timeouts.
-    hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, willSurviveBox);
-    hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, lateBox);
-    hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, willDieBox);
-
+    for (int nbBox = 1; ; nbBox++) {
+      String curBox = System.getenv("HBASE_IT_BOX_" + nbBox);
+      if (curBox != null) {
+        hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, curBox);
+      } else {
+        break;
+      }
+    }
     while (!dhc.waitForActiveAndReadyMaster() ||
         util.getHBaseAdmin().getClusterStatus().getRegionsCount() != 1) {
       Thread.sleep(200);
