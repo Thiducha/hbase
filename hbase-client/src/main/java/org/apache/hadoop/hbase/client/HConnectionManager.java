@@ -2369,7 +2369,7 @@ public class HConnectionManager {
       private final ConcurrentHashMap<String, AtomicInteger> taskCounterPerServer =
           new ConcurrentHashMap<String, AtomicInteger>();
       private final int maxTotalConcurrentTasks;
-      private final int maxConcurrentTasksPerServer;
+      private final int maxConcurrentTasksPerRegion;
 
 
       public boolean hasError(){
@@ -2385,8 +2385,8 @@ public class HConnectionManager {
         this.callback = callback;
         this.maxTotalConcurrentTasks =
             hci.getConfiguration().getInt("hbase.client.max.total.tasks", 200) ;
-        this.maxConcurrentTasksPerServer =
-            hci.getConfiguration().getInt("hbase.client.max.perserver.tasks", 5) ;
+        this.maxConcurrentTasksPerRegion =
+            hci.getConfiguration().getInt("hbase.client.max.perregion.tasks", 3) ;
       }
 
       public List<Action<R>>  submit(List<Action<R>> actionsList) throws IOException {
@@ -2426,12 +2426,13 @@ public class HConnectionManager {
             if (!force) { // No need to check if we add it all the time anyway
               addit = serverStatus.get(loc.getHostnamePort());
               if (addit == null) {
-                AtomicInteger ct = taskCounterPerServer.get(loc.getHostnamePort());
+                String regionName = loc.getRegionInfo().getEncodedName();
+                AtomicInteger ct = taskCounterPerServer.get(regionName);
                 long nbTask = ct == null ? 0 : ct.get();
-                addit = (nbTask < maxConcurrentTasksPerServer);
-                serverStatus.put(loc.getHostnamePort(), addit);
-                LOG.debug("Server " + loc.getHostnamePort() + " has " + nbTask +
-                    " tasks, max is " + maxConcurrentTasksPerServer +
+                addit = (nbTask < maxConcurrentTasksPerRegion);
+                serverStatus.put(regionName, addit);
+                LOG.debug("Server " + regionName + " has " + nbTask +
+                    " tasks, max is " + maxConcurrentTasksPerRegion +
                     ",  " + (addit ? "" : " NOT ") + "adding tasks");
               }
               if (!addit){
