@@ -2422,13 +2422,17 @@ public class HConnectionManager {
               throw new IOException("No location found, aborting submit.");
             }
 
-            Boolean addit = force;
+            Boolean addit = true;
             if (!force) { // No need to check if we add it all the time anyway
               addit = serverStatus.get(loc.getHostnamePort());
               if (addit == null) {
                 AtomicInteger ct = taskCounterPerServer.get(loc.getHostnamePort());
-                addit = (ct == null || ct.get() < maxConcurrentTasksPerServer);
+                long nbTask = ct == null ? 0 : ct.get();
+                addit = (nbTask < maxConcurrentTasksPerServer);
                 serverStatus.put(loc.getHostnamePort(), addit);
+                LOG.debug("Server " + loc.getHostnamePort() + " has " + nbTask +
+                    " tasks, max is " + maxConcurrentTasksPerServer +
+                    ",  " + (addit ? "" : " NOT ") + "adding tasks");
               }
               if (!addit){
                 rejectedActionList.add(aAction);
