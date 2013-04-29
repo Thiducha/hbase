@@ -51,6 +51,7 @@ else
   ssh $BOX1 "mv ~/$MAVENS /opt/apache-maven"
 fi
 
+echo "Synchronizing the cluster dir on the main box"
 ssh $BOX1 "mkdir -p cluster"
 rsync  -az --delete ~/cluster/* $BOX1:~/cluster
 

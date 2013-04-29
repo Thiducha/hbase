@@ -2383,8 +2383,10 @@ public class HConnectionManager {
         this.tableName = tableName;
         this.pool = pool;
         this.callback = callback;
-        this.maxTotalConcurrentTasks = hci.getConfiguration().getInt("hbase.client.max.total.tasks", 200) ;
-        this.maxConcurrentTasksPerServer = hci.getConfiguration().getInt("hbase.client.max.perserver.tasks", 5) ;
+        this.maxTotalConcurrentTasks =
+            hci.getConfiguration().getInt("hbase.client.max.total.tasks", 200) ;
+        this.maxConcurrentTasksPerServer =
+            hci.getConfiguration().getInt("hbase.client.max.perserver.tasks", 5) ;
       }
 
       public List<Action<R>>  submit(List<Action<R>> actionsList) throws IOException {
@@ -2404,13 +2406,14 @@ public class HConnectionManager {
        * @param numAttempt
        * @throws IOException - if we can't locate a region after multiple retries.
        */
-      private List<Action<R>>  submit(List<Action<R>> actionsList, int numAttempt, boolean force) throws IOException {
+      private List<Action<R>>  submit(List<Action<R>> actionsList, int numAttempt, boolean force)
+          throws IOException {
         // group per location => regions server
         final Map<HRegionLocation, MultiAction<R>> actionsByServer =
             new HashMap<HRegionLocation, MultiAction<R>>();
         List<Action<R>> rejectedActionList = new ArrayList<Action<R>>();
         HashMap<String, Boolean> serverStatus = new HashMap<String, Boolean>();
-        for (Action aAction: actionsList){
+        for (Action<R> aAction: actionsList){
           final Row row = aAction.getAction();
 
           if (row != null) {
@@ -2420,7 +2423,7 @@ public class HConnectionManager {
             }
 
             Boolean addit = force;
-            if (!force) { // No need to check if we add it all the time.
+            if (!force) { // No need to check if we add it all the time anyway
               addit = serverStatus.get(loc.getHostnamePort());
               if (addit == null) {
                 AtomicInteger ct = taskCounterPerServer.get(loc.getHostnamePort());
