@@ -2406,7 +2406,7 @@ public class HConnectionManager {
        * @param numAttempt
        * @throws IOException - if we can't locate a region after multiple retries.
        */
-      private List<Action<R>>  submit(List<Action<R>> actionsList, int numAttempt, boolean force)
+      private List<Action<R>> submit(List<Action<R>> actionsList, int numAttempt, boolean force)
           throws IOException {
         // group per location => regions server
         final Map<HRegionLocation, MultiAction<R>> actionsByServer =
@@ -2424,16 +2424,16 @@ public class HConnectionManager {
 
             Boolean addit = true;
             if (!force) { // No need to check if we add it all the time anyway
-              addit = serverStatus.get(loc.getHostnamePort());
+              String regionName = loc.getRegionInfo().getEncodedName();
+              addit = serverStatus.get(regionName);
               if (addit == null) {
-                String regionName = loc.getRegionInfo().getEncodedName();
                 AtomicInteger ct = taskCounterPerRegion.get(regionName);
                 long nbTask = ct == null ? 0 : ct.get();
                 addit = (nbTask < maxConcurrentTasksPerRegion);
                 serverStatus.put(regionName, addit);
-                LOG.debug("Server " + regionName + " has " + nbTask +
+                LOG.debug("Region " + regionName + " has " + nbTask +
                     " tasks, max is " + maxConcurrentTasksPerRegion +
-                    ",  " + (addit ? "" : " NOT ") + "adding tasks");
+                    ", " + (addit ? "" : "NOT ") + "adding task");
               }
               if (!addit){
                 rejectedActionList.add(aAction);
