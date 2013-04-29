@@ -188,21 +188,17 @@ public abstract class AbstractIntegrationTestRecovery {
     // In case we stopped the previous test while is was not connected
     hcm.replug(willDieBox);
 
-    hcm.checkAccessible(mainBox);
-    hcm.checkAccessible(willDieBox);
-    hcm.checkAccessible(willSurviveBox);
-    hcm.checkAccessible(lateBox);
-
-    hcm.killAllServices(mainBox);
-    hcm.killAllServices(willDieBox);
-    hcm.killAllServices(willSurviveBox);
-    hcm.killAllServices(lateBox);
-
-    if (destructiveTest) {
-      hcm.rmHDFSDataDir(mainBox);
-      hcm.rmHDFSDataDir(willDieBox);
-      hcm.rmHDFSDataDir(willSurviveBox);
-      hcm.rmHDFSDataDir(lateBox);
+    for (int nbBox = 0; ; nbBox++) {
+      String curBox = System.getenv("HBASE_IT_BOX_" + nbBox);
+      if (curBox != null) {
+        hcm.checkAccessible(curBox);
+        hcm.killAllServices(curBox);
+        if (destructiveTest) {
+          hcm.rmHDFSDataDir(curBox);
+        }
+      } else {
+        break;
+      }
     }
   }
 
