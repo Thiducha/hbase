@@ -2366,7 +2366,7 @@ public class HConnectionManager {
       private BatchErrors retriedErrors = new BatchErrors();
       private final AtomicBoolean hasError = new AtomicBoolean(false);
       private final AtomicLong taskCounter = new AtomicLong(0);
-      private final ConcurrentHashMap<String, AtomicInteger> taskCounterPerServer =
+      private final ConcurrentHashMap<String, AtomicInteger> taskCounterPerRegion =
           new ConcurrentHashMap<String, AtomicInteger>();
       private final int maxTotalConcurrentTasks;
       private final int maxConcurrentTasksPerRegion;
@@ -2427,7 +2427,7 @@ public class HConnectionManager {
               addit = serverStatus.get(loc.getHostnamePort());
               if (addit == null) {
                 String regionName = loc.getRegionInfo().getEncodedName();
-                AtomicInteger ct = taskCounterPerServer.get(regionName);
+                AtomicInteger ct = taskCounterPerRegion.get(regionName);
                 long nbTask = ct == null ? 0 : ct.get();
                 addit = (nbTask < maxConcurrentTasksPerRegion);
                 serverStatus.put(regionName, addit);
@@ -2612,13 +2612,13 @@ public class HConnectionManager {
         }
       }
 
-      private void incCounters(String hostnamePort){
+      private void incCounters(String regionName){
         taskCounter.incrementAndGet();
 
-        AtomicInteger counterPerServer =  taskCounterPerServer.get(hostnamePort);
+        AtomicInteger counterPerServer =  taskCounterPerRegion.get(regionName);
         if (counterPerServer == null){
-          taskCounterPerServer.putIfAbsent(hostnamePort, new AtomicInteger());
-          counterPerServer =  taskCounterPerServer.get(hostnamePort);
+          taskCounterPerRegion.putIfAbsent(regionName, new AtomicInteger());
+          counterPerServer =  taskCounterPerRegion.get(regionName);
         }
         counterPerServer.incrementAndGet();
       }
@@ -2626,7 +2626,7 @@ public class HConnectionManager {
       private void decCounters(String hostnamePort){
         taskCounter.decrementAndGet();
 
-        AtomicInteger counterPerServer =  taskCounterPerServer.get(hostnamePort);
+        AtomicInteger counterPerServer =  taskCounterPerRegion.get(hostnamePort);
         counterPerServer.decrementAndGet();
 
         synchronized (taskCounter) {
@@ -2640,8 +2640,8 @@ public class HConnectionManager {
           final MultiAction<R> multi, final int numAttempt) {
 
         final Callable<MultiResponse> delegate = hci.createCallable(loc, multi, tableName);
-        final String hostnamePort = loc.getHostnamePort();
-        incCounters(hostnamePort);
+        final String regionName = loc.getRegionInfo().getEncodedName();
+        incCounters(regionName);
 
         return new Runnable() {
           private final long creationTime = System.currentTimeMillis();
@@ -2660,7 +2660,7 @@ public class HConnectionManager {
             } catch (Exception e) {
               hasError.set(true);
             } finally {
-              decCounters(hostnamePort);
+              decCounters(regionName);
             }
           }
         };
