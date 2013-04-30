@@ -2412,7 +2412,7 @@ public class HConnectionManager {
         final Map<HRegionLocation, MultiAction<R>> actionsByServer =
             new HashMap<HRegionLocation, MultiAction<R>>();
         List<Action<R>> rejectedActionList = new ArrayList<Action<R>>();
-        HashMap<String, Boolean> serverStatus = new HashMap<String, Boolean>();
+        HashMap<String, Boolean> regionStatus = new HashMap<String, Boolean>();
         for (Action<R> aAction: actionsList){
           final Row row = aAction.getAction();
 
@@ -2425,15 +2425,15 @@ public class HConnectionManager {
             Boolean addit = true;
             if (!force) { // No need to check if we add it all the time anyway
               String regionName = loc.getRegionInfo().getEncodedName();
-              addit = serverStatus.get(regionName);
+              addit = regionStatus.get(regionName);
               if (addit == null) {
                 AtomicInteger ct = taskCounterPerRegion.get(regionName);
                 long nbTask = ct == null ? 0 : ct.get();
                 addit = (nbTask < maxConcurrentTasksPerRegion);
-                serverStatus.put(regionName, addit);
+                regionStatus.put(regionName, addit);
                 LOG.debug("Region " + regionName + " has " + nbTask +
                     " tasks, max is " + maxConcurrentTasksPerRegion +
-                    ", " + (addit ? "" : "NOT ") + "adding task");
+                    ", " + (addit ? "" : "NOT ") + "adding task");  // to move to trace,
               }
               if (!addit){
                 rejectedActionList.add(aAction);
