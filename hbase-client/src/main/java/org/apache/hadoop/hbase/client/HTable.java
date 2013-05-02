@@ -120,7 +120,7 @@ public class HTable implements HTableInterface {
   private HConnection connection;
   private final byte [] tableName;
   private volatile Configuration configuration;
-  private List<Action<Put>> writeAsyncBuffer = new ArrayList<Action<Put>>();
+  private List<Put> writeAsyncBuffer = new ArrayList<Put>();
   private long writeBufferSize;
   private boolean clearBufferOnFail;
   private boolean autoFlush;
@@ -715,7 +715,7 @@ public class HTable implements HTableInterface {
     validatePut(put);
     currentWriteBufferSize += put.heapSize();
 
-    writeAsyncBuffer.add(new Action<Put>(put, 0));
+    writeAsyncBuffer.add(put);
     while (currentWriteBufferSize > writeBufferSize) {
       backgroundFlushCommits();
     }
@@ -725,27 +725,36 @@ public class HTable implements HTableInterface {
   }
 
 
-  public void backgroundFlushCommits() throws IOException {
+  private void backgroundFlushCommits() throws IOException {
     if (writeAsyncBuffer.isEmpty()) {
       // Early exit: we can be called on empty buffers.
       return;
     }
 
     int previousSize = writeAsyncBuffer.size();
-    writeAsyncBuffer = ap.submit(writeAsyncBuffer);
-    while (previousSize == writeAsyncBuffer.size()){
-      try {
-        Thread.sleep(1000);
-      } catch (InterruptedException e) {
-        throw new InterruptedIOException("Still not sent: " + writeAsyncBuffer.size() + " puts.");
+    try {
+      ap.submit(writeAsyncBuffer);
+      while (previousSize == writeAsyncBuffer.size()) {
+        try {
+          Thread.sleep(1000);
+        } catch (InterruptedException e) {
+          throw new InterruptedIOException("Still not sent: " + writeAsyncBuffer.size() + " puts.");
+        }
+        ap.submit(writeAsyncBuffer);
       }
-      writeAsyncBuffer = ap.submit(writeAsyncBuffer);
-    }
-
-
-    currentWriteBufferSize = 0;
-    for (Action<Put> action:writeAsyncBuffer){
-      currentWriteBufferSize +=  ((Put)action.getAction()).heapSize();
+    } catch (IOException e) {
+      if (!clearBufferOnFail){
+        if (ap.hasError()){
+          ap.waitUntilDone();
+          writeAsyncBuffer.addAll(ap.getFailedOperation());
+        }
+      }
+      throw e;
+    } finally {
+      currentWriteBufferSize = 0;
+      for (Put put : writeAsyncBuffer) {
+        currentWriteBufferSize += put.heapSize();
+      }
     }
   }
 

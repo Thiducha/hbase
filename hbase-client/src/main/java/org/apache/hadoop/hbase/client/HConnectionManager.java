@@ -2376,6 +2376,10 @@ public class HConnectionManager {
         return hasError.get();
       }
 
+      public List<R> getFailedOperation(){
+        return errors.actions;
+      }
+
 
       public AsyncProcess(HConnection hci, byte[] tableName, ExecutorService pool,
                           Batch.Callback<R> callback){
@@ -2389,33 +2393,36 @@ public class HConnectionManager {
             hci.getConfiguration().getInt("hbase.client.max.perregion.tasks", 3) ;
       }
 
-      public List<Action<R>>  submit(List<Action<R>> actionsList) throws IOException {
+      public void submit(List<? extends Row> rowList) throws IOException {
         waitForMaximumTaskNumber(maxTotalConcurrentTasks);
 
         if (!hasError()){
-          return submit(actionsList, 1, false);
-        } else {
-          return actionsList;
+          submit(rowList, 1, false);
         }
       }
 
       /**
        * Group a list of actions per region servers, and send them. The created MultiActions are
        *  added to the inProgress list.
-       * @param actionsList
+       * @param rowList
        * @param numAttempt
        * @throws IOException - if we can't locate a region after multiple retries.
        */
-      private List<Action<R>> submit(List<Action<R>> actionsList, int numAttempt, boolean force)
+      private void submit(List<? extends Row> rowList, int numAttempt, boolean force)
           throws IOException {
         // group per location => regions server
         final Map<HRegionLocation, MultiAction<R>> actionsByServer =
             new HashMap<HRegionLocation, MultiAction<R>>();
-        List<Action<R>> rejectedActionList = new ArrayList<Action<R>>();
-        HashMap<String, Boolean> regionStatus = new HashMap<String, Boolean>();
-        for (Action<R> aAction: actionsList){
-          final Row row = aAction.getAction();
+        List<Action<R>> retainedActions = new ArrayList<Action<R>>(rowList.size());
 
+        // We have the same policy for a single region per call to submit: we don't want
+        //  to send half of the actions because the status changed in the middle. So we keep it
+        //  here.
+        HashMap<String, Boolean> regionStatus = new HashMap<String, Boolean>();
+
+        Iterator<? extends Row> it = rowList.iterator();
+        while (it.hasNext()) {
+          Row row = it.next();
           if (row != null) {
             final HRegionLocation loc = hci.locateRegion(this.tableName, row.getRow());
             if (loc == null) {
@@ -2435,17 +2442,17 @@ public class HConnectionManager {
                     " tasks, max is " + maxConcurrentTasksPerRegion +
                     ", " + (addit ? "" : "NOT ") + "adding task");  // to move to trace,
               }
-              if (!addit){
-                rejectedActionList.add(aAction);
-              }
             }
-            if (addit){
+            if (addit) {
               final byte[] regionName = loc.getRegionInfo().getRegionName();
               MultiAction<R> actions = actionsByServer.get(loc);
               if (actions == null) {
                 actions = new MultiAction<R>();
                 actionsByServer.put(loc, actions);
               }
+              it.remove();
+              Action<R> aAction = new Action<R>(row, retainedActions.size());
+              retainedActions.add(aAction);
               actions.add(regionName, aAction);
             }
           }
@@ -2458,7 +2465,8 @@ public class HConnectionManager {
             backoffTime = ConnectionUtils.getPauseTime(hci.pause, numAttempt - 1);
           }
           Runnable runnable =
-              createDelayedRunnable(actionsList, backoffTime, e.getKey(), e.getValue(), numAttempt);
+              createDelayedRunnable(retainedActions, backoffTime, e.getKey(),
+                  e.getValue(), numAttempt);
           if (LOG.isTraceEnabled() && numAttempt > 0) {
             StringBuilder sb = new StringBuilder();
             for (Action<R> action : e.getValue().allActions()) {
@@ -2470,15 +2478,13 @@ public class HConnectionManager {
 
           this.pool.submit(runnable);
         }
-
-        return rejectedActionList;
       }
 
       private void receiveMultiAction(List<Action<R>> originalActionsList,
          MultiAction<R> rsActions, HRegionLocation location, MultiResponse responses,
          int numAttempt)
           throws InterruptedException, IOException {
-        final List<Action<R>> toReplay = new ArrayList<Action<R>>();
+        final List<Row> toReplay = new ArrayList<Row>();
         ExecutionException exception = null;
 
         // Error case: no result at all for this multi action. We need to redo all actions
@@ -2492,7 +2498,7 @@ public class HConnectionManager {
               // any of the regions in the MultiAction.
               hci.updateCachedLocations(tableName, action.getAction(), null, location);
               if (numAttempt < hci.numTries) {
-                toReplay.add(action);
+                toReplay.add(action.getAction());
                 if (LOG.isTraceEnabled()) {
                   retriedErrors.add(exception, action.getAction(), location);
                 }
@@ -2521,7 +2527,7 @@ public class HConnectionManager {
                   if (LOG.isTraceEnabled()) {
                     retriedErrors.add((Exception)result, row, location);
                   }
-                  toReplay.add(correspondingAction);
+                  toReplay.add(correspondingAction.getAction());
                 }
               } else // success
                 if (callback != null) {
@@ -2579,12 +2585,12 @@ public class HConnectionManager {
       }
 
 
-      private class BatchErrors {
+      private class BatchErrors<R extends Row> {
         private List<Throwable> exceptions = new ArrayList<Throwable>();
-        private List<Row> actions = new ArrayList<Row>();
+        private List<R> actions = new ArrayList<R>();
         private List<String> addresses = new ArrayList<String>();
 
-        public void add(Exception ex, Row row, HRegionLocation location) {
+        public void add(Exception ex, R row, HRegionLocation location) {
           exceptions.add(ex);
           actions.add(row);
           addresses.add(location.getHostnamePort());
