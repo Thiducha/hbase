@@ -567,7 +567,7 @@ public class HConnectionManager {
 
     // The presence of a server in the map implies it's likely that there is an
     // entry in cachedRegionLocations that map to this server; but the absence
-    // of a server in this map guarentees that there is no entry in cache that
+    // of a server in this map guarantees that there is no entry in cache that
     // maps to the absent server.
     // The access to this attribute must be protected by a lock on cachedRegionLocations
     private final Set<ServerName> cachedServers = new HashSet<ServerName>();
@@ -2122,10 +2122,10 @@ public class HConnectionManager {
         }
 
         boolean isTraceEnabled = LOG.isTraceEnabled();
-        BatchErrors errors = new BatchErrors();
-        BatchErrors retriedErrors = null;
+        BatchErrors<Row> errors = new BatchErrors<Row>();
+        BatchErrors<Row> retriedErrors = null;
         if (isTraceEnabled) {
-          retriedErrors = new BatchErrors();
+          retriedErrors = new BatchErrors<Row>();
         }
 
         // We keep the number of retry per action.
@@ -2203,10 +2203,10 @@ public class HConnectionManager {
                   Row row = correspondingAction.getAction();
                   hci.updateCachedLocations(this.tableName, row, result, location);
                   if (result instanceof DoNotRetryIOException || noRetry) {
-                    errors.add((Exception)result, row, location);
+                    errors.add((Throwable)result, row, location);
                   } else {
                     if (isTraceEnabled) {
-                      retriedErrors.add((Exception)result, row, location);
+                      retriedErrors.add((Throwable)result, row, location);
                     }
                     lastRetry = addToReplay(nbRetries, correspondingAction, location);
                   }
@@ -2233,40 +2233,6 @@ public class HConnectionManager {
         }
 
         errors.rethrowIfAny();
-      }
-
-
-      private class BatchErrors {
-        private List<Throwable> exceptions = new ArrayList<Throwable>();
-        private List<Row> actions = new ArrayList<Row>();
-        private List<String> addresses = new ArrayList<String>();
-
-        public void add(Exception ex, Row row, HRegionLocation location) {
-          exceptions.add(ex);
-          actions.add(row);
-          addresses.add(location.getHostnamePort());
-        }
-
-        public void rethrowIfAny() throws RetriesExhaustedWithDetailsException {
-          if (!exceptions.isEmpty()) {
-            throw makeException();
-          }
-        }
-
-        public String getDescriptionAndClear(){
-          if (exceptions.isEmpty()) {
-            return "";
-          }
-          String result = makeException().getExhaustiveDescription();
-          exceptions.clear();
-          actions.clear();
-          addresses.clear();
-          return result;
-        }
-
-        private RetriesExhaustedWithDetailsException makeException() {
-          return new RetriesExhaustedWithDetailsException(exceptions, actions, addresses);
-        }
       }
 
       /**
@@ -2356,14 +2322,14 @@ public class HConnectionManager {
      * This code should be move to HTable once processBatchCallback is not supported anymore in
      * the HConnection interface.
      */
-    public static class AsyncProcess<R> {
+    public static class AsyncProcess<Res> {
       // Info on the queries and their context
       private final HConnectionImplementation hci;
       private final byte[] tableName;
       private final ExecutorService pool;
-      private final Batch.Callback<R> callback;
-      private BatchErrors errors = new BatchErrors();
-      private BatchErrors retriedErrors = new BatchErrors();
+      private final Batch.Callback<Res> callback;
+      private BatchErrors<Row> errors = new BatchErrors<Row>();
+      private BatchErrors<Row> retriedErrors = new BatchErrors<Row>();
       private final AtomicBoolean hasError = new AtomicBoolean(false);
       private final AtomicLong taskCounter = new AtomicLong(0);
       private final ConcurrentHashMap<String, AtomicInteger> taskCounterPerRegion =
@@ -2376,13 +2342,13 @@ public class HConnectionManager {
         return hasError.get();
       }
 
-      public List<R> getFailedOperation(){
+      public List<? extends Row> getFailedOperation(){
         return errors.actions;
       }
 
 
       public AsyncProcess(HConnection hci, byte[] tableName, ExecutorService pool,
-                          Batch.Callback<R> callback){
+                          Batch.Callback<Res> callback){
         this.hci = (HConnectionImplementation)hci;
         this.tableName = tableName;
         this.pool = pool;
@@ -2411,9 +2377,9 @@ public class HConnectionManager {
       private void submit(List<? extends Row> rowList, int numAttempt, boolean force)
           throws IOException {
         // group per location => regions server
-        final Map<HRegionLocation, MultiAction<R>> actionsByServer =
-            new HashMap<HRegionLocation, MultiAction<R>>();
-        List<Action<R>> retainedActions = new ArrayList<Action<R>>(rowList.size());
+        final Map<HRegionLocation, MultiAction<Row>> actionsByServer =
+            new HashMap<HRegionLocation, MultiAction<Row>>();
+        List<Action<Row>> retainedActions = new ArrayList<Action<Row>>(rowList.size());
 
         // We have the same policy for a single region per call to submit: we don't want
         //  to send half of the actions because the status changed in the middle. So we keep it
@@ -2445,13 +2411,13 @@ public class HConnectionManager {
             }
             if (addit) {
               final byte[] regionName = loc.getRegionInfo().getRegionName();
-              MultiAction<R> actions = actionsByServer.get(loc);
+              MultiAction<Row> actions = actionsByServer.get(loc);
               if (actions == null) {
-                actions = new MultiAction<R>();
+                actions = new MultiAction<Row>();
                 actionsByServer.put(loc, actions);
               }
               it.remove();
-              Action<R> aAction = new Action<R>(row, retainedActions.size());
+              Action<Row> aAction = new Action<Row>(row, retainedActions.size());
               retainedActions.add(aAction);
               actions.add(regionName, aAction);
             }
@@ -2459,7 +2425,7 @@ public class HConnectionManager {
         }
 
         // Send the queries and add them to the inProgress list
-        for (Entry<HRegionLocation, MultiAction<R>> e : actionsByServer.entrySet()) {
+        for (Entry<HRegionLocation, MultiAction<Row>> e : actionsByServer.entrySet()) {
           long backoffTime = 0;
           if (numAttempt > 1) {
             backoffTime = ConnectionUtils.getPauseTime(hci.pause, numAttempt - 1);
@@ -2469,7 +2435,7 @@ public class HConnectionManager {
                   e.getValue(), numAttempt);
           if (LOG.isTraceEnabled() && numAttempt > 0) {
             StringBuilder sb = new StringBuilder();
-            for (Action<R> action : e.getValue().allActions()) {
+            for (Action<Row> action : e.getValue().allActions()) {
               sb.append(Bytes.toStringBinary(action.getAction().getRow())).append(';');
             }
             LOG.trace("Will retry requests to [" + e.getKey().getHostnamePort()
@@ -2480,8 +2446,8 @@ public class HConnectionManager {
         }
       }
 
-      private void receiveMultiAction(List<Action<R>> originalActionsList,
-         MultiAction<R> rsActions, HRegionLocation location, MultiResponse responses,
+      private void receiveMultiAction(List<Action<Row>> originalActionsList,
+         MultiAction<Row> rsActions, HRegionLocation location, MultiResponse responses,
          int numAttempt)
           throws InterruptedException, IOException {
         final List<Row> toReplay = new ArrayList<Row>();
@@ -2492,15 +2458,15 @@ public class HConnectionManager {
           if (numAttempt >= hci.numTries) {
             this.hasError.set(true);
           }
-          for (List<Action<R>> actions : rsActions.actions.values()) {
-            for (Action<R> action : actions) {
+          for (List<Action<Row>> actions : rsActions.actions.values()) {
+            for (Action<Row> action : actions) {
               // Do not use the exception for updating cache because it might be coming from
               // any of the regions in the MultiAction.
               hci.updateCachedLocations(tableName, action.getAction(), null, location);
               if (numAttempt < hci.numTries) {
                 toReplay.add(action.getAction());
                 if (LOG.isTraceEnabled()) {
-                  retriedErrors.add(exception, action.getAction(), location);
+                  retriedErrors.add(exception, (Row)(action.getAction()), location);
                 }
               }
             }
@@ -2517,23 +2483,23 @@ public class HConnectionManager {
 
               // Failure: retry if it's make sense else update the errors lists
               if (result == null || result instanceof Throwable) {
-                Action<R> correspondingAction = originalActionsList.get(regionResult.getFirst());
+                Action<Row> correspondingAction = originalActionsList.get(regionResult.getFirst());
                 Row row = correspondingAction.getAction();
                 hci.updateCachedLocations(this.tableName, row, result, location);
                 if (result instanceof DoNotRetryIOException || numAttempt >= hci.numTries) {
-                  errors.add((Exception)result, row, location);
+                  errors.add((Throwable)result, row, location);
                   this.hasError.set(true);
                 } else {
                   if (LOG.isTraceEnabled()) {
-                    retriedErrors.add((Exception)result, row, location);
+                    retriedErrors.add((Throwable)result, row, location);
                   }
                   toReplay.add(correspondingAction.getAction());
                 }
               } else // success
                 if (callback != null) {
-                  Action<R> correspondingAction = originalActionsList.get(regionResult.getFirst());
+                  Action<Row> correspondingAction = originalActionsList.get(regionResult.getFirst());
                   Row row = correspondingAction.getAction();
-                  this.callback.update(resultsForRS.getKey(), row.getRow(), (R) result);
+                  this.callback.update(resultsForRS.getKey(), row.getRow(), (Res) result);
                 }
             }
           }
@@ -2575,48 +2541,15 @@ public class HConnectionManager {
         waitForMaximumTaskNumber(0);
 
         if (hasError()){
-          retriedErrors = new BatchErrors();
+          retriedErrors = new BatchErrors<Row>();
           RetriesExhaustedWithDetailsException exception = errors.makeException();
-          errors  = new BatchErrors();
-          retriedErrors = new BatchErrors();
+          errors  = new BatchErrors<Row>();
+          retriedErrors = new BatchErrors<Row>();
           hasError.set(false);
           throw exception;
         }
       }
 
-
-      private class BatchErrors<R extends Row> {
-        private List<Throwable> exceptions = new ArrayList<Throwable>();
-        private List<R> actions = new ArrayList<R>();
-        private List<String> addresses = new ArrayList<String>();
-
-        public void add(Exception ex, R row, HRegionLocation location) {
-          exceptions.add(ex);
-          actions.add(row);
-          addresses.add(location.getHostnamePort());
-        }
-
-        public void rethrowIfAny() throws RetriesExhaustedWithDetailsException {
-          if (!exceptions.isEmpty()) {
-            throw makeException();
-          }
-        }
-
-        public String getDescriptionAndClear(){
-          if (exceptions.isEmpty()) {
-            return "";
-          }
-          String result = makeException().getExhaustiveDescription();
-          exceptions.clear();
-          actions.clear();
-          addresses.clear();
-          return result;
-        }
-
-        private RetriesExhaustedWithDetailsException makeException() {
-          return new RetriesExhaustedWithDetailsException(exceptions, actions, addresses);
-        }
-      }
 
       private void incCounters(String regionName){
         taskCounter.incrementAndGet();
@@ -2642,8 +2575,8 @@ public class HConnectionManager {
 
 
       private Runnable createDelayedRunnable(
-          final List<Action<R>> originalActionsList, final long delay, final HRegionLocation loc,
-          final MultiAction<R> multi, final int numAttempt) {
+          final List<Action<Row>> originalActionsList, final long delay, final HRegionLocation loc,
+          final MultiAction<Row> multi, final int numAttempt) {
 
         final Callable<MultiResponse> delegate = hci.createCallable(loc, multi, tableName);
         final String regionName = loc.getRegionInfo().getEncodedName();
@@ -2672,6 +2605,41 @@ public class HConnectionManager {
         };
       }
     }
+
+    private static class BatchErrors<R extends Row> {
+      private List<Throwable> exceptions = new ArrayList<Throwable>();
+      private List<R> actions = new ArrayList<R>();
+      private List<String> addresses = new ArrayList<String>();
+
+      public void add(Throwable ex, R row, HRegionLocation location) {
+        exceptions.add(ex);
+        actions.add(row);
+        addresses.add(location.getHostnamePort());
+      }
+
+      public void rethrowIfAny() throws RetriesExhaustedWithDetailsException {
+        if (!exceptions.isEmpty()) {
+          throw makeException();
+        }
+      }
+
+      public String getDescriptionAndClear(){
+        if (exceptions.isEmpty()) {
+          return "";
+        }
+        @SuppressWarnings("ThrowableResultOfMethodCallIgnored")
+        String result = makeException().getExhaustiveDescription();
+        exceptions.clear();
+        actions.clear();
+        addresses.clear();
+        return result;
+      }
+
+      private RetriesExhaustedWithDetailsException makeException() {
+        return new RetriesExhaustedWithDetailsException(exceptions, actions, addresses);
+      }
+    }
+
 
     /*
      * Return the number of cached region for a table. It will only be called

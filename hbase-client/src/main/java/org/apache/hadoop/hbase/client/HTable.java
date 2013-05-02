@@ -120,7 +120,7 @@ public class HTable implements HTableInterface {
   private HConnection connection;
   private final byte [] tableName;
   private volatile Configuration configuration;
-  private List<Put> writeAsyncBuffer = new ArrayList<Put>();
+  private List<Row> writeAsyncBuffer = new ArrayList<Row>();
   private long writeBufferSize;
   private boolean clearBufferOnFail;
   private boolean autoFlush;
@@ -256,13 +256,14 @@ public class HTable implements HTableInterface {
         HConstants.HBASE_CLIENT_SCANNER_CACHING,
         HConstants.DEFAULT_HBASE_CLIENT_SCANNER_CACHING);
 
-    ap = new HConnectionManager.HConnectionImplementation.AsyncProcess<Put>(
+    ap = new HConnectionManager.HConnectionImplementation.AsyncProcess<Object>(
         connection, tableName, pool, null);
     this.maxKeyValueSize = this.configuration.getInt(
         "hbase.client.keyvalue.maxsize", -1);
     this.closed = false;
-
   }
+
+
 
   /**
    * {@inheritDoc}
@@ -709,7 +710,7 @@ public class HTable implements HTableInterface {
     }
   }
 
-  private HConnectionManager.HConnectionImplementation.AsyncProcess<Put> ap;
+  private HConnectionManager.HConnectionImplementation.AsyncProcess<Object> ap;
 
   private void doPut(Put put) throws IOException {
     validatePut(put);
@@ -738,7 +739,7 @@ public class HTable implements HTableInterface {
         try {
           Thread.sleep(1000);
         } catch (InterruptedException e) {
-          throw new InterruptedIOException("Still not sent: " + writeAsyncBuffer.size() + " puts.");
+          throw new InterruptedIOException("Still not sent: " + writeAsyncBuffer.size() + " rows.");
         }
         ap.submit(writeAsyncBuffer);
       }
@@ -752,8 +753,10 @@ public class HTable implements HTableInterface {
       throw e;
     } finally {
       currentWriteBufferSize = 0;
-      for (Put put : writeAsyncBuffer) {
-        currentWriteBufferSize += put.heapSize();
+      for (Row mut : writeAsyncBuffer) {
+        if (mut instanceof Mutation){
+          currentWriteBufferSize += ((Mutation)mut).heapSize();
+        }
       }
     }
   }

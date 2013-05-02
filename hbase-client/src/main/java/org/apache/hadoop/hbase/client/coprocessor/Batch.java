@@ -71,4 +71,6 @@ public abstract class Batch {
   public static interface Callback<R> {
     public void update(byte[] region, byte[] row, R result);
   }
+
+
 }
