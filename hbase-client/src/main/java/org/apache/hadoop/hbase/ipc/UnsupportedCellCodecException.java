@@ -15,15 +15,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.hadoop.hbase.ipc;
 
-package org.apache.hadoop.hbase;
+public class UnsupportedCellCodecException extends FatalConnectionException {
+  public UnsupportedCellCodecException() {
+    super();
+  }
 
-import org.apache.hadoop.hbase.protobuf.generated.MasterProtos.MasterService;
+  public UnsupportedCellCodecException(String msg) {
+    super(msg);
+  }
 
-/**
- * Functions implemented by all the master protocols: e.g. {@link MasterAdminProtocol}
- * and {@link MasterMonitorProtocol}. Currently, the only shared method
- * {@link #isMasterRunning(com.google.protobuf.RpcController, org.apache.hadoop.hbase.protobuf.generated.MasterProtos.IsMasterRunningRequest)}
- * which is used on connection setup to check if the master has been stopped.
- */
-public interface MasterProtocol extends IpcProtocol, MasterService.BlockingInterface {}
+  public UnsupportedCellCodecException(String msg, Throwable t) {
+    super(msg, t);
+  }
+}

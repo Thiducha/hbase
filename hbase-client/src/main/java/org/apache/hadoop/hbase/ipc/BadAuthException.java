@@ -15,34 +15,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.hbase.exceptions;
+package org.apache.hadoop.hbase.ipc;
 
-import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.classification.InterfaceStability;
-
-import java.io.IOException;
-
-/**
- * All hbase specific IOExceptions should be subclasses of HBaseIOException
- */
-@InterfaceAudience.Public
-@InterfaceStability.Evolving
-public class HBaseIOException extends IOException {
-
-  private static final long serialVersionUID = 1L;
-
-  public HBaseIOException() {
+public class BadAuthException extends FatalConnectionException {
+  public BadAuthException() {
     super();
   }
 
-  public HBaseIOException(String message) {
-    super(message);
+  public BadAuthException(String msg) {
+    super(msg);
   }
 
-  public HBaseIOException(String message, Throwable cause) {
-      super(message, cause);
+  public BadAuthException(String msg, Throwable t) {
+    super(msg, t);
   }
-
-  public HBaseIOException(Throwable cause) {
-      super(cause);
-  }}
+}

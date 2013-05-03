@@ -49,12 +49,12 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.Stoppable;
-import org.apache.hadoop.hbase.client.AdminProtocol;
 import org.apache.hadoop.hbase.client.HConnection;
 import org.apache.hadoop.hbase.client.HConnectionManager;
 import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.ReplicationProtbufUtil;
+import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.AdminService;
 import org.apache.hadoop.hbase.regionserver.wal.HLog;
 import org.apache.hadoop.hbase.regionserver.wal.HLogKey;
 import org.apache.hadoop.hbase.regionserver.wal.WALEdit;
@@ -491,7 +491,7 @@ public class ReplicationSource extends Thread
       HLogKey logKey = entry.getKey();
       // don't replicate if the log entries originated in the peer
       if (!logKey.getClusterId().equals(peerClusterId)) {
-        removeNonReplicableEdits(edit);
+        removeNonReplicableEdits(entry);
         // Don't replicate catalog entries, if the WALEdit wasn't
         // containing anything to replicate and if we're currently not set to replicate
         if (!(Bytes.equals(logKey.getTablename(), HConstants.ROOT_TABLE_NAME) ||
@@ -666,12 +666,12 @@ public class ReplicationSource extends Thread
 
   /**
    * We only want KVs that are scoped other than local
-   * @param edit The KV to check for replication
+   * @param entry The entry to check for replication
    */
-  protected void removeNonReplicableEdits(WALEdit edit) {
-    NavigableMap<byte[], Integer> scopes = edit.getScopes();
-    List<KeyValue> kvs = edit.getKeyValues();
-    for (int i = edit.size()-1; i >= 0; i--) {
+  protected void removeNonReplicableEdits(HLog.Entry entry) {
+    NavigableMap<byte[], Integer> scopes = entry.getKey().getScopes();
+    List<KeyValue> kvs = entry.getEdit().getKeyValues();
+    for (int i = kvs.size()-1; i >= 0; i--) {
       KeyValue kv = kvs.get(i);
       // The scope will be null or empty if
       // there's nothing to replicate in that WALEdit
@@ -718,7 +718,7 @@ public class ReplicationSource extends Thread
         continue;
       }
       try {
-        AdminProtocol rrs = getRS();
+        AdminService.BlockingInterface rrs = getRS();
         ReplicationProtbufUtil.replicateWALEntry(rrs,
             Arrays.copyOf(this.entriesArray, currentNbEntries));
         if (this.lastLoggedPosition != this.repLogReader.getPosition()) {
@@ -848,7 +848,7 @@ public class ReplicationSource extends Thread
    * @return
    * @throws IOException
    */
-  private AdminProtocol getRS() throws IOException {
+  private AdminService.BlockingInterface getRS() throws IOException {
     if (this.currentPeers.size() == 0) {
       throw new IOException(this.peerClusterZnode + " has 0 region servers");
     }
@@ -867,7 +867,7 @@ public class ReplicationSource extends Thread
     Thread pingThread = new Thread() {
       public void run() {
         try {
-          AdminProtocol rrs = getRS();
+          AdminService.BlockingInterface rrs = getRS();
           // Dummy call which should fail
           ProtobufUtil.getServerInfo(rrs);
           latch.countDown();

@@ -35,19 +35,8 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NavigableSet;
 
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.ListMultimap;
-import com.google.common.collect.Lists;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.InvalidProtocolBufferException;
-import com.google.protobuf.Message;
-import com.google.protobuf.RpcChannel;
-import com.google.protobuf.Service;
-import com.google.protobuf.ServiceException;
-import com.google.protobuf.TextFormat;
-
-
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CellScanner;
 import org.apache.hadoop.hbase.CellUtil;
@@ -57,19 +46,16 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.KeyValueUtil;
-import org.apache.hadoop.hbase.MasterAdminProtocol;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.client.AdminProtocol;
 import org.apache.hadoop.hbase.client.Append;
-import org.apache.hadoop.hbase.client.ClientProtocol;
 import org.apache.hadoop.hbase.client.Delete;
+import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Increment;
 import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
-import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.metrics.ScanMetrics;
 import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.exceptions.DoNotRetryIOException;
@@ -78,6 +64,7 @@ import org.apache.hadoop.hbase.filter.Filter;
 import org.apache.hadoop.hbase.io.TimeRange;
 import org.apache.hadoop.hbase.protobuf.generated.AccessControlProtos;
 import org.apache.hadoop.hbase.protobuf.generated.AccessControlProtos.AccessControlService;
+import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.AdminService;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CloseRegionRequest;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.CloseRegionResponse;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetOnlineRegionRequest;
@@ -96,6 +83,7 @@ import org.apache.hadoop.hbase.protobuf.generated.AuthenticationProtos;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.BulkLoadHFileRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.BulkLoadHFileResponse;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ClientService;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.Column;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceCall;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.CoprocessorServiceRequest;
@@ -116,7 +104,9 @@ import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionSpecifier;
 import org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionSpecifier.RegionSpecifierType;
 import org.apache.hadoop.hbase.protobuf.generated.MapReduceProtos;
 import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.CreateTableRequest;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.MasterAdminService;
 import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.GetTableDescriptorsResponse;
+import org.apache.hadoop.hbase.protobuf.generated.WALProtos.CompactionDescriptor;
 import org.apache.hadoop.hbase.security.access.Permission;
 import org.apache.hadoop.hbase.security.access.TablePermission;
 import org.apache.hadoop.hbase.security.access.UserPermission;
@@ -126,7 +116,19 @@ import org.apache.hadoop.hbase.util.DynamicClassLoader;
 import org.apache.hadoop.hbase.util.Methods;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.io.Text;
+import org.apache.hadoop.ipc.RemoteException;
 import org.apache.hadoop.security.token.Token;
+
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.ListMultimap;
+import com.google.common.collect.Lists;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.Message;
+import com.google.protobuf.RpcChannel;
+import com.google.protobuf.Service;
+import com.google.protobuf.ServiceException;
+import com.google.protobuf.TextFormat;
 
 /**
  * Protobufs utility.
@@ -220,6 +222,9 @@ public final class ProtobufUtil {
     Throwable e = se.getCause();
     if (e == null) {
       return new IOException(se);
+    }
+    if (e instanceof RemoteException) {
+      e = ((RemoteException)e).unwrapRemoteException();
     }
     return e instanceof IOException ? (IOException) e : new IOException(se);
   }
@@ -554,10 +559,10 @@ public final class ProtobufUtil {
    * @param cellScanner
    * @param proto the protocol buffer Mutate to convert
    * @return the converted client Append
-   * @throws DoNotRetryIOException
+   * @throws IOException 
    */
   public static Append toAppend(final MutationProto proto, final CellScanner cellScanner)
-  throws DoNotRetryIOException {
+  throws IOException {
     MutationType type = proto.getMutateType();
     assert type == MutationType.APPEND : type.name();
     byte [] row = proto.hasRow()? proto.getRow().toByteArray(): null;
@@ -1205,7 +1210,7 @@ public final class ProtobufUtil {
    * @return the result of the Get
    * @throws IOException
    */
-  public static Result get(final ClientProtocol client,
+  public static Result get(final ClientService.BlockingInterface client,
       final byte[] regionName, final Get get) throws IOException {
     GetRequest request =
       RequestConverter.buildGetRequest(regionName, get);
@@ -1228,7 +1233,7 @@ public final class ProtobufUtil {
    * @return the row or the closestRowBefore if it doesn't exist
    * @throws IOException
    */
-  public static Result getRowOrBefore(final ClientProtocol client,
+  public static Result getRowOrBefore(final ClientService.BlockingInterface client,
       final byte[] regionName, final byte[] row,
       final byte[] family) throws IOException {
     GetRequest request =
@@ -1253,7 +1258,7 @@ public final class ProtobufUtil {
    * @return true if all are loaded
    * @throws IOException
    */
-  public static boolean bulkLoadHFile(final ClientProtocol client,
+  public static boolean bulkLoadHFile(final ClientService.BlockingInterface client,
       final List<Pair<byte[], String>> familyPaths,
       final byte[] regionName, boolean assignSeqNum) throws IOException {
     BulkLoadHFileRequest request =
@@ -1267,7 +1272,7 @@ public final class ProtobufUtil {
     }
   }
 
-  public static CoprocessorServiceResponse execService(final ClientProtocol client,
+  public static CoprocessorServiceResponse execService(final ClientService.BlockingInterface client,
       final CoprocessorServiceCall call, final byte[] regionName) throws IOException {
     CoprocessorServiceRequest request = CoprocessorServiceRequest.newBuilder()
         .setCall(call).setRegion(
@@ -1281,8 +1286,9 @@ public final class ProtobufUtil {
     }
   }
 
-  public static CoprocessorServiceResponse execService(final MasterAdminProtocol client,
-      final CoprocessorServiceCall call) throws IOException {
+  public static CoprocessorServiceResponse execService(
+    final MasterAdminService.BlockingInterface client, final CoprocessorServiceCall call)
+  throws IOException {
     CoprocessorServiceRequest request = CoprocessorServiceRequest.newBuilder()
         .setCall(call).setRegion(
             RequestConverter.buildRegionSpecifier(REGION_NAME, HConstants.EMPTY_BYTE_ARRAY)).build();
@@ -1314,7 +1320,7 @@ public final class ProtobufUtil {
    * @return the retrieved region info
    * @throws IOException
    */
-  public static HRegionInfo getRegionInfo(final AdminProtocol admin,
+  public static HRegionInfo getRegionInfo(final AdminService.BlockingInterface admin,
       final byte[] regionName) throws IOException {
     try {
       GetRegionInfoRequest request =
@@ -1336,7 +1342,7 @@ public final class ProtobufUtil {
    * @param transitionInZK
    * @throws IOException
    */
-  public static void closeRegion(final AdminProtocol admin,
+  public static void closeRegion(final AdminService.BlockingInterface admin,
       final byte[] regionName, final boolean transitionInZK) throws IOException {
     CloseRegionRequest closeRegionRequest =
       RequestConverter.buildCloseRegionRequest(regionName, transitionInZK);
@@ -1357,7 +1363,8 @@ public final class ProtobufUtil {
    * @return true if the region is closed
    * @throws IOException
    */
-  public static boolean closeRegion(final AdminProtocol admin, final byte[] regionName,
+  public static boolean closeRegion(final AdminService.BlockingInterface admin,
+      final byte[] regionName,
       final int versionOfClosingNode, final ServerName destinationServer,
       final boolean transitionInZK) throws IOException {
     CloseRegionRequest closeRegionRequest =
@@ -1378,7 +1385,7 @@ public final class ProtobufUtil {
    * @param region
    * @throws IOException
    */
-  public static void openRegion(final AdminProtocol admin,
+  public static void openRegion(final AdminService.BlockingInterface admin,
       final HRegionInfo region) throws IOException {
     OpenRegionRequest request =
       RequestConverter.buildOpenRegionRequest(region, -1);
@@ -1397,7 +1404,8 @@ public final class ProtobufUtil {
    * @return a list of online region info
    * @throws IOException
    */
-  public static List<HRegionInfo> getOnlineRegions(final AdminProtocol admin) throws IOException {
+  public static List<HRegionInfo> getOnlineRegions(final AdminService.BlockingInterface admin)
+  throws IOException {
     GetOnlineRegionRequest request = RequestConverter.buildGetOnlineRegionRequest();
     GetOnlineRegionResponse response = null;
     try {
@@ -1430,8 +1438,8 @@ public final class ProtobufUtil {
    * @return the server name
    * @throws IOException
    */
-  public static ServerInfo getServerInfo(
-      final AdminProtocol admin) throws IOException {
+  public static ServerInfo getServerInfo(final AdminService.BlockingInterface admin)
+  throws IOException {
     GetServerInfoRequest request = RequestConverter.buildGetServerInfoRequest();
     try {
       GetServerInfoResponse response = admin.getServerInfo(null, request);
@@ -1451,8 +1459,9 @@ public final class ProtobufUtil {
    * @return the list of store files
    * @throws IOException
    */
-  public static List<String> getStoreFiles(final AdminProtocol admin,
-      final byte[] regionName, final byte[] family) throws IOException {
+  public static List<String> getStoreFiles(final AdminService.BlockingInterface admin,
+      final byte[] regionName, final byte[] family)
+  throws IOException {
     GetStoreFileRequest request =
       RequestConverter.buildGetStoreFileRequest(regionName, family);
     try {
@@ -1471,7 +1480,7 @@ public final class ProtobufUtil {
    * @param splitPoint
    * @throws IOException
    */
-  public static void split(final AdminProtocol admin,
+  public static void split(final AdminService.BlockingInterface admin,
       final HRegionInfo hri, byte[] splitPoint) throws IOException {
     SplitRegionRequest request =
       RequestConverter.buildSplitRegionRequest(hri.getRegionName(), splitPoint);
@@ -1492,7 +1501,7 @@ public final class ProtobufUtil {
    *          two adjacent regions
    * @throws IOException
    */
-  public static void mergeRegions(final AdminProtocol admin,
+  public static void mergeRegions(final AdminService.BlockingInterface admin,
       final HRegionInfo region_a, final HRegionInfo region_b,
       final boolean forcible) throws IOException {
     MergeRegionsRequest request = RequestConverter.buildMergeRegionsRequest(
@@ -1996,5 +2005,24 @@ public final class ProtobufUtil {
     } catch (IllegalAccessException e) {
       throw new IOException(e);
     }
+  }
+
+  public static CompactionDescriptor toCompactionDescriptor(HRegionInfo info, byte[] family,
+      List<Path> inputPaths, List<Path> outputPaths, Path storeDir) {
+    // compaction descriptor contains relative paths.
+    // input / output paths are relative to the store dir
+    // store dir is relative to region dir
+    CompactionDescriptor.Builder builder = CompactionDescriptor.newBuilder()
+        .setTableName(ByteString.copyFrom(info.getTableName()))
+        .setEncodedRegionName(ByteString.copyFrom(info.getEncodedNameAsBytes()))
+        .setFamilyName(ByteString.copyFrom(family))
+        .setStoreHomeDir(storeDir.getName()); //make relative
+    for (Path inputPath : inputPaths) {
+      builder.addCompactionInput(inputPath.getName()); //relative path
+    }
+    for (Path outputPath : outputPaths) {
+      builder.addCompactionOutput(outputPath.getName());
+    }
+    return builder.build();
   }
 }

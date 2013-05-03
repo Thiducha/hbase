@@ -1,5 +1,4 @@
 /**
- *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,25 +15,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.hadoop.hbase.ipc;
 
-import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.IpcProtocol;
+public class UnsupportedCompressionCodecException extends FatalConnectionException {
+  public UnsupportedCompressionCodecException() {
+    super();
+  }
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
+  public UnsupportedCompressionCodecException(String msg) {
+    super(msg);
+  }
 
-/** An RPC implementation for the client */
-@InterfaceAudience.Private
-public interface RpcClientEngine {
-  /** Construct a client-side proxy object. */
-  <T extends IpcProtocol> T getProxy(Class<T> protocol, InetSocketAddress addr,
-      Configuration conf, int rpcTimeout) throws IOException;
-
-  /** Shutdown this instance */
-  void close();
-
-  public HBaseClient getClient();
+  public UnsupportedCompressionCodecException(String msg, Throwable t) {
+    super(msg, t);
+  }
 }

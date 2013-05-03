@@ -1,4 +1,3 @@
-package org.apache.hadoop.hbase;
 /**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -16,17 +15,16 @@ package org.apache.hadoop.hbase;
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.hadoop.hbase.ipc;
 
-/**
- * Marker Interface used by ipc.  We need a means of referring to
- * ipc "protocols" generically.  For example, we need to tell an rpc
- * server the "protocols" it implements and it helps if all protocols
- * implement a common 'type'.  That is what this Interface is used for.
- */
-// This Interface replaces the old VersionedProtocol Interface.  Rather
-// than redo a bunch of code its removal, instead we put in place this
-// Interface and change all VP references to Protocol references.
+import org.apache.hadoop.hbase.HBaseIOException;
 
-// It is moved up here to top-level because it is ugly having members
-// of super packages reach down into subpackages.
-public interface IpcProtocol {}
+public class StoppedRpcClientException extends HBaseIOException {
+  public StoppedRpcClientException() {
+    super();
+  }
+
+  public StoppedRpcClientException(String msg) {
+    super(msg);
+  }
+}

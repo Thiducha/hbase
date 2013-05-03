@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -15,24 +15,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.hadoop.hbase.ipc;
 
-package org.apache.hadoop.hbase.security;
+public class WrongVersionException extends FatalConnectionException {
+  public WrongVersionException() {
+    super();
+  }
 
-import org.apache.hadoop.classification.InterfaceAudience;
+  public WrongVersionException(String msg) {
+    super(msg);
+  }
 
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
-
-/**
- * Indicates Token related information to be used in authorizing connections
- * over a given RPC protocol interface.
- */
-@Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.TYPE)
-@InterfaceAudience.Private
-public @interface TokenInfo {
-  /** The type of Token.getKind() to be handled */
-  String value();
+  public WrongVersionException(String msg, Throwable t) {
+    super(msg, t);
+  }
 }

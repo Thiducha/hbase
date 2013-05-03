@@ -29,10 +29,12 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.hbase.client.AdminProtocol;
-import org.apache.hadoop.hbase.client.ClientProtocol;
 import org.apache.hadoop.hbase.client.HConnectionManager;
 import org.apache.hadoop.hbase.master.HMaster;
+import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.AdminService;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ClientService;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.MasterAdminService;
+import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.MasterMonitorService;
 import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStartupResponse;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.HRegionServer;
@@ -372,12 +374,12 @@ public class MiniHBaseCluster extends HBaseCluster {
   }
 
   @Override
-  public MasterAdminProtocol getMasterAdmin() {
+  public MasterAdminService.BlockingInterface getMasterAdmin() {
     return this.hbaseCluster.getActiveMaster();
   }
 
   @Override
-  public MasterMonitorProtocol getMasterMonitor() {
+  public MasterMonitorService.BlockingInterface getMasterMonitor() {
     return this.hbaseCluster.getActiveMaster();
   }
 
@@ -676,6 +678,20 @@ public class MiniHBaseCluster extends HBaseCluster {
     this.hbaseCluster.join();
   }
 
+  public List<HRegion> findRegionsForTable(byte[] tableName) {
+    ArrayList<HRegion> ret = new ArrayList<HRegion>();
+    for (JVMClusterUtil.RegionServerThread rst : getRegionServerThreads()) {
+      HRegionServer hrs = rst.getRegionServer();
+      for (HRegion region : hrs.getOnlineRegions(tableName)) {
+        if (Bytes.equals(region.getTableDesc().getName(), tableName)) {
+          ret.add(region);
+        }
+      }
+    }
+    return ret;
+  }
+
+
   protected int getRegionServerIndex(ServerName serverName) {
     //we have a small number of region servers, this should be fine for now.
     List<RegionServerThread> servers = getRegionServerThreads();
@@ -698,12 +714,13 @@ public class MiniHBaseCluster extends HBaseCluster {
   }
 
   @Override
-  public AdminProtocol getAdminProtocol(ServerName serverName) throws IOException {
+  public AdminService.BlockingInterface getAdminProtocol(ServerName serverName) throws IOException {
     return getRegionServer(getRegionServerIndex(serverName));
   }
 
   @Override
-  public ClientProtocol getClientProtocol(ServerName serverName) throws IOException {
+  public ClientService.BlockingInterface getClientProtocol(ServerName serverName)
+  throws IOException {
     return getRegionServer(getRegionServerIndex(serverName));
   }
 }

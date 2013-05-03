@@ -20,10 +20,9 @@
 
 package org.apache.hadoop.hbase.client;
 
-
-import org.apache.hadoop.hbase.MasterMonitorProtocol;
-
 import java.io.Closeable;
+
+import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos;
 
 /**
  * A KeepAlive connection is not physically closed immediately after the close,
@@ -36,9 +35,5 @@ import java.io.Closeable;
  * speak the MasterMonitorProtocol; but not by final user code. Hence it's
  * package protected.
  */
-interface MasterMonitorKeepAliveConnection extends MasterMonitorProtocol, Closeable {
-
-  @Override
-  public void close();
-}
-
+interface MasterMonitorKeepAliveConnection
+extends MasterMonitorProtos.MasterMonitorService.BlockingInterface, Closeable {}

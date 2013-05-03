@@ -15,22 +15,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.hadoop.hbase.ipc;
 
-package org.apache.hadoop.hbase;
-
-import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.classification.InterfaceStability;
-import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.MasterAdminService;
-import org.apache.hadoop.hbase.security.KerberosInfo;
-import org.apache.hadoop.hbase.security.TokenInfo;
-
-/**
- * Protocol that a client uses to communicate with the Master (for admin purposes).
- */
-@KerberosInfo(
-  serverPrincipal = "hbase.master.kerberos.principal")
-@TokenInfo("HBASE_AUTH_TOKEN")
-@InterfaceAudience.Private
-@InterfaceStability.Evolving
-public interface MasterAdminProtocol
-extends MasterAdminService.BlockingInterface, MasterProtocol {}
+@SuppressWarnings("serial")
+public class UnknownServiceException extends FatalConnectionException {
+  UnknownServiceException(final String msg) {
+    super(msg);
+  }
+}
