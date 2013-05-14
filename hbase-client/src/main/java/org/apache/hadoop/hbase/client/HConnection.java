@@ -18,40 +18,41 @@
  */
 package org.apache.hadoop.hbase.client;
 
+import java.io.Closeable;
+import java.io.IOException;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Abortable;
 import org.apache.hadoop.hbase.HRegionLocation;
 import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.MasterAdminProtocol;
-import org.apache.hadoop.hbase.MasterMonitorProtocol;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.catalog.CatalogTracker;
 import org.apache.hadoop.hbase.client.coprocessor.Batch;
 import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
 import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
-import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
-
-import java.io.Closeable;
-import java.io.IOException;
-import java.util.List;
-import java.util.concurrent.ExecutorService;
+import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.AdminService;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ClientService;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos.MasterAdminService;
+import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos.MasterMonitorService;
 
 /**
- * Cluster connection.  Hosts a connection to the ZooKeeper ensemble and
- * thereafter into the HBase cluster.  Knows how to locate regions out on the cluster,
+ * A cluster connection.  Knows how to find the master, locate regions out on the cluster,
  * keeps a cache of locations and then knows how to recalibrate after they move.
- * {@link HConnectionManager} manages instances of this class.
+ * {@link HConnectionManager} manages instances of this class.   This is NOT a connection to a
+ * particular server but to all servers in the cluster.  An implementation takes care of individual
+ * connections at a lower level.
  *
  * <p>HConnections are used by {@link HTable} mostly but also by
- * {@link HBaseAdmin}, {@link CatalogTracker},
- * and {@link ZooKeeperWatcher}.  HConnection instances can be shared.  Sharing
+ * {@link HBaseAdmin}, and {@link CatalogTracker}.  HConnection instances can be shared.  Sharing
  * is usually what you want because rather than each HConnection instance
  * having to do its own discovery of regions out on the cluster, instead, all
- * clients get to share the one cache of locations.  Sharing makes cleanup of
- * HConnections awkward.  See {@link HConnectionManager} for cleanup
- * discussion.
+ * clients get to share the one cache of locations.  {@link HConnectionManager} does the
+ * sharing for you if you go by it getting connections.  Sharing makes cleanup of
+ * HConnections awkward.  See {@link HConnectionManager} for cleanup discussion.
  *
  * @see HConnectionManager
  */
@@ -62,17 +63,6 @@ public interface HConnection extends Abortable, Closeable {
    * @return Configuration instance being used by this HConnection instance.
    */
   public Configuration getConfiguration();
-
-  /**
-   * Retrieve ZooKeeperWatcher used by this connection.
-   * @return ZooKeeperWatcher handle being used by the connection.
-   * @throws IOException if a remote or network exception occurs
-   * @deprecated Removed because it was a mistake exposing zookeeper in this
-   * interface (ZooKeeper is an implementation detail).
-   * Deprecated in HBase 0.94
-   */
-  @Deprecated
-  public ZooKeeperWatcher getZooKeeperWatcher() throws IOException;
 
   /** @return - true if the master server is running */
   public boolean isMasterRunning()
@@ -101,9 +91,9 @@ public interface HConnection extends Abortable, Closeable {
    * @throws IOException if a remote or network exception occurs
    */
   public boolean isTableAvailable(byte[] tableName) throws IOException;
-  
+
   /**
-   * Use this api to check if the table has been created with the specified number of 
+   * Use this api to check if the table has been created with the specified number of
    * splitkeys which was used while creating the given table.
    * Note : If this api is used after a table's region gets splitted, the api may return
    * false.
@@ -199,7 +189,7 @@ public interface HConnection extends Abortable, Closeable {
    */
   public List<HRegionLocation> locateRegions(final byte[] tableName)
   throws IOException;
-  
+
   /**
    * Gets the locations of all regions in the specified table, <i>tableName</i>.
    * @param tableName table to get regions of
@@ -213,29 +203,14 @@ public interface HConnection extends Abortable, Closeable {
       final boolean offlined) throws IOException;
 
   /**
-   * Returns a {@link MasterAdminProtocol} to the active master
+   * Returns a {@link MasterAdminKeepAliveConnection} to the active master
    */
-  public MasterAdminProtocol getMasterAdmin() throws IOException;
+  public MasterAdminService.BlockingInterface getMasterAdmin() throws IOException;
 
   /**
-   * Returns an {@link MasterMonitorProtocol} to the active master
+   * Returns an {@link MasterMonitorKeepAliveConnection} to the active master
    */
-  public MasterMonitorProtocol getMasterMonitor() throws IOException;
-
-
-  /**
-   * Establishes a connection to the region server at the specified address.
-   * @param hostname RegionServer hostname
-   * @param port RegionServer port
-   * @return proxy for HRegionServer
-   * @throws IOException if a remote or network exception occurs
-   * @deprecated - use @link {#getAdmin(final ServerName serverName)} which takes into account
-   *  the startCode
-   */
-  @Deprecated
-  public AdminProtocol getAdmin(final String hostname, final int port)
-  throws IOException;
-
+  public MasterMonitorService.BlockingInterface getMasterMonitor() throws IOException;
 
   /**
    * Establishes a connection to the region server at the specified address.
@@ -243,27 +218,10 @@ public interface HConnection extends Abortable, Closeable {
    * @return proxy for HRegionServer
    * @throws IOException if a remote or network exception occurs
    */
-  public AdminProtocol getAdmin(final ServerName serverName)
-      throws IOException;
+  public AdminService.BlockingInterface getAdmin(final ServerName serverName) throws IOException;
 
   /**
-   * Establishes a connection to the region server at the specified address, and return
-   * a region client protocol.
-   *
-   * @param hostname RegionServer hostname
-   * @param port RegionServer port
-   * @return ClientProtocol proxy for RegionServer
-   * @throws IOException if a remote or network exception occurs
-   * @deprecated - use @link {#getClient(final ServerName serverName)} which takes into account
-   *  the startCode
-   */
-  @Deprecated
-  public ClientProtocol getClient(final String hostname, final int port)
-  throws IOException;
-
-
-  /**
-   * Establishes a connection to the region server at the specified address, and return
+   * Establishes a connection to the region server at the specified address, and returns
    * a region client protocol.
    *
    * @param serverName
@@ -271,30 +229,17 @@ public interface HConnection extends Abortable, Closeable {
    * @throws IOException if a remote or network exception occurs
    *
    */
-  public ClientProtocol getClient(final ServerName serverName) throws IOException;
-
-  /**
-   * Establishes a connection to the region server at the specified address.
-   * @param hostname RegionServer hostname
-   * @param port RegionServer port
-   * @param getMaster - do we check if master is alive
-   * @return proxy for HRegionServer
-   * @throws IOException if a remote or network exception occurs
-   * @deprecated use @link {#getAdmin(final ServerName serverName, boolean getMaster)}
-   * which takes into account the startCode.
-   */
-  @Deprecated
-  public AdminProtocol getAdmin(final String hostname, final int port, boolean getMaster)
-  throws IOException;
+  public ClientService.BlockingInterface getClient(final ServerName serverName) throws IOException;
 
   /**
    * Establishes a connection to the region server at the specified address.
    * @param serverName
-   * @param getMaster - do we check if master is alive
+   * @param getMaster do we check if master is alive
    * @return proxy for HRegionServer
    * @throws IOException if a remote or network exception occurs
+   * @deprecated You can pass master flag but nothing special is done.
    */
-  public AdminProtocol getAdmin(final ServerName serverName, boolean getMaster)
+  public AdminService.BlockingInterface getAdmin(final ServerName serverName, boolean getMaster)
       throws IOException;
 
   /**
@@ -417,13 +362,14 @@ public interface HConnection extends Abortable, Closeable {
   public void clearCaches(final ServerName sn);
 
   /**
-   * This function allows HBaseAdminProtocol and potentially others to get a shared MasterMonitor
+   * This function allows HBaseAdmin and potentially others to get a shared MasterMonitor
    * connection.
    * @return The shared instance. Never returns null.
    * @throws MasterNotRunningException
    */
-  public MasterMonitorKeepAliveConnection getKeepAliveMasterMonitor()
-      throws MasterNotRunningException;
+  // TODO: Why is this in the public interface when the returned type is shutdown package access?
+  public MasterMonitorKeepAliveConnection getKeepAliveMasterMonitorService()
+  throws MasterNotRunningException;
 
   /**
    * This function allows HBaseAdmin and potentially others to get a shared MasterAdminProtocol
@@ -431,7 +377,8 @@ public interface HConnection extends Abortable, Closeable {
    * @return The shared instance. Never returns null.
    * @throws MasterNotRunningException
    */
-  public MasterAdminKeepAliveConnection getKeepAliveMasterAdmin() throws MasterNotRunningException;
+  // TODO: Why is this in the public interface when the returned type is shutdown package access?
+  public MasterAdminKeepAliveConnection getKeepAliveMasterAdminService() throws MasterNotRunningException;
 
   /**
    * @param serverName
@@ -439,4 +386,3 @@ public interface HConnection extends Abortable, Closeable {
    */
   public boolean isDeadServer(ServerName serverName);
 }
-

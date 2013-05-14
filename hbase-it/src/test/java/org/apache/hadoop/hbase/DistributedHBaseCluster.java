@@ -25,15 +25,17 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.ClusterManager.ServiceType;
-import org.apache.hadoop.hbase.client.AdminProtocol;
-import org.apache.hadoop.hbase.client.ClientProtocol;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HConnection;
 import org.apache.hadoop.hbase.client.HConnectionManager;
 import org.apache.hadoop.hbase.exceptions.MasterNotRunningException;
 import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
+import org.apache.hadoop.hbase.protobuf.generated.AdminProtos;
 import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ServerInfo;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos;
+import org.apache.hadoop.hbase.protobuf.generated.MasterAdminProtos;
+import org.apache.hadoop.hbase.protobuf.generated.MasterMonitorProtos;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Threads;
 
@@ -110,13 +112,15 @@ public class DistributedHBaseCluster extends HBaseCluster {
   }
 
   @Override
-  public AdminProtocol getAdminProtocol(ServerName serverName) throws IOException {
-    return getAdmin().getConnection().getAdmin(serverName);
+  public AdminProtos.AdminService.BlockingInterface getAdminProtocol(ServerName serverName)
+  throws IOException {
+    return admin.getConnection().getAdmin(serverName);
   }
 
   @Override
-  public ClientProtocol getClientProtocol(ServerName serverName) throws IOException {
-    return getAdmin().getConnection().getClient(serverName);
+  public ClientProtos.ClientService.BlockingInterface getClientProtocol(ServerName serverName)
+  throws IOException {
+    return admin.getConnection().getClient(serverName);
   }
 
   @Override
@@ -157,13 +161,15 @@ public class DistributedHBaseCluster extends HBaseCluster {
   }
 
   @Override
-  public MasterAdminProtocol getMasterAdmin() throws IOException {
+  public MasterAdminProtos.MasterAdminService.BlockingInterface getMasterAdmin()
+  throws IOException {
     HConnection conn = HConnectionManager.getConnection(conf);
     return conn.getMasterAdmin();
   }
 
   @Override
-  public MasterMonitorProtocol getMasterMonitor() throws IOException {
+  public MasterMonitorProtos.MasterMonitorService.BlockingInterface getMasterMonitor()
+  throws IOException {
     HConnection conn = HConnectionManager.getConnection(conf);
     return conn.getMasterMonitor();
   }
@@ -219,7 +225,8 @@ public class DistributedHBaseCluster extends HBaseCluster {
       return null;
     }
 
-    AdminProtocol client = connection.getAdmin(regionLoc.getServerName());
+    AdminProtos.AdminService.BlockingInterface client =
+      connection.getAdmin(regionLoc.getServerName());
     ServerInfo info = ProtobufUtil.getServerInfo(client);
     return ProtobufUtil.toServerName(info.getServerName());
   }

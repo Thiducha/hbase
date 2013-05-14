@@ -1,4 +1,8 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
 /**
+ *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -15,22 +19,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+-->
+<configuration>
 
-package org.apache.hadoop.hbase;
-
-import org.apache.hadoop.classification.InterfaceAudience;
-import org.apache.hadoop.classification.InterfaceStability;
-import org.apache.hadoop.hbase.protobuf.generated.RegionServerStatusProtos.RegionServerStatusService;
-import org.apache.hadoop.hbase.security.TokenInfo;
-import org.apache.hadoop.hbase.security.KerberosInfo;
-
-/**
- * Protocol that a RegionServer uses to communicate its status to the Master.
- */
-@KerberosInfo(
-  serverPrincipal = "hbase.master.kerberos.principal")
-@TokenInfo("HBASE_AUTH_TOKEN")
-@InterfaceAudience.Private
-@InterfaceStability.Evolving
-public interface RegionServerStatusProtocol
-extends RegionServerStatusService.BlockingInterface, IpcProtocol {}
+  <!-- hadoop-2.0.5+'s HDFS-4305 by default enforces a min blocks size
+       of 1024*1024.  Many unit tests that use the hlog use smaller
+       blocks.  Setting this config to 0 to have tests pass -->
+  <property>
+    <name>dfs.namenode.fs-limits.min-block-size</name>
+    <value>0</value>
+  </property>
+</configuration>

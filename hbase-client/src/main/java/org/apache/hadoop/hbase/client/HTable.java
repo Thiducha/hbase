@@ -34,7 +34,6 @@ import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.KeyValueUtil;
 import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.client.HConnectionManager.HConnectable;
 import org.apache.hadoop.hbase.client.coprocessor.Batch;
 import org.apache.hadoop.hbase.filter.BinaryComparator;
 import org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel;
@@ -538,7 +537,7 @@ public class HTable implements HTableInterface {
    throws IOException {
      return new ServerCallable<Result>(connection, tableName, row, operationTimeout) {
        public Result call() throws IOException {
-         return ProtobufUtil.getRowOrBefore(server,
+         return ProtobufUtil.getRowOrBefore(stub,
            location.getRegionInfo().getRegionName(), row, family);
        }
      }.withRetries();
@@ -584,7 +583,7 @@ public class HTable implements HTableInterface {
   public Result get(final Get get) throws IOException {
     return new ServerCallable<Result>(connection, tableName, get.getRow(), operationTimeout) {
           public Result call() throws IOException {
-            return ProtobufUtil.get(server,
+            return ProtobufUtil.get(stub,
               location.getRegionInfo().getRegionName(), get);
           }
         }.withRetries();
@@ -653,7 +652,7 @@ public class HTable implements HTableInterface {
             try {
               MutateRequest request = RequestConverter.buildMutateRequest(
                 location.getRegionInfo().getRegionName(), delete);
-              MutateResponse response = server.mutate(null, request);
+              MutateResponse response = stub.mutate(null, request);
               return Boolean.valueOf(response.getProcessed());
             } catch (ServiceException se) {
               throw ProtobufUtil.getRemoteException(se);
@@ -772,7 +771,7 @@ public class HTable implements HTableInterface {
         try {
           MultiRequest request = RequestConverter.buildMultiRequest(
             location.getRegionInfo().getRegionName(), rm);
-          server.multi(null, request);
+          stub.multi(null, request);
         } catch (ServiceException se) {
           throw ProtobufUtil.getRemoteException(se);
         }
@@ -797,7 +796,7 @@ public class HTable implements HTableInterface {
                 location.getRegionInfo().getRegionName(), append);
               PayloadCarryingRpcController rpcController =
                 new PayloadCarryingRpcController();
-              MutateResponse response = server.mutate(rpcController, request);
+              MutateResponse response = stub.mutate(rpcController, request);
               if (!response.hasResult()) return null;
               return ProtobufUtil.toResult(response.getResult(), rpcController.cellScanner());
             } catch (ServiceException se) {
@@ -822,7 +821,7 @@ public class HTable implements HTableInterface {
               MutateRequest request = RequestConverter.buildMutateRequest(
                 location.getRegionInfo().getRegionName(), increment);
               PayloadCarryingRpcController rpcContoller = new PayloadCarryingRpcController();
-              MutateResponse response = server.mutate(rpcContoller, request);
+              MutateResponse response = stub.mutate(rpcContoller, request);
               return ProtobufUtil.toResult(response.getResult(), rpcContoller.cellScanner());
             } catch (ServiceException se) {
               throw ProtobufUtil.getRemoteException(se);
@@ -867,7 +866,7 @@ public class HTable implements HTableInterface {
                 location.getRegionInfo().getRegionName(), row, family,
                 qualifier, amount, durability);
               PayloadCarryingRpcController rpcController = new PayloadCarryingRpcController();
-              MutateResponse response = server.mutate(rpcController, request);
+              MutateResponse response = stub.mutate(rpcController, request);
               Result result =
                 ProtobufUtil.toResult(response.getResult(), rpcController.cellScanner());
               return Long.valueOf(Bytes.toLong(result.getValue(family, qualifier)));
@@ -892,7 +891,7 @@ public class HTable implements HTableInterface {
               MutateRequest request = RequestConverter.buildMutateRequest(
                 location.getRegionInfo().getRegionName(), row, family, qualifier,
                 new BinaryComparator(value), CompareType.EQUAL, put);
-              MutateResponse response = server.mutate(null, request);
+              MutateResponse response = stub.mutate(null, request);
               return Boolean.valueOf(response.getProcessed());
             } catch (ServiceException se) {
               throw ProtobufUtil.getRemoteException(se);
@@ -916,7 +915,7 @@ public class HTable implements HTableInterface {
               MutateRequest request = RequestConverter.buildMutateRequest(
                 location.getRegionInfo().getRegionName(), row, family, qualifier,
                 new BinaryComparator(value), CompareType.EQUAL, delete);
-              MutateResponse response = server.mutate(null, request);
+              MutateResponse response = stub.mutate(null, request);
               return Boolean.valueOf(response.getProcessed());
             } catch (ServiceException se) {
               throw ProtobufUtil.getRemoteException(se);
@@ -935,7 +934,7 @@ public class HTable implements HTableInterface {
             try {
               GetRequest request = RequestConverter.buildGetRequest(
                   location.getRegionInfo().getRegionName(), get, true);
-              GetResponse response = server.get(null, request);
+              GetResponse response = stub.get(null, request);
               return response.getExists();
             } catch (ServiceException se) {
               throw ProtobufUtil.getRemoteException(se);
@@ -1038,7 +1037,7 @@ public class HTable implements HTableInterface {
               try {
                 MultiGetRequest requests = RequestConverter.buildMultiGetRequest(location
                     .getRegionInfo().getRegionName(), getsByRegionEntry.getValue(), true, false);
-                MultiGetResponse responses = server.multiGet(null, requests);
+                MultiGetResponse responses = stub.multiGet(null, requests);
                 return responses.getExistsList();
               } catch (ServiceException se) {
                 throw ProtobufUtil.getRemoteException(se);

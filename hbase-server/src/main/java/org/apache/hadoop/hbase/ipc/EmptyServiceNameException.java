@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -15,25 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.hadoop.hbase.ipc;
 
-package org.apache.hadoop.hbase.security;
-
-import org.apache.hadoop.classification.InterfaceAudience;
-
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
-
-/**
- * Indicates Kerberos related information to be used for authorizing connections
- * over a given RPC protocol interface.
- */
-@Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.TYPE)
-@InterfaceAudience.Private
-public @interface KerberosInfo {
-  /** Key for getting server's Kerberos principal name from Configuration */
-  String serverPrincipal();
-  String clientPrincipal() default "";
-}
+@SuppressWarnings("serial")
+public class EmptyServiceNameException extends FatalConnectionException {}

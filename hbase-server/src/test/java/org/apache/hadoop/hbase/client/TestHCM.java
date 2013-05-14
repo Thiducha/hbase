@@ -45,7 +45,6 @@ import org.apache.hadoop.hbase.MediumTests;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.Waiter;
 import org.apache.hadoop.hbase.client.HConnectionManager.HConnectionImplementation;
-import org.apache.hadoop.hbase.client.HConnectionManager.HConnectionKey;
 import org.apache.hadoop.hbase.exceptions.RegionServerStoppedException;
 import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.master.ClusterStatusPublisher;
@@ -57,6 +56,7 @@ import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.ManualEnvironmentEdge;
 import org.apache.hadoop.hbase.util.JVMClusterUtil;
 import org.apache.hadoop.hbase.util.Threads;
+import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
@@ -76,6 +76,7 @@ public class TestHCM {
   private static final byte[] TABLE_NAME1 = Bytes.toBytes("test1");
   private static final byte[] TABLE_NAME2 = Bytes.toBytes("test2");
   private static final byte[] TABLE_NAME3 = Bytes.toBytes("test3");
+  private static final byte[] TABLE_NAME4 = Bytes.toBytes("test4");
   private static final byte[] FAM_NAM = Bytes.toBytes("f");
   private static final byte[] ROW = Bytes.toBytes("bbb");
   private static final byte[] ROW_X = Bytes.toBytes("xxx");
@@ -99,7 +100,7 @@ public class TestHCM {
   IllegalArgumentException, NoSuchFieldException,
   IllegalAccessException, InterruptedException, ZooKeeperConnectionException, IOException {
     HConnection last = null;
-    for (int i = 0; i <= (HConnectionManager.MAX_CACHED_HBASE_INSTANCES * 2); i++) {
+    for (int i = 0; i <= (HConnectionManager.MAX_CACHED_CONNECTION_INSTANCES * 2); i++) {
       // set random key to differentiate the connection from previous ones
       Configuration configuration = HBaseConfiguration.create();
       configuration.set("somekey", String.valueOf(_randy.nextInt()));
@@ -186,9 +187,9 @@ public class TestHCM {
     // Save off current HConnections
     Map<HConnectionKey, HConnectionImplementation> oldHBaseInstances =
         new HashMap<HConnectionKey, HConnectionImplementation>();
-    oldHBaseInstances.putAll(HConnectionManager.HBASE_INSTANCES);
+    oldHBaseInstances.putAll(HConnectionManager.CONNECTION_INSTANCES);
 
-    HConnectionManager.HBASE_INSTANCES.clear();
+    HConnectionManager.CONNECTION_INSTANCES.clear();
 
     try {
       HConnection connection = HConnectionManager.getConnection(TEST_UTIL.getConfiguration());
@@ -198,8 +199,8 @@ public class TestHCM {
         HConnectionManager.getConnection(TEST_UTIL.getConfiguration()));
     } finally {
       // Put original HConnections back
-      HConnectionManager.HBASE_INSTANCES.clear();
-      HConnectionManager.HBASE_INSTANCES.putAll(oldHBaseInstances);
+      HConnectionManager.CONNECTION_INSTANCES.clear();
+      HConnectionManager.CONNECTION_INSTANCES.putAll(oldHBaseInstances);
     }
   }
 
@@ -799,6 +800,64 @@ public class TestHCM {
   private static void assertEqualsWithJitter(long expected, long actual, long jitterBase) {
     assertTrue("Value not within jitter: " + expected + " vs " + actual,
         Math.abs(actual - expected) <= (0.01f * jitterBase));
+  }
+
+  /**
+   * Tests that a closed connection does not have a live zookeeper
+   * @throws Exception
+   */
+  @Test
+  public void testDeleteForZKConnLeak() throws Exception {
+    TEST_UTIL.createTable(TABLE_NAME4, FAM_NAM);
+    final Configuration config = TEST_UTIL.getConfiguration();
+
+    ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 10,
+      5, TimeUnit.SECONDS,
+      new SynchronousQueue<Runnable>(),
+      Threads.newDaemonThreadFactory("test-hcm-delete"));
+
+    pool.submit(new Runnable() {
+      @Override
+      public void run() {
+        while (!Thread.interrupted()) {
+          try {
+            HConnection conn = HConnectionManager.getConnection(config);
+            HConnectionManager.deleteStaleConnection(conn);
+          } catch (Exception e) {
+          }
+        }
+      }
+    });
+
+    // use connection multiple times
+    for (int i = 0; i < 50; i++) {
+      HConnection c1 = null;
+        try {
+          c1 = HConnectionManager.getConnection(config);
+          HTable table = new HTable(TABLE_NAME4, c1, pool);
+          table.close();
+        } catch (Exception e) {
+        } finally {
+          if (c1 != null) {
+            if (c1.isClosed()) {
+              // cannot use getZooKeeper as method instantiates watcher if null
+              Field zkwField = c1.getClass().getDeclaredField("keepAliveZookeeper");
+              zkwField.setAccessible(true);
+              Object watcher = zkwField.get(c1);
+
+              if (watcher != null) {
+                if (((ZooKeeperWatcher)watcher).getRecoverableZooKeeper().getState().isAlive()) {
+                  pool.shutdownNow();
+                  fail("Live zookeeper in closed connection");
+                }
+              }
+            }
+            c1.close();
+          }
+        }
+    }
+
+    pool.shutdownNow();
   }
 }
 

@@ -314,6 +314,11 @@ public class LoadIncrementalHFiles extends Configured implements Tool {
         LOG.error(err);
       }
     }
+    
+    if (queue != null && !queue.isEmpty()) {
+        throw new RuntimeException("Bulk load aborted with some files not yet loaded."
+          + "Please check log for more details.");
+    }
   }
 
   /**
@@ -543,7 +548,7 @@ public class LoadIncrementalHFiles extends Configured implements Tool {
               + Bytes.toStringBinary(row));
           byte[] regionName = location.getRegionInfo().getRegionName();
           if(!useSecure) {
-            success = ProtobufUtil.bulkLoadHFile(server, famPaths, regionName, assignSeqIds);
+            success = ProtobufUtil.bulkLoadHFile(stub, famPaths, regionName, assignSeqIds);
           } else {
             HTable table = new HTable(conn.getConfiguration(), tableName);
             secureClient = new SecureBulkLoadClient(table);

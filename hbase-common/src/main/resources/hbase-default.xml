@@ -346,8 +346,8 @@
     <name>hbase.regionserver.optionalcacheflushinterval</name>
     <value>3600000</value>
     <description>
-    Amount of time to wait since the last time a region was flushed before
-    invoking an optional cache flush. Default 1 hour.
+    Maximum amount of time an edit lives in memory before being automatically flushed.
+    Default 1 hour. Set it to 0 to disable automatic flushing.
     </description>
   </property>
   <property>
@@ -998,6 +998,17 @@
         take for a remote call to time out. It uses pings to check connections
         but will eventually throw a TimeoutException. 
         The default value is 60000ms(60s).
+    </description>
+  </property>
+  <property>
+    <name>hbase.server.compactchecker.interval.multiplier</name>
+    <value>1000</value>
+    <description>
+        The number that determines how often we scan to see if compaction is necessary.
+        Normally, compactions are done after some events (such as memstore flush), but if
+        region didn't receive a lot of writes for some time, or due to different compaction
+        policies, it may be necessary to check it periodically. The interval between checks is
+        hbase.server.compactchecker.interval.multiplier multiplied by hbase.server.thread.wakefrequency.
     </description>
   </property>
 </configuration>

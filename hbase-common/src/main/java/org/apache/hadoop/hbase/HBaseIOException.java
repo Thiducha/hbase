@@ -15,23 +15,34 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-package org.apache.hadoop.hbase.client;
+package org.apache.hadoop.hbase;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
-import org.apache.hadoop.hbase.IpcProtocol;
-import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ClientService;
-import org.apache.hadoop.hbase.security.KerberosInfo;
-import org.apache.hadoop.hbase.security.TokenInfo;
+
+import java.io.IOException;
 
 /**
- * Protocol that a HBase client uses to communicate with a region server.
+ * All hbase specific IOExceptions should be subclasses of HBaseIOException
  */
-@KerberosInfo(
-  serverPrincipal = "hbase.regionserver.kerberos.principal")
-@TokenInfo("HBASE_AUTH_TOKEN")
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public interface ClientProtocol
-extends ClientService.BlockingInterface, IpcProtocol {}
+public class HBaseIOException extends IOException {
+
+  private static final long serialVersionUID = 1L;
+
+  public HBaseIOException() {
+    super();
+  }
+
+  public HBaseIOException(String message) {
+    super(message);
+  }
+
+  public HBaseIOException(String message, Throwable cause) {
+      super(message, cause);
+  }
+
+  public HBaseIOException(Throwable cause) {
+      super(cause);
+  }}
