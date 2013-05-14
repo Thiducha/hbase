@@ -1546,24 +1546,6 @@ public class HConnectionManager {
       return serviceName + "@" + rsHostnamePort;
     }
 
-    @Override
-    @Deprecated
-    public ZooKeeperWatcher getZooKeeperWatcher()
-        throws ZooKeeperConnectionException {
-      canCloseZKW = false;
-
-      try {
-        return getKeepAliveZooKeeperWatcher();
-      } catch (ZooKeeperConnectionException e){
-        throw e;
-      }catch (IOException e) {
-        // Encapsulate exception to keep interface
-        throw new ZooKeeperConnectionException(
-          "Can't create a zookeeper connection", e);
-      }
-    }
-
-
     private ZooKeeperKeepAliveConnection keepAliveZookeeper;
     private int keepAliveZookeeperUserCount;
     private boolean canCloseZKW = true;
@@ -1579,6 +1561,9 @@ public class HConnectionManager {
       throws IOException {
       synchronized (masterAndZKLock) {
         if (keepAliveZookeeper == null) {
+          if (this.closed) {
+            throw new IOException(toString() + " closed");
+          }
           // We don't check that our link to ZooKeeper is still valid
           // But there is a retry mechanism in the ZooKeeperWatcher itself
           keepAliveZookeeper = new ZooKeeperKeepAliveConnection(
@@ -2640,12 +2625,12 @@ public class HConnectionManager {
       }
       delayedClosing.stop("Closing connection");
       closeMaster();
+      this.closed = true;
       closeZooKeeperWatcher();
       this.stubs.clear();
       if (clusterStatusListener != null) {
         clusterStatusListener.close();
       }
-      this.closed = true;
     }
 
     @Override
