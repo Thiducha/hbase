@@ -82,7 +82,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * </pre>
  */
 @InterfaceAudience.Private
-public class ReplicationZookeeper implements Closeable {
+public class ReplicationZookeeper extends ReplicationStateZKBase implements Closeable {
   private static final Log LOG =
     LogFactory.getLog(ReplicationZookeeper.class);
 
@@ -132,6 +132,7 @@ public class ReplicationZookeeper implements Closeable {
    */
   public ReplicationZookeeper(final Abortable abortable, final Configuration conf,
       final ZooKeeperWatcher zk) throws KeeperException {
+    super(zk, conf, abortable);
     this.conf = conf;
     this.zookeeper = zk;
     setZNodes(abortable);
@@ -151,6 +152,7 @@ public class ReplicationZookeeper implements Closeable {
    */
   public ReplicationZookeeper(final Server server, final AtomicBoolean replicating)
   throws IOException, KeeperException {
+    super(server.getZooKeeper(), server.getConfiguration(), server);
     this.abortable = server;
     this.zookeeper = server.getZooKeeper();
     this.conf = server.getConfiguration();
@@ -432,6 +434,30 @@ public class ReplicationZookeeper implements Closeable {
   }
 
   /**
+   * @param position
+   * @return Serialized protobuf of <code>position</code> with pb magic prefix
+   *         prepended suitable for use as content of an hlog position in a
+   *         replication queue.
+   */
+  public static byte[] positionToByteArray(
+      final long position) {
+    return ZKUtil.positionToByteArray(position);
+  }
+
+  /**
+   * @param lockOwner
+   * @return Serialized protobuf of <code>lockOwner</code> with pb magic prefix
+   *         prepended suitable for use as content of an replication lock during
+   *         region server fail over.
+   */
+  static byte[] lockToByteArray(
+      final String lockOwner) {
+    byte[] bytes = ZooKeeperProtos.ReplicationLock.newBuilder().setLockOwner(lockOwner).build()
+        .toByteArray();
+    return ProtobufUtil.prependPBMagic(bytes);
+  }
+
+  /**
    * @param bytes Content of a peer znode.
    * @return ClusterKey parsed from the passed bytes.
    * @throws DeserializationException
@@ -476,9 +502,40 @@ public class ReplicationZookeeper implements Closeable {
     }
   }
 
-  private boolean peerExists(String id) throws KeeperException {
-    return ZKUtil.checkExists(this.zookeeper,
-          ZKUtil.joinZNode(this.peersZNode, id)) >= 0;
+  /**
+   * @param bytes - Content of a HLog position znode.
+   * @return long - The current HLog position.
+   * @throws DeserializationException
+   */
+  public static long parseHLogPositionFrom(
+      final byte[] bytes) throws DeserializationException {
+    return ZKUtil.parseHLogPositionFrom(bytes);
+  }
+
+  /**
+   * @param bytes - Content of a lock znode.
+   * @return String - The owner of the lock.
+   * @throws DeserializationException
+   */
+  static String parseLockOwnerFrom(
+      final byte[] bytes) throws DeserializationException {
+    if (ProtobufUtil.isPBMagicPrefix(bytes)) {
+      int pblen = ProtobufUtil.lengthOfPBMagic();
+      ZooKeeperProtos.ReplicationLock.Builder builder = ZooKeeperProtos.ReplicationLock
+          .newBuilder();
+      ZooKeeperProtos.ReplicationLock lock;
+      try {
+        lock = builder.mergeFrom(bytes, pblen, bytes.length - pblen).build();
+      } catch (InvalidProtocolBufferException e) {
+        throw new DeserializationException(e);
+      }
+      return lock.getLockOwner();
+    } else {
+      if (bytes.length > 0) {
+        return Bytes.toString(bytes);
+      }
+      return "";
+    }
   }
 
   /**
