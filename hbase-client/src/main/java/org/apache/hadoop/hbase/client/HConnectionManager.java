@@ -18,37 +18,10 @@
  */
 package org.apache.hadoop.hbase.client;
 
-import java.io.Closeable;
-import java.io.IOException;
-import java.io.InterruptedIOException;
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.UndeclaredThrowableException;
-import java.net.SocketException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.NavigableMap;
-import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-
+import com.google.common.annotations.VisibleForTesting;
+import com.google.protobuf.BlockingRpcChannel;
+import com.google.protobuf.RpcController;
+import com.google.protobuf.ServiceException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -156,10 +129,33 @@ import org.apache.hadoop.hbase.zookeeper.ZooKeeperWatcher;
 import org.apache.hadoop.ipc.RemoteException;
 import org.apache.zookeeper.KeeperException;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.protobuf.BlockingRpcChannel;
-import com.google.protobuf.RpcController;
-import com.google.protobuf.ServiceException;
+import java.io.Closeable;
+import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.UndeclaredThrowableException;
+import java.net.SocketException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.NavigableMap;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * A non-instantiable class that manages {@link HConnection}s.
@@ -178,7 +174,7 @@ import com.google.protobuf.ServiceException;
  * in practise its not proven to be an issue.  Besides, {@link HConnection} is
  * implemented atop Hadoop RPC and as of this writing, Hadoop RPC does a
  * connection per cluster-member, exclusively).
- *
+ * <p/>
  * <p>But sharing connections makes clean up of {@link HConnection} instances a little awkward.
  * Currently, clients cleanup by calling {@link #deleteConnection(Configuration)}. This will
  * shutdown the zookeeper connection the HConnection was using and clean up all
@@ -228,14 +224,14 @@ public class HConnectionManager {
     // connections to the ensemble from the one client is 30, so in that case we
     // should run into zk issues before the LRU hit this value of 31.
     MAX_CACHED_CONNECTION_INSTANCES = HBaseConfiguration.create().getInt(
-      HConstants.ZOOKEEPER_MAX_CLIENT_CNXNS, HConstants.DEFAULT_ZOOKEPER_MAX_CLIENT_CNXNS) + 1;
+        HConstants.ZOOKEEPER_MAX_CLIENT_CNXNS, HConstants.DEFAULT_ZOOKEPER_MAX_CLIENT_CNXNS) + 1;
     CONNECTION_INSTANCES = new LinkedHashMap<HConnectionKey, HConnectionImplementation>(
         (int) (MAX_CACHED_CONNECTION_INSTANCES / 0.75F) + 1, 0.75F, true) {
       @Override
       protected boolean removeEldestEntry(
           Map.Entry<HConnectionKey, HConnectionImplementation> eldest) {
-         return size() > MAX_CACHED_CONNECTION_INSTANCES;
-       }
+        return size() > MAX_CACHED_CONNECTION_INSTANCES;
+      }
     };
   }
 
@@ -251,22 +247,23 @@ public class HConnectionManager {
    * If no current connection exists, method creates a new connection and keys it using
    * connection-specific properties from the passed {@link Configuration}; see
    * {@link HConnectionKey}.
+   *
    * @param conf configuration
    * @return HConnection object for <code>conf</code>
    * @throws ZooKeeperConnectionException
    */
   @SuppressWarnings("resource")
   public static HConnection getConnection(final Configuration conf)
-  throws IOException {
+      throws IOException {
     HConnectionKey connectionKey = new HConnectionKey(conf);
     synchronized (CONNECTION_INSTANCES) {
       HConnectionImplementation connection = CONNECTION_INSTANCES.get(connectionKey);
       if (connection == null) {
-        connection = (HConnectionImplementation)createConnection(conf, true);
+        connection = (HConnectionImplementation) createConnection(conf, true);
         CONNECTION_INSTANCES.put(connectionKey, connection);
       } else if (connection.isClosed()) {
         HConnectionManager.deleteConnection(connectionKey, true);
-        connection = (HConnectionImplementation)createConnection(conf, true);
+        connection = (HConnectionImplementation) createConnection(conf, true);
         CONNECTION_INSTANCES.put(connectionKey, connection);
       }
       connection.incCount();
@@ -279,19 +276,20 @@ public class HConnectionManager {
    * <p>Note: This bypasses the usual HConnection life cycle management done by
    * {@link #getConnection(Configuration)}. Use this with caution, the caller is responsible for
    * calling {@link HConnection#close()} on the returned connection instance.
+   *
    * @param conf configuration
    * @return HConnection object for <code>conf</code>
    * @throws ZooKeeperConnectionException
    */
   public static HConnection createConnection(Configuration conf)
-  throws IOException {
+      throws IOException {
     return createConnection(conf, false);
   }
 
   static HConnection createConnection(final Configuration conf, final boolean managed)
-  throws IOException {
+      throws IOException {
     String className = conf.get("hbase.client.connection.impl",
-      HConnectionManager.HConnectionImplementation.class.getName());
+        HConnectionManager.HConnectionImplementation.class.getName());
     Class<?> clazz = null;
     try {
       clazz = Class.forName(className);
@@ -301,7 +299,7 @@ public class HConnectionManager {
     try {
       // Default HCM#HCI is not accessible; make it so before invoking.
       Constructor<?> constructor =
-        clazz.getDeclaredConstructor(Configuration.class, boolean.class);
+          clazz.getDeclaredConstructor(Configuration.class, boolean.class);
       constructor.setAccessible(true);
       return (HConnection) constructor.newInstance(conf, managed);
     } catch (Exception e) {
@@ -346,7 +344,7 @@ public class HConnectionManager {
 
   private static void deleteConnection(HConnection connection, boolean staleConnection) {
     synchronized (CONNECTION_INSTANCES) {
-      for (Entry<HConnectionKey, HConnectionImplementation> e: CONNECTION_INSTANCES.entrySet()) {
+      for (Entry<HConnectionKey, HConnectionImplementation> e : CONNECTION_INSTANCES.entrySet()) {
         if (e.getValue() == connection) {
           deleteConnection(e.getKey(), staleConnection);
           break;
@@ -365,8 +363,8 @@ public class HConnectionManager {
           connection.internalClose();
         }
       } else {
-        LOG.error("Connection not found in the list, can't delete it "+
-          "(connection key=" + connectionKey + "). May be the key was modified?");
+        LOG.error("Connection not found in the list, can't delete it " +
+            "(connection key=" + connectionKey + "). May be the key was modified?");
       }
     }
   }
@@ -374,15 +372,16 @@ public class HConnectionManager {
   /**
    * It is provided for unit test cases which verify the behavior of region
    * location cache prefetch.
+   *
    * @return Number of cached regions for the table.
    * @throws ZooKeeperConnectionException
    */
   static int getCachedRegionCount(Configuration conf, final byte[] tableName)
-  throws IOException {
+      throws IOException {
     return execute(new HConnectable<Integer>(conf) {
       @Override
       public Integer connect(HConnection connection) {
-        return ((HConnectionImplementation)connection).getNumberOfCachedRegionLocations(tableName);
+        return ((HConnectionImplementation) connection).getNumberOfCachedRegionLocations(tableName);
       }
     });
   }
@@ -390,11 +389,12 @@ public class HConnectionManager {
   /**
    * It's provided for unit test cases which verify the behavior of region
    * location cache prefetch.
+   *
    * @return true if the region where the table and row reside is cached.
    * @throws ZooKeeperConnectionException
    */
   static boolean isRegionCached(Configuration conf, final byte[] tableName, final byte[] row)
-  throws IOException {
+      throws IOException {
     return execute(new HConnectable<Boolean>(conf) {
       @Override
       public Boolean connect(HConnection connection) {
@@ -408,7 +408,7 @@ public class HConnectionManager {
    * implementation using a {@link HConnection} instance that lasts just for the
    * duration of the invocation.
    *
-   * @param <T> the return type of the connect method
+   * @param <T>         the return type of the connect method
    * @param connectable the {@link HConnectable} instance
    * @return the value returned by the connect method
    * @throws IOException
@@ -436,10 +436,12 @@ public class HConnectionManager {
     }
   }
 
-  /** Encapsulates connection to zookeeper and regionservers.*/
+  /**
+   * Encapsulates connection to zookeeper and regionservers.
+   */
   @edu.umd.cs.findbugs.annotations.SuppressWarnings(
-      value="AT_OPERATION_SEQUENCE_ON_CONCURRENT_ABSTRACTION",
-      justification="Access to the conncurrent hash map is under a lock so should be fine.")
+      value = "AT_OPERATION_SEQUENCE_ON_CONCURRENT_ABSTRACTION",
+      justification = "Access to the conncurrent hash map is under a lock so should be fine.")
   static class HConnectionImplementation implements HConnection, Closeable {
     static final Log LOG = LogFactory.getLog(HConnectionImplementation.class);
     private final long pause;
@@ -466,7 +468,7 @@ public class HConnectionManager {
 
     private long keepZooKeeperWatcherAliveUntil = Long.MAX_VALUE;
     private final DelayedClosing delayedClosing =
-      DelayedClosing.createAndStart(this);
+        DelayedClosing.createAndStart(this);
 
 
     private final Configuration conf;
@@ -478,8 +480,8 @@ public class HConnectionManager {
      * Map of table to table {@link HRegionLocation}s.  The table key is made
      * by doing a {@link Bytes#mapKey(byte[])} of the table's name.
      */
-    private final Map<Integer, SoftValueSortedMap<byte [], HRegionLocation>> cachedRegionLocations =
-      new HashMap<Integer, SoftValueSortedMap<byte [], HRegionLocation>>();
+    private final Map<Integer, SoftValueSortedMap<byte[], HRegionLocation>> cachedRegionLocations =
+        new HashMap<Integer, SoftValueSortedMap<byte[], HRegionLocation>>();
 
     // The presence of a server in the map implies it's likely that there is an
     // entry in cachedRegionLocations that map to this server; but the absence
@@ -491,7 +493,7 @@ public class HConnectionManager {
     // region cache prefetch is enabled by default. this set contains all
     // tables whose region cache prefetch are disabled.
     private final Set<Integer> regionCachePrefetchDisabledTables =
-      new CopyOnWriteArraySet<Integer>();
+        new CopyOnWriteArraySet<Integer>();
 
     private int refCount;
 
@@ -505,29 +507,30 @@ public class HConnectionManager {
 
     /**
      * constructor
-     * @param conf Configuration object
+     *
+     * @param conf    Configuration object
      * @param managed If true, does not do full shutdown on close; i.e. cleanup of connection
-     * to zk and shutdown of all services; we just close down the resources this connection was
-     * responsible for and decrement usage counters.  It is up to the caller to do the full
-     * cleanup.  It is set when we want have connection sharing going on -- reuse of zk connection,
-     * and cached region locations, established regionserver connections, etc.  When connections
-     * are shared, we have reference counting going on and will only do full cleanup when no more
-     * users of an HConnectionImplementation instance.
+     *                to zk and shutdown of all services; we just close down the resources this connection was
+     *                responsible for and decrement usage counters.  It is up to the caller to do the full
+     *                cleanup.  It is set when we want have connection sharing going on -- reuse of zk connection,
+     *                and cached region locations, established regionserver connections, etc.  When connections
+     *                are shared, we have reference counting going on and will only do full cleanup when no more
+     *                users of an HConnectionImplementation instance.
      */
     HConnectionImplementation(Configuration conf, boolean managed) throws IOException {
       this.conf = conf;
       this.managed = managed;
       this.closed = false;
       this.pause = conf.getLong(HConstants.HBASE_CLIENT_PAUSE,
-        HConstants.DEFAULT_HBASE_CLIENT_PAUSE);
+          HConstants.DEFAULT_HBASE_CLIENT_PAUSE);
       this.numTries = conf.getInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER,
-        HConstants.DEFAULT_HBASE_CLIENT_RETRIES_NUMBER);
+          HConstants.DEFAULT_HBASE_CLIENT_RETRIES_NUMBER);
       this.rpcTimeout = conf.getInt(
-        HConstants.HBASE_RPC_TIMEOUT_KEY,
-        HConstants.DEFAULT_HBASE_RPC_TIMEOUT);
+          HConstants.HBASE_RPC_TIMEOUT_KEY,
+          HConstants.DEFAULT_HBASE_RPC_TIMEOUT);
       this.prefetchRegionLimit = conf.getInt(
-        HConstants.HBASE_CLIENT_PREFETCH_LIMIT,
-        HConstants.DEFAULT_HBASE_CLIENT_PREFETCH_LIMIT);
+          HConstants.HBASE_CLIENT_PREFETCH_LIMIT,
+          HConstants.DEFAULT_HBASE_CLIENT_PREFETCH_LIMIT);
       this.useServerTrackerForRetries = conf.getBoolean(RETRIES_BY_SERVER_KEY, true);
       long serverTrackerTimeout = 0;
       if (this.useServerTrackerForRetries) {
@@ -561,22 +564,22 @@ public class HConnectionManager {
               public void newDead(ServerName sn) {
                 clearCaches(sn);
                 rpcClient.cancelConnections(sn.getHostname(), sn.getPort(),
-                  new SocketException(sn.getServerName() + " is dead: closing its connection."));
+                    new SocketException(sn.getServerName() + " is dead: closing its connection."));
               }
             }, conf, listenerClass);
       }
     }
- 
+
     /**
      * @return The cluster registry implementation to use.
      * @throws IOException
      */
     private Registry setupRegistry() throws IOException {
       String registryClass = this.conf.get("hbase.client.registry.impl",
-        ZooKeeperRegistry.class.getName());
+          ZooKeeperRegistry.class.getName());
       Registry registry = null;
       try {
-        registry = (Registry)Class.forName(registryClass).newInstance();
+        registry = (Registry) Class.forName(registryClass).newInstance();
       } catch (Throwable t) {
         throw new IOException(t);
       }
@@ -586,6 +589,7 @@ public class HConnectionManager {
 
     /**
      * For tests only.
+     *
      * @param rpcClient Client we should use instead.
      * @return Previous rpcClient
      */
@@ -597,9 +601,10 @@ public class HConnectionManager {
 
     /**
      * An identifier that will remain the same for a given connection.
+     *
      * @return
      */
-    public String toString(){
+    public String toString() {
       return "hconnection-0x" + Integer.toHexString(hashCode());
     }
 
@@ -620,14 +625,14 @@ public class HConnectionManager {
     }
 
     private void checkIfBaseNodeAvailable(ZooKeeperWatcher zkw)
-      throws MasterNotRunningException {
+        throws MasterNotRunningException {
       String errorMsg;
       try {
         if (ZKUtil.checkExists(zkw, zkw.baseZNode) == -1) {
-          errorMsg = "The node " + zkw.baseZNode+" is not in ZooKeeper. "
-            + "It should have been written by the master. "
-            + "Check the value configured in 'zookeeper.znode.parent'. "
-            + "There could be a mismatch with the one configured in the master.";
+          errorMsg = "The node " + zkw.baseZNode + " is not in ZooKeeper. "
+              + "It should have been written by the master. "
+              + "Check the value configured in 'zookeeper.znode.parent'. "
+              + "There could be a mismatch with the one configured in the master.";
           LOG.error(errorMsg);
           throw new MasterNotRunningException(errorMsg);
         }
@@ -640,12 +645,12 @@ public class HConnectionManager {
 
     /**
      * @return true if the master is running, throws an exception otherwise
-     * @throws MasterNotRunningException - if the master is not running
+     * @throws MasterNotRunningException    - if the master is not running
      * @throws ZooKeeperConnectionException
      */
     @Override
     public boolean isMasterRunning()
-    throws MasterNotRunningException, ZooKeeperConnectionException {
+        throws MasterNotRunningException, ZooKeeperConnectionException {
       // When getting the master connection, we check it's running,
       // so if there is no exception, it means we've been able to get a
       // connection on a running master
@@ -659,10 +664,10 @@ public class HConnectionManager {
     }
 
     @Override
-    public HRegionLocation getRegionLocation(final byte [] name,
-        final byte [] row, boolean reload)
-    throws IOException {
-      return reload? relocateRegion(name, row): locateRegion(name, row);
+    public HRegionLocation getRegionLocation(final byte[] name,
+                                             final byte[] row, boolean reload)
+        throws IOException {
+      return reload ? relocateRegion(name, row) : locateRegion(name, row);
     }
 
     @Override
@@ -761,15 +766,15 @@ public class HConnectionManager {
 
     @Override
     public List<HRegionLocation> locateRegions(final byte[] tableName)
-    throws IOException {
-      return locateRegions (tableName, false, true);
+        throws IOException {
+      return locateRegions(tableName, false, true);
     }
 
     @Override
     public List<HRegionLocation> locateRegions(final byte[] tableName, final boolean useCache,
-        final boolean offlined) throws IOException {
+                                               final boolean offlined) throws IOException {
       NavigableMap<HRegionInfo, ServerName> regions = MetaScanner.allTableRegions(conf, tableName,
-        offlined);
+          offlined);
       final List<HRegionLocation> locations = new ArrayList<HRegionLocation>();
       for (HRegionInfo regionInfo : regions.keySet()) {
         locations.add(locateRegion(tableName, regionInfo.getStartKey(), useCache, true));
@@ -778,16 +783,16 @@ public class HConnectionManager {
     }
 
     @Override
-    public HRegionLocation locateRegion(final byte [] tableName,
-        final byte [] row)
-    throws IOException{
+    public HRegionLocation locateRegion(final byte[] tableName,
+                                        final byte[] row)
+        throws IOException {
       return locateRegion(tableName, row, true, true);
     }
 
     @Override
-    public HRegionLocation relocateRegion(final byte [] tableName,
-        final byte [] row)
-    throws IOException{
+    public HRegionLocation relocateRegion(final byte[] tableName,
+                                          final byte[] row)
+        throws IOException {
 
       // Since this is an explicit request not to use any caching, finding
       // disabled tables should not be desirable.  This will ensure that an exception is thrown when
@@ -799,9 +804,9 @@ public class HConnectionManager {
       return locateRegion(tableName, row, false, true);
     }
 
-    private HRegionLocation locateRegion(final byte [] tableName,
-      final byte [] row, boolean useCache, boolean retry)
-    throws IOException {
+    private HRegionLocation locateRegion(final byte[] tableName,
+                                         final byte[] row, boolean useCache, boolean retry)
+        throws IOException {
       if (this.closed) throw new IOException(toString() + " closed");
       if (tableName == null || tableName.length == 0) {
         throw new IllegalArgumentException(
@@ -813,7 +818,7 @@ public class HConnectionManager {
       } else {
         // Region not in the cache - have to go to the meta RS
         return locateRegionInMeta(HConstants.META_TABLE_NAME, tableName, row,
-          useCache, userRegionLock, retry);
+            useCache, userRegionLock, retry);
       }
     }
 
@@ -823,7 +828,7 @@ public class HConnectionManager {
      * save them to the global region cache.
      */
     private void prefetchRegionCache(final byte[] tableName,
-        final byte[] row) {
+                                     final byte[] row) {
       // Implement a new visitor for MetaScanner, and use it to walk through
       // the .META.
       MetaScannerVisitor visitor = new MetaScannerVisitorBase() {
@@ -871,10 +876,10 @@ public class HConnectionManager {
       * Search the .META. table for the HRegionLocation
       * info that contains the table and row we're seeking.
       */
-    private HRegionLocation locateRegionInMeta(final byte [] parentTable,
-      final byte [] tableName, final byte [] row, boolean useCache,
-      Object regionLockObject, boolean retry)
-    throws IOException {
+    private HRegionLocation locateRegionInMeta(final byte[] parentTable,
+                                               final byte[] tableName, final byte[] row, boolean useCache,
+                                               Object regionLockObject, boolean retry)
+        throws IOException {
       HRegionLocation location;
       // If we are supposed to be using the cache, look in the cache to see if
       // we already have the region.
@@ -888,12 +893,12 @@ public class HConnectionManager {
       // build the key of the meta region we should be looking for.
       // the extra 9's on the end are necessary to allow "exact" matches
       // without knowing the precise region names.
-      byte [] metaKey = HRegionInfo.createRegionName(tableName, row,
-        HConstants.NINES, false);
+      byte[] metaKey = HRegionInfo.createRegionName(tableName, row,
+          HConstants.NINES, false);
       for (int tries = 0; true; tries++) {
         if (tries >= localNumRetries) {
           throw new NoServerForRegionException("Unable to find region for "
-            + Bytes.toStringBinary(row) + " after " + numTries + " tries.");
+              + Bytes.toStringBinary(row) + " after " + numTries + " tries.");
         }
 
         HRegionLocation metaLocation = null;
@@ -933,8 +938,8 @@ public class HConnectionManager {
             }
             // Query the meta region for the location of the meta region
             regionInfoRow = ProtobufUtil.getRowOrBefore(service,
-              metaLocation.getRegionInfo().getRegionName(), metaKey,
-              HConstants.CATALOG_FAMILY);
+                metaLocation.getRegionInfo().getRegionName(), metaKey,
+                HConstants.CATALOG_FAMILY);
           }
           if (regionInfoRow == null) {
             throw new TableNotFoundException(Bytes.toString(tableName));
@@ -944,44 +949,44 @@ public class HConnectionManager {
           HRegionInfo regionInfo = MetaScanner.getHRegionInfo(regionInfoRow);
           if (regionInfo == null) {
             throw new IOException("HRegionInfo was null or empty in " +
-              Bytes.toString(parentTable) + ", row=" + regionInfoRow);
+                Bytes.toString(parentTable) + ", row=" + regionInfoRow);
           }
 
           // possible we got a region of a different table...
           if (!Bytes.equals(regionInfo.getTableName(), tableName)) {
             throw new TableNotFoundException(
-                  "Table '" + Bytes.toString(tableName) + "' was not found, got: " +
-                  Bytes.toString(regionInfo.getTableName()) + ".");
+                "Table '" + Bytes.toString(tableName) + "' was not found, got: " +
+                    Bytes.toString(regionInfo.getTableName()) + ".");
           }
           if (regionInfo.isSplit()) {
             throw new RegionOfflineException("the only available region for" +
-              " the required row is a split parent," +
-              " the daughters should be online soon: " +
-              regionInfo.getRegionNameAsString());
+                " the required row is a split parent," +
+                " the daughters should be online soon: " +
+                regionInfo.getRegionNameAsString());
           }
           if (regionInfo.isOffline()) {
             throw new RegionOfflineException("the region is offline, could" +
-              " be caused by a disable table call: " +
-              regionInfo.getRegionNameAsString());
+                " be caused by a disable table call: " +
+                regionInfo.getRegionNameAsString());
           }
 
           ServerName serverName = HRegionInfo.getServerName(regionInfoRow);
           if (serverName == null) {
             throw new NoServerForRegionException("No server address listed " +
-              "in " + Bytes.toString(parentTable) + " for region " +
-              regionInfo.getRegionNameAsString() + " containing row " +
-              Bytes.toStringBinary(row));
+                "in " + Bytes.toString(parentTable) + " for region " +
+                regionInfo.getRegionNameAsString() + " containing row " +
+                Bytes.toStringBinary(row));
           }
 
-          if (isDeadServer(serverName)){
-            throw new RegionServerStoppedException(".META. says the region "+
-                regionInfo.getRegionNameAsString()+" is managed by the server " + serverName +
+          if (isDeadServer(serverName)) {
+            throw new RegionServerStoppedException(".META. says the region " +
+                regionInfo.getRegionNameAsString() + " is managed by the server " + serverName +
                 ", but it is dead.");
           }
 
           // Instantiate the location
           location = new HRegionLocation(regionInfo, serverName,
-            HRegionInfo.getSeqNumDuringOpen(regionInfoRow));
+              HRegionInfo.getSeqNumDuringOpen(regionInfoRow));
           cacheLocation(tableName, null, location);
           return location;
         } catch (TableNotFoundException e) {
@@ -991,32 +996,32 @@ public class HConnectionManager {
           throw e;
         } catch (IOException e) {
           if (e instanceof RemoteException) {
-            e = ((RemoteException)e).unwrapRemoteException();
+            e = ((RemoteException) e).unwrapRemoteException();
           }
           if (tries < numTries - 1) {
             if (LOG.isDebugEnabled()) {
               LOG.debug("locateRegionInMeta parentTable=" +
-                Bytes.toString(parentTable) + ", metaLocation=" +
-                ((metaLocation == null)? "null": "{" + metaLocation + "}") +
-                ", attempt=" + tries + " of " +
-                this.numTries + " failed; retrying after sleep of " +
-                ConnectionUtils.getPauseTime(this.pause, tries) + " because: " + e.getMessage());
+                  Bytes.toString(parentTable) + ", metaLocation=" +
+                  ((metaLocation == null) ? "null" : "{" + metaLocation + "}") +
+                  ", attempt=" + tries + " of " +
+                  this.numTries + " failed; retrying after sleep of " +
+                  ConnectionUtils.getPauseTime(this.pause, tries) + " because: " + e.getMessage());
             }
           } else {
             throw e;
           }
           // Only relocate the parent region if necessary
-          if(!(e instanceof RegionOfflineException ||
+          if (!(e instanceof RegionOfflineException ||
               e instanceof NoServerForRegionException)) {
             relocateRegion(parentTable, metaKey);
           }
         }
-        try{
+        try {
           Thread.sleep(ConnectionUtils.getPauseTime(this.pause, tries));
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
           throw new IOException("Giving up trying to location region in " +
-            "meta: thread is interrupted.");
+              "meta: thread is interrupted.");
         }
       }
     }
@@ -1032,10 +1037,10 @@ public class HConnectionManager {
      * @param row
      * @return Null or region location found in cache.
      */
-    HRegionLocation getCachedLocation(final byte [] tableName,
-        final byte [] row) {
-      SoftValueSortedMap<byte [], HRegionLocation> tableLocations =
-        getTableLocations(tableName);
+    HRegionLocation getCachedLocation(final byte[] tableName,
+                                      final byte[] row) {
+      SoftValueSortedMap<byte[], HRegionLocation> tableLocations =
+          getTableLocations(tableName);
 
       // start to examine the cache. we can only do cache actions
       // if there's something in the cache for this table.
@@ -1071,10 +1076,11 @@ public class HConnectionManager {
 
     /**
      * Delete a cached location, no matter what it is. Called when we were told to not use cache.
+     *
      * @param tableName tableName
      * @param row
      */
-    void forceDeleteCachedLocation(final byte [] tableName, final byte [] row) {
+    void forceDeleteCachedLocation(final byte[] tableName, final byte[] row) {
       HRegionLocation rl = null;
       synchronized (this.cachedRegionLocations) {
         Map<byte[], HRegionLocation> tableLocations = getTableLocations(tableName);
@@ -1089,8 +1095,8 @@ public class HConnectionManager {
       }
       if ((rl != null) && LOG.isDebugEnabled()) {
         LOG.debug("Removed " + rl.getHostname() + ":" + rl.getPort()
-          + " as a location of " + rl.getRegionInfo().getRegionNameAsString() +
-          " for tableName=" + Bytes.toString(tableName) + " from cache");
+            + " as a location of " + rl.getRegionInfo().getRegionNameAsString() +
+            " for tableName=" + Bytes.toString(tableName) + " from cache");
       }
     }
 
@@ -1098,7 +1104,7 @@ public class HConnectionManager {
      * Delete all cached entries of a table that maps to a specific location.
      */
     @Override
-    public void clearCaches(final ServerName serverName){
+    public void clearCaches(final ServerName serverName) {
       boolean deletedSomething = false;
       synchronized (this.cachedRegionLocations) {
         if (!cachedServers.contains(serverName)) {
@@ -1124,16 +1130,16 @@ public class HConnectionManager {
      * @param tableName
      * @return Map of cached locations for passed <code>tableName</code>
      */
-    private SoftValueSortedMap<byte [], HRegionLocation> getTableLocations(
-        final byte [] tableName) {
+    private SoftValueSortedMap<byte[], HRegionLocation> getTableLocations(
+        final byte[] tableName) {
       // find the map of cached locations for this table
       Integer key = Bytes.mapKey(tableName);
-      SoftValueSortedMap<byte [], HRegionLocation> result;
+      SoftValueSortedMap<byte[], HRegionLocation> result;
       synchronized (this.cachedRegionLocations) {
         result = this.cachedRegionLocations.get(key);
         // if tableLocations for this table isn't built yet, make one
         if (result == null) {
-          result = new SoftValueSortedMap<byte [], HRegionLocation>(
+          result = new SoftValueSortedMap<byte[], HRegionLocation>(
               Bytes.BYTES_COMPARATOR);
           this.cachedRegionLocations.put(key, result);
         }
@@ -1143,14 +1149,14 @@ public class HConnectionManager {
 
     @Override
     public void clearRegionCache() {
-      synchronized(this.cachedRegionLocations) {
+      synchronized (this.cachedRegionLocations) {
         this.cachedRegionLocations.clear();
         this.cachedServers.clear();
       }
     }
 
     @Override
-    public void clearRegionCache(final byte [] tableName) {
+    public void clearRegionCache(final byte[] tableName) {
       synchronized (this.cachedRegionLocations) {
         this.cachedRegionLocations.remove(Bytes.mapKey(tableName));
       }
@@ -1158,16 +1164,17 @@ public class HConnectionManager {
 
     /**
      * Put a newly discovered HRegionLocation into the cache.
+     *
      * @param tableName The table name.
-     * @param source the source of the new location, if it's not coming from meta
-     * @param location the new location
+     * @param source    the source of the new location, if it's not coming from meta
+     * @param location  the new location
      */
-    private void cacheLocation(final byte [] tableName, final HRegionLocation source,
-        final HRegionLocation location) {
+    private void cacheLocation(final byte[] tableName, final HRegionLocation source,
+                               final HRegionLocation location) {
       boolean isFromMeta = (source == null);
-      byte [] startKey = location.getRegionInfo().getStartKey();
-      Map<byte [], HRegionLocation> tableLocations =
-        getTableLocations(tableName);
+      byte[] startKey = location.getRegionInfo().getStartKey();
+      Map<byte[], HRegionLocation> tableLocations =
+          getTableLocations(tableName);
       boolean isNewCacheEntry = false;
       boolean isStaleUpdate = false;
       HRegionLocation oldLocation = null;
@@ -1199,18 +1206,18 @@ public class HConnectionManager {
             " is " + location.getHostnamePort());
       } else if (isStaleUpdate && !location.equals(oldLocation)) {
         LOG.debug("Ignoring stale location update for "
-          + location.getRegionInfo().getRegionNameAsString() + ": "
-          + location.getHostnamePort() + " at " + location.getSeqNum() + "; local "
-          + oldLocation.getHostnamePort() + " at " + oldLocation.getSeqNum());
+            + location.getRegionInfo().getRegionNameAsString() + ": "
+            + location.getHostnamePort() + " at " + location.getSeqNum() + "; local "
+            + oldLocation.getHostnamePort() + " at " + oldLocation.getSeqNum());
       }
     }
 
     // Map keyed by service name + regionserver to service stub implementation
     private final ConcurrentHashMap<String, Object> stubs =
-      new ConcurrentHashMap<String, Object>();
+        new ConcurrentHashMap<String, Object>();
     // Map of locks used creating service stubs per regionserver.
     private final ConcurrentHashMap<String, String> connectionLock =
-      new ConcurrentHashMap<String, String>();
+        new ConcurrentHashMap<String, String>();
 
     /**
      * Maintains current state of MasterService instance.
@@ -1220,13 +1227,15 @@ public class HConnectionManager {
       int userCount;
       long keepAliveUntil = Long.MAX_VALUE;
 
-      MasterServiceState (final HConnection connection) {
+      MasterServiceState(final HConnection connection) {
         super();
         this.connection = connection;
       }
 
       abstract Object getStub();
+
       abstract void clearStub();
+
       abstract boolean isMasterRunning() throws ServiceException;
     }
 
@@ -1235,6 +1244,7 @@ public class HConnectionManager {
      */
     static class MasterAdminServiceState extends MasterServiceState {
       MasterAdminService.BlockingInterface stub;
+
       MasterAdminServiceState(final HConnection connection) {
         super(connection);
       }
@@ -1257,8 +1267,8 @@ public class HConnectionManager {
       @Override
       boolean isMasterRunning() throws ServiceException {
         MasterProtos.IsMasterRunningResponse response =
-          this.stub.isMasterRunning(null, RequestConverter.buildIsMasterRunningRequest());
-        return response != null? response.getIsMasterRunning(): false;
+            this.stub.isMasterRunning(null, RequestConverter.buildIsMasterRunningRequest());
+        return response != null ? response.getIsMasterRunning() : false;
       }
     }
 
@@ -1267,6 +1277,7 @@ public class HConnectionManager {
      */
     static class MasterMonitorServiceState extends MasterServiceState {
       MasterMonitorService.BlockingInterface stub;
+
       MasterMonitorServiceState(final HConnection connection) {
         super(connection);
       }
@@ -1289,8 +1300,8 @@ public class HConnectionManager {
       @Override
       boolean isMasterRunning() throws ServiceException {
         MasterProtos.IsMasterRunningResponse response =
-          this.stub.isMasterRunning(null, RequestConverter.buildIsMasterRunningRequest());
-        return response != null? response.getIsMasterRunning(): false;
+            this.stub.isMasterRunning(null, RequestConverter.buildIsMasterRunningRequest());
+        return response != null ? response.getIsMasterRunning() : false;
       }
     }
 
@@ -1307,12 +1318,14 @@ public class HConnectionManager {
 
       /**
        * Make stub and cache it internal so can be used later doing the isMasterRunning call.
+       *
        * @param channel
        */
       protected abstract Object makeStub(final BlockingRpcChannel channel);
 
       /**
        * Once setup, check it works by doing isMasterRunning check.
+       *
        * @throws ServiceException
        */
       protected abstract void isMasterRunning() throws ServiceException;
@@ -1320,6 +1333,7 @@ public class HConnectionManager {
       /**
        * Create a stub. Try once only.  It is not typed because there is no common type to
        * protobuf services nor their interfaces.  Let the caller do appropriate casting.
+       *
        * @return A stub for master services.
        * @throws IOException
        * @throws KeeperException
@@ -1365,10 +1379,11 @@ public class HConnectionManager {
 
       /**
        * Create a stub against the master.  Retry if necessary.
+       *
        * @return A stub to do <code>intf</code> against the master
        * @throws MasterNotRunningException
        */
-      @edu.umd.cs.findbugs.annotations.SuppressWarnings (value="SWL_SLEEP_WITH_LOCK_HELD")
+      @edu.umd.cs.findbugs.annotations.SuppressWarnings(value = "SWL_SLEEP_WITH_LOCK_HELD")
       Object makeStub() throws MasterNotRunningException {
         // The lock must be at the beginning to prevent multiple master creations
         //  (and leaks) in a multithread context
@@ -1394,8 +1409,8 @@ public class HConnectionManager {
                 // tries at this point is 1 or more; decrement to start from 0.
                 long pauseTime = ConnectionUtils.getPauseTime(pause, tries - 1);
                 LOG.info("getMaster attempt " + tries + " of " + numTries +
-                    " failed; retrying after sleep of " +pauseTime + ", exception=" +
-                  exceptionCaught);
+                    " failed; retrying after sleep of " + pauseTime + ", exception=" +
+                    exceptionCaught);
 
                 try {
                   Thread.sleep(pauseTime);
@@ -1426,6 +1441,7 @@ public class HConnectionManager {
      */
     class MasterMonitorServiceStubMaker extends StubMaker {
       private MasterMonitorService.BlockingInterface stub;
+
       @Override
       protected String getServiceName() {
         return MasterMonitorService.getDescriptor().getName();
@@ -1434,7 +1450,7 @@ public class HConnectionManager {
       @Override
       @edu.umd.cs.findbugs.annotations.SuppressWarnings("SWL_SLEEP_WITH_LOCK_HELD")
       MasterMonitorService.BlockingInterface makeStub() throws MasterNotRunningException {
-        return (MasterMonitorService.BlockingInterface)super.makeStub();
+        return (MasterMonitorService.BlockingInterface) super.makeStub();
       }
 
       @Override
@@ -1463,7 +1479,7 @@ public class HConnectionManager {
       @Override
       @edu.umd.cs.findbugs.annotations.SuppressWarnings("SWL_SLEEP_WITH_LOCK_HELD")
       MasterAdminService.BlockingInterface makeStub() throws MasterNotRunningException {
-        return (MasterAdminService.BlockingInterface)super.makeStub();
+        return (MasterAdminService.BlockingInterface) super.makeStub();
       }
 
       @Override
@@ -1476,7 +1492,9 @@ public class HConnectionManager {
       protected void isMasterRunning() throws ServiceException {
         this.stub.isMasterRunning(null, RequestConverter.buildIsMasterRunningRequest());
       }
-    };
+    }
+
+    ;
 
     @Override
     public AdminService.BlockingInterface getAdmin(final ServerName serverName)
@@ -1487,20 +1505,20 @@ public class HConnectionManager {
     @Override
     // Nothing is done w/ the 'master' parameter.  It is ignored.
     public AdminService.BlockingInterface getAdmin(final ServerName serverName,
-      final boolean master)
-    throws IOException {
+                                                   final boolean master)
+        throws IOException {
       if (isDeadServer(serverName)) {
         throw new RegionServerStoppedException(serverName + " is dead.");
       }
       String key = getStubKey(AdminService.BlockingInterface.class.getName(),
-        serverName.getHostAndPort());
+          serverName.getHostAndPort());
       this.connectionLock.putIfAbsent(key, key);
       AdminService.BlockingInterface stub = null;
       synchronized (this.connectionLock.get(key)) {
-        stub = (AdminService.BlockingInterface)this.stubs.get(key);
+        stub = (AdminService.BlockingInterface) this.stubs.get(key);
         if (stub == null) {
           BlockingRpcChannel channel = this.rpcClient.createBlockingRpcChannel(serverName,
-            User.getCurrent(), this.rpcTimeout);
+              User.getCurrent(), this.rpcTimeout);
           stub = AdminService.newBlockingStub(channel);
           this.stubs.put(key, stub);
         }
@@ -1510,7 +1528,7 @@ public class HConnectionManager {
 
     @Override
     public ClientService.BlockingInterface getClient(final ServerName sn)
-    throws IOException {
+        throws IOException {
       if (isDeadServer(sn)) {
         throw new RegionServerStoppedException(sn + " is dead.");
       }
@@ -1518,10 +1536,10 @@ public class HConnectionManager {
       this.connectionLock.putIfAbsent(key, key);
       ClientService.BlockingInterface stub = null;
       synchronized (this.connectionLock.get(key)) {
-        stub = (ClientService.BlockingInterface)this.stubs.get(key);
+        stub = (ClientService.BlockingInterface) this.stubs.get(key);
         if (stub == null) {
           BlockingRpcChannel channel = this.rpcClient.createBlockingRpcChannel(sn,
-            User.getCurrent(), this.rpcTimeout);
+              User.getCurrent(), this.rpcTimeout);
           stub = ClientService.newBlockingStub(channel);
           // In old days, after getting stub/proxy, we'd make a call.  We are not doing that here.
           // Just fail on first actual call rather than in here on setup.
@@ -1544,10 +1562,11 @@ public class HConnectionManager {
 
     /**
      * Retrieve a shared ZooKeeperWatcher. You must close it it once you've have finished with it.
+     *
      * @return The shared instance. Never returns null.
      */
     ZooKeeperKeepAliveConnection getKeepAliveZooKeeperWatcher()
-      throws IOException {
+        throws IOException {
       synchronized (masterAndZKLock) {
         if (keepAliveZookeeper == null) {
           if (this.closed) {
@@ -1564,12 +1583,12 @@ public class HConnectionManager {
     }
 
     void releaseZooKeeperWatcher(final ZooKeeperWatcher zkw) {
-      if (zkw == null){
+      if (zkw == null) {
         return;
       }
       synchronized (masterAndZKLock) {
         --keepAliveZookeeperUserCount;
-        if (keepAliveZookeeperUserCount <= 0 ){
+        if (keepAliveZookeeperUserCount <= 0) {
           keepZooKeeperWatcherAliveUntil = System.currentTimeMillis() + keepAlive;
         }
       }
@@ -1577,31 +1596,39 @@ public class HConnectionManager {
 
     /**
      * Creates a Chore thread to check the connections to master & zookeeper
-     *  and close them when they reach their closing time (
-     *  {@link MasterServiceState#keepAliveUntil} and
-     *  {@link #keepZooKeeperWatcherAliveUntil}). Keep alive time is
-     *  managed by the release functions and the variable {@link #keepAlive}
+     * and close them when they reach their closing time (
+     * {@link MasterServiceState#keepAliveUntil} and
+     * {@link #keepZooKeeperWatcherAliveUntil}). Keep alive time is
+     * managed by the release functions and the variable {@link #keepAlive}
      */
     private static class DelayedClosing extends Chore implements Stoppable {
       private HConnectionImplementation hci;
       Stoppable stoppable;
 
       private DelayedClosing(
-        HConnectionImplementation hci, Stoppable stoppable){
+          HConnectionImplementation hci, Stoppable stoppable) {
         super(
-          "ZooKeeperWatcher and Master delayed closing for connection "+hci,
-          60*1000, // We check every minutes
-          stoppable);
+            "ZooKeeperWatcher and Master delayed closing for connection " + hci,
+            60 * 1000, // We check every minutes
+            stoppable);
         this.hci = hci;
         this.stoppable = stoppable;
       }
 
-      static DelayedClosing createAndStart(HConnectionImplementation hci){
+      static DelayedClosing createAndStart(HConnectionImplementation hci) {
         Stoppable stoppable = new Stoppable() {
-              private volatile boolean isStopped = false;
-              @Override public void stop(String why) { isStopped = true;}
-              @Override public boolean isStopped() {return isStopped;}
-            };
+          private volatile boolean isStopped = false;
+
+          @Override
+          public void stop(String why) {
+            isStopped = true;
+          }
+
+          @Override
+          public boolean isStopped() {
+            return isStopped;
+          }
+        };
 
         return new DelayedClosing(hci, stoppable);
       }
@@ -1618,7 +1645,7 @@ public class HConnectionManager {
         synchronized (hci.masterAndZKLock) {
           if (hci.canCloseZKW) {
             if (System.currentTimeMillis() >
-              hci.keepZooKeeperWatcherAliveUntil) {
+                hci.keepZooKeeperWatcherAliveUntil) {
 
               hci.closeZooKeeperWatcher();
               hci.keepZooKeeperWatcherAliveUntil = Long.MAX_VALUE;
@@ -1644,8 +1671,8 @@ public class HConnectionManager {
       synchronized (masterAndZKLock) {
         if (keepAliveZookeeper != null) {
           LOG.info("Closing zookeeper sessionid=0x" +
-            Long.toHexString(
-              keepAliveZookeeper.getRecoverableZooKeeper().getSessionId()));
+              Long.toHexString(
+                  keepAliveZookeeper.getRecoverableZooKeeper().getSessionId()));
           keepAliveZookeeper.internalClose();
           keepAliveZookeeper = null;
         }
@@ -1655,7 +1682,7 @@ public class HConnectionManager {
 
     final MasterAdminServiceState adminMasterServiceState = new MasterAdminServiceState(this);
     final MasterMonitorServiceState monitorMasterServiceState =
-      new MasterMonitorServiceState(this);
+        new MasterMonitorServiceState(this);
 
     @Override
     public MasterAdminService.BlockingInterface getMasterAdmin() throws MasterNotRunningException {
@@ -1664,7 +1691,7 @@ public class HConnectionManager {
 
     @Override
     public MasterMonitorService.BlockingInterface getMasterMonitor()
-    throws MasterNotRunningException {
+        throws MasterNotRunningException {
       return getKeepAliveMasterMonitorService();
     }
 
@@ -1675,7 +1702,7 @@ public class HConnectionManager {
 
     @Override
     public MasterAdminKeepAliveConnection getKeepAliveMasterAdminService()
-    throws MasterNotRunningException {
+        throws MasterNotRunningException {
       synchronized (masterAndZKLock) {
         if (!isKeepAliveMasterConnectedAndRunning(this.adminMasterServiceState)) {
           MasterAdminServiceStubMaker stubMaker = new MasterAdminServiceStubMaker();
@@ -1687,27 +1714,28 @@ public class HConnectionManager {
       final MasterAdminService.BlockingInterface stub = this.adminMasterServiceState.stub;
       return new MasterAdminKeepAliveConnection() {
         MasterAdminServiceState mss = adminMasterServiceState;
+
         @Override
         public AddColumnResponse addColumn(RpcController controller,
-            AddColumnRequest request) throws ServiceException {
+                                           AddColumnRequest request) throws ServiceException {
           return stub.addColumn(controller, request);
         }
 
         @Override
         public DeleteColumnResponse deleteColumn(RpcController controller,
-            DeleteColumnRequest request) throws ServiceException {
+                                                 DeleteColumnRequest request) throws ServiceException {
           return stub.deleteColumn(controller, request);
         }
 
         @Override
         public ModifyColumnResponse modifyColumn(RpcController controller,
-            ModifyColumnRequest request) throws ServiceException {
+                                                 ModifyColumnRequest request) throws ServiceException {
           return stub.modifyColumn(controller, request);
         }
 
         @Override
         public MoveRegionResponse moveRegion(RpcController controller,
-            MoveRegionRequest request) throws ServiceException {
+                                             MoveRegionRequest request) throws ServiceException {
           return stub.moveRegion(controller, request);
         }
 
@@ -1720,67 +1748,67 @@ public class HConnectionManager {
 
         @Override
         public AssignRegionResponse assignRegion(RpcController controller,
-            AssignRegionRequest request) throws ServiceException {
+                                                 AssignRegionRequest request) throws ServiceException {
           return stub.assignRegion(controller, request);
         }
 
         @Override
         public UnassignRegionResponse unassignRegion(RpcController controller,
-            UnassignRegionRequest request) throws ServiceException {
+                                                     UnassignRegionRequest request) throws ServiceException {
           return stub.unassignRegion(controller, request);
         }
 
         @Override
         public OfflineRegionResponse offlineRegion(RpcController controller,
-            OfflineRegionRequest request) throws ServiceException {
+                                                   OfflineRegionRequest request) throws ServiceException {
           return stub.offlineRegion(controller, request);
         }
 
         @Override
         public DeleteTableResponse deleteTable(RpcController controller,
-            DeleteTableRequest request) throws ServiceException {
+                                               DeleteTableRequest request) throws ServiceException {
           return stub.deleteTable(controller, request);
         }
 
         @Override
         public EnableTableResponse enableTable(RpcController controller,
-            EnableTableRequest request) throws ServiceException {
+                                               EnableTableRequest request) throws ServiceException {
           return stub.enableTable(controller, request);
         }
 
         @Override
         public DisableTableResponse disableTable(RpcController controller,
-            DisableTableRequest request) throws ServiceException {
+                                                 DisableTableRequest request) throws ServiceException {
           return stub.disableTable(controller, request);
         }
 
         @Override
         public ModifyTableResponse modifyTable(RpcController controller,
-            ModifyTableRequest request) throws ServiceException {
+                                               ModifyTableRequest request) throws ServiceException {
           return stub.modifyTable(controller, request);
         }
 
         @Override
         public CreateTableResponse createTable(RpcController controller,
-            CreateTableRequest request) throws ServiceException {
+                                               CreateTableRequest request) throws ServiceException {
           return stub.createTable(controller, request);
         }
 
         @Override
         public ShutdownResponse shutdown(RpcController controller,
-            ShutdownRequest request) throws ServiceException {
+                                         ShutdownRequest request) throws ServiceException {
           return stub.shutdown(controller, request);
         }
 
         @Override
         public StopMasterResponse stopMaster(RpcController controller,
-            StopMasterRequest request) throws ServiceException {
+                                             StopMasterRequest request) throws ServiceException {
           return stub.stopMaster(controller, request);
         }
 
         @Override
         public BalanceResponse balance(RpcController controller,
-            BalanceRequest request) throws ServiceException {
+                                       BalanceRequest request) throws ServiceException {
           return stub.balance(controller, request);
         }
 
@@ -1793,7 +1821,7 @@ public class HConnectionManager {
 
         @Override
         public CatalogScanResponse runCatalogScan(RpcController controller,
-            CatalogScanRequest request) throws ServiceException {
+                                                  CatalogScanRequest request) throws ServiceException {
           return stub.runCatalogScan(controller, request);
         }
 
@@ -1820,7 +1848,7 @@ public class HConnectionManager {
 
         @Override
         public TakeSnapshotResponse snapshot(RpcController controller,
-            TakeSnapshotRequest request) throws ServiceException {
+                                             TakeSnapshotRequest request) throws ServiceException {
           return stub.snapshot(controller, request);
         }
 
@@ -1833,13 +1861,13 @@ public class HConnectionManager {
 
         @Override
         public DeleteSnapshotResponse deleteSnapshot(RpcController controller,
-            DeleteSnapshotRequest request) throws ServiceException {
+                                                     DeleteSnapshotRequest request) throws ServiceException {
           return stub.deleteSnapshot(controller, request);
         }
 
         @Override
         public IsSnapshotDoneResponse isSnapshotDone(RpcController controller,
-            IsSnapshotDoneRequest request) throws ServiceException {
+                                                     IsSnapshotDoneRequest request) throws ServiceException {
           return stub.isSnapshotDone(controller, request);
         }
 
@@ -1873,13 +1901,13 @@ public class HConnectionManager {
 
     private static void release(MasterServiceState mss) {
       if (mss != null && mss.connection != null) {
-        ((HConnectionImplementation)mss.connection).releaseMaster(mss);
+        ((HConnectionImplementation) mss.connection).releaseMaster(mss);
       }
     }
 
     @Override
     public MasterMonitorKeepAliveConnection getKeepAliveMasterMonitorService()
-    throws MasterNotRunningException {
+        throws MasterNotRunningException {
       synchronized (masterAndZKLock) {
         if (!isKeepAliveMasterConnectedAndRunning(this.monitorMasterServiceState)) {
           MasterMonitorServiceStubMaker stubMaker = new MasterMonitorServiceStubMaker();
@@ -1891,6 +1919,7 @@ public class HConnectionManager {
       final MasterMonitorService.BlockingInterface stub = this.monitorMasterServiceState.stub;
       return new MasterMonitorKeepAliveConnection() {
         final MasterMonitorServiceState mss = monitorMasterServiceState;
+
         @Override
         public GetSchemaAlterStatusResponse getSchemaAlterStatus(
             RpcController controller, GetSchemaAlterStatusRequest request)
@@ -1927,7 +1956,7 @@ public class HConnectionManager {
     }
 
     private boolean isKeepAliveMasterConnectedAndRunning(MasterServiceState mss) {
-      if (mss.getStub() == null){
+      if (mss.getStub() == null) {
         return false;
       }
       try {
@@ -1974,19 +2003,19 @@ public class HConnectionManager {
 
     @Override
     public <T> T getRegionServerWithRetries(ServerCallable<T> callable)
-    throws IOException, RuntimeException {
+        throws IOException, RuntimeException {
       return callable.withRetries();
     }
 
     @Override
     public <T> T getRegionServerWithoutRetries(ServerCallable<T> callable)
-    throws IOException, RuntimeException {
+        throws IOException, RuntimeException {
       return callable.withoutRetries();
     }
 
     @Deprecated
     private <R> Callable<MultiResponse> createCallable(final HRegionLocation loc,
-        final MultiAction<R> multi, final byte[] tableName) {
+                                                       final MultiAction<R> multi, final byte[] tableName) {
       // TODO: This does not belong in here!!! St.Ack HConnections should
       // not be dealing in Callables; Callables have HConnections, not other
       // way around.
@@ -1995,34 +2024,35 @@ public class HConnectionManager {
         @Override
         public MultiResponse call() throws Exception {
           ServerCallable<MultiResponse> callable =
-            new MultiServerCallable<R>(connection, tableName, loc, multi);
+              new MultiServerCallable<R>(connection, tableName, loc, multi);
           return callable.withoutRetries();
         }
       };
-   }
+    }
 
-   void updateCachedLocation(HRegionInfo hri, HRegionLocation source,
-       ServerName serverName, long seqNum) {
+    void updateCachedLocation(HRegionInfo hri, HRegionLocation source,
+                              ServerName serverName, long seqNum) {
       HRegionLocation newHrl = new HRegionLocation(hri, serverName, seqNum);
       synchronized (this.cachedRegionLocations) {
         cacheLocation(hri.getTableName(), source, newHrl);
       }
     }
 
-   /**
-    * Deletes the cached location of the region if necessary, based on some error from source.
-    * @param hri The region in question.
-    * @param source The source of the error that prompts us to invalidate cache.
-    */
+    /**
+     * Deletes the cached location of the region if necessary, based on some error from source.
+     *
+     * @param hri    The region in question.
+     * @param source The source of the error that prompts us to invalidate cache.
+     */
     void deleteCachedLocation(HRegionInfo hri, HRegionLocation source) {
       boolean isStaleDelete = false;
       HRegionLocation oldLocation;
       synchronized (this.cachedRegionLocations) {
         Map<byte[], HRegionLocation> tableLocations =
-          getTableLocations(hri.getTableName());
+            getTableLocations(hri.getTableName());
         oldLocation = tableLocations.get(hri.getStartKey());
         if (oldLocation != null) {
-           // Do not delete the cache entry if it's not for the same server that gave us the error.
+          // Do not delete the cache entry if it's not for the same server that gave us the error.
           isStaleDelete = (source != null) && !oldLocation.equals(source);
           if (!isStaleDelete) {
             tableLocations.remove(hri.getStartKey());
@@ -2042,7 +2072,7 @@ public class HConnectionManager {
         if (!tableLocations.isEmpty()) {
           // Delete if there's something in the cache for this region.
           HRegionLocation removedLocation =
-          tableLocations.remove(location.getRegionInfo().getStartKey());
+              tableLocations.remove(location.getRegionInfo().getStartKey());
           if (LOG.isDebugEnabled() && removedLocation != null) {
             LOG.debug("Removed " +
                 location.getRegionInfo().getRegionNameAsString() +
@@ -2056,12 +2086,13 @@ public class HConnectionManager {
     /**
      * Update the location with the new value (if the exception is a RegionMovedException)
      * or delete it from the cache.
+     *
      * @param exception an object (to simplify user code) on which we will try to find a nested
      *                  or wrapped or both RegionMovedException
-     * @param source server that is the source of the location update.
+     * @param source    server that is the source of the location update.
      */
     private void updateCachedLocations(final byte[] tableName, Row row,
-      final Object exception, final HRegionLocation source) {
+                                       final Object exception, final HRegionLocation source) {
       if (row == null || tableName == null) {
         LOG.warn("Coding error, see method javadoc. row=" + (row == null ? "null" : row) +
             ", tableName=" + (tableName == null ? "null" : Bytes.toString(tableName)));
@@ -2078,9 +2109,9 @@ public class HConnectionManager {
       HRegionInfo regionInfo = oldLocation.getRegionInfo();
       final RegionMovedException rme = RegionMovedException.find(exception);
       if (rme != null) {
-        if (LOG.isTraceEnabled()){
+        if (LOG.isTraceEnabled()) {
           LOG.trace("Region " + regionInfo.getRegionNameAsString() + " moved to " +
-            rme.getHostname() + ":" + rme.getPort() + " according to " + source.getHostnamePort());
+              rme.getHostname() + ":" + rme.getPort() + " according to " + source.getHostnamePort());
         }
         updateCachedLocation(
             regionInfo, source, rme.getServerName(), rme.getLocationSeqNum());
@@ -2097,15 +2128,15 @@ public class HConnectionManager {
     @Override
     @Deprecated
     public void processBatch(List<? extends Row> list,
-        final byte[] tableName,
-        ExecutorService pool,
-        Object[] results) throws IOException, InterruptedException {
+                             final byte[] tableName,
+                             ExecutorService pool,
+                             Object[] results) throws IOException, InterruptedException {
       // This belongs in HTable!!! Not in here.  St.Ack
 
       // results must be the same size as list
       if (results.length != list.size()) {
         throw new IllegalArgumentException(
-          "argument results must be the same size as argument list");
+            "argument results must be the same size as argument list");
       }
       processBatchCallback(list, tableName, pool, results, null);
     }
@@ -2115,427 +2146,206 @@ public class HConnectionManager {
      * If the method returns it means that there is no error, and the 'results' array will
      * contain no exception. On error, an exception is thrown, and the 'results' array will
      * contain results and exceptions.
+     *
      * @deprecated since 0.96 - Use {@link HTable#processBatchCallback} instead
      */
     @Override
     @Deprecated
-    public <R> void processBatchCallback(
-      List<? extends Row> list,
-      byte[] tableName,
-      ExecutorService pool,
-      Object[] results,
-      Batch.Callback<R> callback)
-      throws IOException, InterruptedException {
+    public <R> void processBatchCallback(List<? extends Row> list, byte[] tableName,
+                                         ExecutorService pool, Object[] results,
+                                         Batch.Callback<R> callback)
+        throws InterruptedIOException, RetriesExhaustedWithDetailsException {
 
-      Process<R> p = new Process<R>(this, list, tableName, pool, results, callback);
-      p.processBatchCallback();
+      // We do a copy to keep the previous contract with an immutable list.
+      ArrayList<? extends Row> actionsClone = new ArrayList<Row>(list);
+      // Historical contract was to change the result only on success. So we're working on a clone.
+      Object[] resultsClone = new Object[results.length];
+
+      ObjectResultFiller<R> cb = new ObjectResultFiller<R>(resultsClone, callback);
+
+      AsyncProcess<R> asyncProcess = new AsyncProcess<R>(this, tableName, pool, cb);
+
+      // We're doing a submit all. This way, the originalIndex will match the initial list.
+      asyncProcess.submitAll(actionsClone);
+      asyncProcess.waitUntilDone();
+
+      if (asyncProcess.hasError()) {
+        throw asyncProcess.getErrors();
+      }
+      System.arraycopy(resultsClone, 0, results, 0, results.length);
     }
 
-
     /**
-     * Methods and attributes to manage a batch process are grouped into this single class.
-     * This allows, by creating a Process<R> per batch process to ensure multithread safety.
-     *
-     * This code should be move to HTable once processBatchCallback is not supported anymore in
-     * the HConnection interface.
+     * This interface allows to keep the interface of the previous synchronous interface, that uses
+     * an array of object to return the result.
      */
-    public static class Process<R> {
-      // Info on the queries and their context
-      private final HConnectionImplementation hci;
-      private final List<? extends Row> rows;
-      private final byte[] tableName;
-      private final ExecutorService pool;
+    public static interface AsyncProcessCallback<R> {
+      /**
+       * Called on success. originalIndex holds the index in the action list.
+       */
+      public void success(int originalIndex, byte[] region, byte[] row, R result);
+
+      /**
+       * called on failure.
+       */
+      public void failure(int originalIndex, byte[] region, byte[] row, Throwable t);
+    }
+
+    private static class ObjectResultFiller<Res> implements AsyncProcessCallback<Res> {
       private final Object[] results;
-      private final Batch.Callback<R> callback;
+      private Batch.Callback<Res> callback;
 
-      // Used during the batch process
-      private final List<Action<R>> toReplay;
-      private final LinkedList<Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>>
-        inProgress;
-
-      private ServerErrorTracker errorsByServer = null;
-      private int curNumRetries;
-
-      // Notified when a tasks is done
-      private final List<MultiAction<R>> finishedTasks = new ArrayList<MultiAction<R>>();
-
-      private Process(HConnectionImplementation hci, List<? extends Row> list,
-                       byte[] tableName, ExecutorService pool, Object[] results,
-                       Batch.Callback<R> callback){
-        this.hci = hci;
-        this.rows = list;
-        this.tableName = tableName;
-        this.pool = pool;
+      ObjectResultFiller(Object[] results, Batch.Callback<Res> callback) {
         this.results = results;
         this.callback = callback;
-        this.toReplay = new ArrayList<Action<R>>();
-        this.inProgress =
-          new LinkedList<Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>>();
-        this.curNumRetries = 0;
       }
 
-
-      /**
-       * Group a list of actions per region servers, and send them. The created MultiActions are
-       *  added to the inProgress list.
-       * @param actionsList
-       * @param isRetry Whether we are retrying these actions. If yes, backoff
-       *                time may be applied before new requests.
-       * @throws IOException - if we can't locate a region after multiple retries.
-       */
-      private void submit(List<Action<R>> actionsList, final boolean isRetry) throws IOException {
-        // group per location => regions server
-        final Map<HRegionLocation, MultiAction<R>> actionsByServer =
-          new HashMap<HRegionLocation, MultiAction<R>>();
-        for (Action<R> aAction : actionsList) {
-          final Row row = aAction.getAction();
-
-          if (row != null) {
-            final HRegionLocation loc = hci.locateRegion(this.tableName, row.getRow());
-            if (loc == null) {
-              throw new IOException("No location found, aborting submit.");
-            }
-
-            final byte[] regionName = loc.getRegionInfo().getRegionName();
-            MultiAction<R> actions = actionsByServer.get(loc);
-            if (actions == null) {
-              actions = new MultiAction<R>();
-              actionsByServer.put(loc, actions);
-            }
-            actions.add(regionName, aAction);
-          }
-        }
-
-        // Send the queries and add them to the inProgress list
-        for (Entry<HRegionLocation, MultiAction<R>> e : actionsByServer.entrySet()) {
-          long backoffTime = 0;
-          if (isRetry) {
-            if (hci.isUsingServerTrackerForRetries()) {
-              assert this.errorsByServer != null;
-              backoffTime = this.errorsByServer.calculateBackoffTime(e.getKey(), hci.pause);
-            } else {
-              // curNumRetries starts with one, subtract to start from 0.
-              backoffTime = ConnectionUtils.getPauseTime(hci.pause, curNumRetries - 1);
-            }
-          }
-          Callable<MultiResponse> callable =
-            createDelayedCallable(backoffTime, e.getKey(), e.getValue());
-          if (LOG.isTraceEnabled() && isRetry) {
-            StringBuilder sb = new StringBuilder();
-            for (Action<R> action : e.getValue().allActions()) {
-              sb.append(Bytes.toStringBinary(action.getAction().getRow())).append(';');
-            }
-            LOG.trace("Will retry requests to [" + e.getKey().getHostnamePort()
-              + "] after delay of [" + backoffTime + "] for rows [" + sb.toString() + "]");
-          }
-          Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> p =
-            new Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>(
-              e.getValue(), e.getKey(), this.pool.submit(callable));
-          this.inProgress.addLast(p);
+      @Override
+      public void success(int pos, byte[] region, byte[] row, Res result) {
+        assert pos <= results.length;
+        results[pos] = result;
+        if (callback != null) {
+          callback.update(region, row, result);
         }
       }
 
-     /**
-      * Resubmit the actions which have failed, after a sleep time.
-      * @throws IOException
-      */
-      private void doRetry() throws IOException{
-        submit(this.toReplay, true);
-        this.toReplay.clear();
-      }
-
-      /**
-       * Parameterized batch processing, allowing varying return types for
-       * different {@link Row} implementations.
-       * Throws an exception on error. If there are no exceptions, it means that the 'results'
-       *  array is clean.
-       */
-      private void processBatchCallback() throws IOException, InterruptedException {
-        if (this.results.length != this.rows.size()) {
-          throw new IllegalArgumentException(
-            "argument results (size="+results.length+") must be the same size as " +
-              "argument list (size="+this.rows.size()+")");
-        }
-        if (this.rows.isEmpty()) {
-          return;
-        }
-
-        boolean isTraceEnabled = LOG.isTraceEnabled();
-        BatchErrors<Row> errors = new BatchErrors<Row>();
-        BatchErrors<Row> retriedErrors = null;
-        if (isTraceEnabled) {
-          retriedErrors = new BatchErrors<Row>();
-        }
-
-        // We keep the number of retry per action.
-        int[] nbRetries = new int[this.results.length];
-
-        // Build the action list. This list won't change after being created, hence the
-        //  indexes will remain constant, allowing a direct lookup.
-        final List<Action<R>> listActions = new ArrayList<Action<R>>(this.rows.size());
-        for (int i = 0; i < this.rows.size(); i++) {
-          Action<R> action = new Action<R>(this.rows.get(i), i);
-          listActions.add(action);
-        }
-
-        // execute the actions. We will analyze and resubmit the actions in a 'while' loop.
-        submit(listActions, false);
-
-        // LastRetry is true if, either:
-        //  we had an exception 'DoNotRetry'
-        //  we had more than numRetries for any action
-        //  In this case, we will finish the current retries but we won't start new ones.
-        boolean lastRetry = false;
-        // despite its name numRetries means number of tries. So if numRetries == 1 it means we
-        //  won't retry. And we compare vs. 2 in case someone set it to zero.
-        boolean noRetry = (hci.numTries < 2);
-
-        // Analyze and resubmit until all actions are done successfully or failed after numRetries
-        while (!this.inProgress.isEmpty()) {
-          // We need the original multi action to find out what actions to replay if
-          //  we have a 'total' failure of the Future<MultiResponse>
-          // We need the HRegionLocation as we give it back if we go out of retries
-          Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> currentTask =
-            removeFirstDone();
-
-          // Get the answer, keep the exception if any as we will use it for the analysis
-          MultiResponse responses = null;
-          ExecutionException exception = null;
-          try {
-            responses = currentTask.getThird().get();
-          } catch (ExecutionException e) {
-            exception = e;
-          }
-          HRegionLocation location = currentTask.getSecond();
-          // Error case: no result at all for this multi action. We need to redo all actions
-          if (responses == null) {
-            for (List<Action<R>> actions : currentTask.getFirst().actions.values()) {
-              for (Action<R> action : actions) {
-                Row row = action.getAction();
-                // Do not use the exception for updating cache because it might be coming from
-                // any of the regions in the MultiAction.
-                hci.updateCachedLocations(tableName, row, null, location);
-                if (noRetry) {
-                  errors.add(exception, row, location);
-                } else {
-                  if (isTraceEnabled) {
-                    retriedErrors.add(exception, row, location);
-                  }
-                  lastRetry = addToReplay(nbRetries, action, location);
-                }
-              }
-            }
-          } else { // Success or partial success
-            // Analyze detailed results. We can still have individual failures to be redo.
-            // two specific exceptions are managed:
-            //  - DoNotRetryIOException: we continue to retry for other actions
-            //  - RegionMovedException: we update the cache with the new region location
-            for (Entry<byte[], List<Pair<Integer, Object>>> resultsForRS :
-                responses.getResults().entrySet()) {
-              for (Pair<Integer, Object> regionResult : resultsForRS.getValue()) {
-                Action<R> correspondingAction = listActions.get(regionResult.getFirst());
-                Object result = regionResult.getSecond();
-                this.results[correspondingAction.getOriginalIndex()] = result;
-
-                // Failure: retry if it's make sense else update the errors lists
-                if (result == null || result instanceof Throwable) {
-                  Row row = correspondingAction.getAction();
-                  hci.updateCachedLocations(this.tableName, row, result, location);
-                  if (result instanceof DoNotRetryIOException || noRetry) {
-                    errors.add((Throwable)result, row, location);
-                  } else {
-                    if (isTraceEnabled) {
-                      retriedErrors.add((Throwable)result, row, location);
-                    }
-                    lastRetry = addToReplay(nbRetries, correspondingAction, location);
-                  }
-                } else // success
-                  if (callback != null) {
-                    this.callback.update(resultsForRS.getKey(),
-                      this.rows.get(regionResult.getFirst()).getRow(), (R) result);
-                }
-              }
-            }
-          }
-
-          // Retry all actions in toReplay then clear it.
-          if (!noRetry && !toReplay.isEmpty()) {
-            if (isTraceEnabled) {
-              LOG.trace("Retrying due to errors" + (lastRetry ? " (one last time)" : "")
-                   + ": " + retriedErrors.getDescriptionAndClear());
-            }
-            doRetry();
-            if (lastRetry) {
-              noRetry = true;
-            }
-          }
-        }
-
-        errors.rethrowIfAny();
-      }
-
-      /**
-       * Put the action that has to be retried in the Replay list.
-       * @return true if we're out of numRetries and it's the last retry.
-       */
-      private boolean addToReplay(int[] nbRetries, Action<R> action, HRegionLocation source) {
-        this.toReplay.add(action);
-        nbRetries[action.getOriginalIndex()]++;
-        if (nbRetries[action.getOriginalIndex()] > this.curNumRetries) {
-          this.curNumRetries = nbRetries[action.getOriginalIndex()];
-        }
-        if (hci.isUsingServerTrackerForRetries()) {
-          if (this.errorsByServer == null) {
-            this.errorsByServer = hci.createServerErrorTracker();
-          }
-          this.errorsByServer.reportServerError(source);
-          return !this.errorsByServer.canRetryMore();
-        } else {
-          // We need to add 1 to make tries and retries comparable. And as we look for
-          // the last try we compare with '>=' and not '>'. And we need curNumRetries
-          // to means what it says as we don't want to initialize it to 1.
-          return ((this.curNumRetries + 1) >= hci.numTries);
-        }
-      }
-
-      /**
-       * Wait for one of tasks to be done, and remove it from the list.
-       * @return the tasks done.
-       */
-      private Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>
-      removeFirstDone() throws InterruptedException {
-        while (true) {
-          synchronized (finishedTasks) {
-            if (!finishedTasks.isEmpty()) {
-              MultiAction<R> done = finishedTasks.remove(finishedTasks.size() - 1);
-
-              // We now need to remove it from the inProgress part.
-              Iterator<Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>>> it =
-                inProgress.iterator();
-              while (it.hasNext()) {
-                Triple<MultiAction<R>, HRegionLocation, Future<MultiResponse>> task = it.next();
-                if (task.getFirst() == done) { // We have the exact object. No java equals here.
-                  it.remove();
-                  return task;
-                }
-              }
-              LOG.error("Development error: We didn't see a task in the list. " +
-                done.getRegions());
-            }
-            finishedTasks.wait(10);
-          }
-        }
-      }
-
-      private Callable<MultiResponse> createDelayedCallable(
-        final long delay, final HRegionLocation loc, final MultiAction<R> multi) {
-
-        final Callable<MultiResponse> delegate = hci.createCallable(loc, multi, tableName);
-
-        return new Callable<MultiResponse>() {
-          private final long creationTime = System.currentTimeMillis();
-
-          @Override
-          public MultiResponse call() throws Exception {
-            try {
-              final long waitingTime = delay + creationTime - System.currentTimeMillis();
-              if (waitingTime > 0) {
-                Thread.sleep(waitingTime);
-              }
-              return delegate.call();
-            } finally {
-              synchronized (finishedTasks) {
-                finishedTasks.add(multi);
-                finishedTasks.notifyAll();
-              }
-            }
-          }
-        };
+      @Override
+      public void failure(int pos, byte[] region, byte[] row, Throwable t) {
+        assert pos <= results.length;
+        results[pos] = t;
+        //Batch.Callback<Res> was not called on failure in 0.94. We keep this.
       }
     }
 
     /**
-     * Methods and attributes to manage a batch process are grouped into this single class.
-     * This allows, by creating a Process<R> per batch process to ensure multithread safety.
-     *
-     * This code should be move to HTable once processBatchCallback is not supported anymore in
-     * the HConnection interface.
+     * This class  allows a continuous flows of request. The flows is:
+     * - buffered, to send the queries by bunch instead of one by one
+     * - split by server. If a server is slow or does not respond, the operations on the other
+     * servers continues.
+     * Sending operation is them non blocking, except if:
+     * - the number of operation in progress is too high (setting "hbase.client.max.total.tasks").
+     * In this case, we wait before accepting new operations.
+     * - a region has reach its maximum number of concurrent task
+     * (setting: hbase.client.max.perregion.tasks)
+     * in this case, we take all operations on the other regions but leave this one in the buffer.
+     * - one of the current operation has failed its maximum number of time. In this case, we try
+     * to finish all the operation in progress and trow an exception. to let the user decide.
      */
     public static class AsyncProcess<Res> {
       // Info on the queries and their context
       private final HConnectionImplementation hci;
       private final byte[] tableName;
       private final ExecutorService pool;
-      private final Batch.Callback<Res> callback;
-      private BatchErrors<Row> errors = new BatchErrors<Row>();
-      private BatchErrors<Row> retriedErrors = new BatchErrors<Row>();
+      private final AsyncProcessCallback<Res> callback;
+      private final BatchErrors<Row> errors = new BatchErrors<Row>();
+      private final BatchErrors<Row> retriedErrors = new BatchErrors<Row>();
       private final AtomicBoolean hasError = new AtomicBoolean(false);
       private final AtomicLong taskCounter = new AtomicLong(0);
       private final ConcurrentHashMap<String, AtomicInteger> taskCounterPerRegion =
           new ConcurrentHashMap<String, AtomicInteger>();
       private final int maxTotalConcurrentTasks;
       private final int maxConcurrentTasksPerRegion;
+      private final long pause;
+      private final long numTries;
 
 
-      public boolean hasError(){
-        return hasError.get();
-      }
-
-      public List<? extends Row> getFailedOperation(){
-        return errors.actions;
-      }
-
-
-      public AsyncProcess(HConnection hci, byte[] tableName, ExecutorService pool,
-                          Batch.Callback<Res> callback){
-        this.hci = (HConnectionImplementation)hci;
+      public AsyncProcess(HConnection hc, byte[] tableName, ExecutorService pool,
+                          AsyncProcessCallback<Res> callback) {
+        this.hci = (HConnectionImplementation) hc;
+        pause = hc.getConfiguration().getLong(HConstants.HBASE_CLIENT_PAUSE,
+            HConstants.DEFAULT_HBASE_CLIENT_PAUSE);
+        numTries = hc.getConfiguration().getInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER,
+            HConstants.DEFAULT_HBASE_CLIENT_RETRIES_NUMBER);
         this.tableName = tableName;
         this.pool = pool;
         this.callback = callback;
         this.maxTotalConcurrentTasks =
-            hci.getConfiguration().getInt("hbase.client.max.total.tasks", 200) ;
+            hci.getConfiguration().getInt("hbase.client.max.total.tasks", 200);
         this.maxConcurrentTasksPerRegion =
-            hci.getConfiguration().getInt("hbase.client.max.perregion.tasks", 3) ;
+            hci.getConfiguration().getInt("hbase.client.max.perregion.tasks", 3);
       }
 
-      public void submit(List<? extends Row> rowList) throws IOException {
+      /**
+       * @param rowList - the rows actually taken will be removed from the list. The rows that
+       *                cannot be sent (overloaded region) will be kept in the list.
+       */
+      public void submit(List<? extends Row> rowList)  throws InterruptedIOException {
         waitForMaximumTaskNumber(maxTotalConcurrentTasks);
+        submit(rowList, 1, false);
+      }
 
-        if (!hasError()){
-          submit(rowList, 1, false);
+
+      /**
+       * Loop until all the rows as been submitted: i.e. wait if the regionserver are overloaded
+       * when submit is called.
+       */
+      public void submitAll(List<? extends Row> rowList) throws InterruptedIOException {
+        long lastLog = 0;
+        while (!rowList.isEmpty()) {
+          waitForMaximumTaskNumber(maxTotalConcurrentTasks);
+          submit(rowList, 1, true);
+          if (!rowList.isEmpty()) {
+            long now = EnvironmentEdgeManager.currentTimeMillis();
+            if (now > lastLog + 5000 ) {
+              lastLog = now;
+              LOG.info("Can't submit all rows yet: some regions are overloaded. tableName=" +
+                  Bytes.toString(tableName));
+            }
+            try {
+              Thread.sleep(1000);
+            } catch (InterruptedException e) {
+              throw new InterruptedIOException("Still not sent: " + rowList.size() + " rows.");
+            }
+          }
         }
       }
 
       /**
        * Group a list of actions per region servers, and send them. The created MultiActions are
-       *  added to the inProgress list.
-       * @param rowList
-       * @param numAttempt
+       * added to the inProgress list.
+       *
+       * @param rowList    the list of row to submit
+       * @param numAttempt the current numAttempt (first attempt is 1)
+       * @param force      true if we submit the rowList without taking into account the server load
        * @throws IOException - if we can't locate a region after multiple retries.
        */
-      private void submit(List<? extends Row> rowList, int numAttempt, boolean force)
-          throws IOException {
+      private void submit(List<? extends Row> rowList, int numAttempt, boolean force) {
         // group per location => regions server
         final Map<HRegionLocation, MultiAction<Row>> actionsByServer =
             new HashMap<HRegionLocation, MultiAction<Row>>();
         List<Action<Row>> retainedActions = new ArrayList<Action<Row>>(rowList.size());
 
         // We have the same policy for a single region per call to submit: we don't want
-        //  to send half of the actions because the status changed in the middle. So we keep it
-        //  here.
+        //  to send half of the actions because the status changed in the middle. So we keep the
+        //  status
         HashMap<String, Boolean> regionStatus = new HashMap<String, Boolean>();
 
         Iterator<? extends Row> it = rowList.iterator();
+        int posInList = -1;
         while (it.hasNext()) {
+          posInList++;
           Row row = it.next();
           if (row != null) {
-            final HRegionLocation loc = hci.locateRegion(this.tableName, row.getRow());
-            if (loc == null) {
-              throw new IOException("No location found, aborting submit.");
+            HRegionLocation loc = null;
+            IOException locationException = null;
+            try {
+              loc = hci.locateRegion(this.tableName, row.getRow());
+              if (loc == null){
+                locationException = new IOException("No location found, aborting submit for" +
+                    " tableName=" + Bytes.toString(tableName));
+              }
+            } catch (IOException e) {
+              locationException = e;
+            }
+            if (locationException != null) {
+              // There are multiple retries in locateRegion already. No need to add new.
+              // We can't continue with this row
+              manageError(numAttempt, posInList, row, false, locationException, null);
+              it.remove();
             }
 
-            Boolean addit = true;
-            if (!force) { // No need to check if we add it all the time anyway
+            Boolean addit = (locationException == null);
+            if (!force && addit) {
               String regionName = loc.getRegionInfo().getEncodedName();
               addit = regionStatus.get(regionName);
               if (addit == null) {
@@ -2543,9 +2353,11 @@ public class HConnectionManager {
                 long nbTask = ct == null ? 0 : ct.get();
                 addit = (nbTask < maxConcurrentTasksPerRegion);
                 regionStatus.put(regionName, addit);
-                LOG.debug("Region " + regionName + " has " + nbTask +
-                    " tasks, max is " + maxConcurrentTasksPerRegion +
-                    ", " + (addit ? "" : "NOT ") + "adding task");  // to move to trace,
+                if (LOG.isTraceEnabled()) {
+                  LOG.debug("Region " + regionName + " has " + nbTask +
+                      " tasks, max is " + maxConcurrentTasksPerRegion +
+                      ", " + (addit ? "" : "NOT ") + "adding task");
+                }
               }
             }
             if (addit) {
@@ -2556,7 +2368,7 @@ public class HConnectionManager {
                 actionsByServer.put(loc, actions);
               }
               it.remove();
-              Action<Row> aAction = new Action<Row>(row, retainedActions.size());
+              Action<Row> aAction = new Action<Row>(row, posInList);
               retainedActions.add(aAction);
               actions.add(regionName, aAction);
             }
@@ -2567,12 +2379,12 @@ public class HConnectionManager {
         for (Entry<HRegionLocation, MultiAction<Row>> e : actionsByServer.entrySet()) {
           long backoffTime = 0;
           if (numAttempt > 1) {
-            backoffTime = ConnectionUtils.getPauseTime(hci.pause, numAttempt - 1);
+            backoffTime = ConnectionUtils.getPauseTime(pause, numAttempt - 1);
           }
           Runnable runnable =
               createDelayedRunnable(retainedActions, backoffTime, e.getKey(),
                   e.getValue(), numAttempt);
-          if (LOG.isTraceEnabled() && numAttempt > 0) {
+          if (LOG.isTraceEnabled() && numAttempt > 1) {
             StringBuilder sb = new StringBuilder();
             for (Action<Row> action : e.getValue().allActions()) {
               sb.append(Bytes.toStringBinary(action.getAction().getRow())).append(';');
@@ -2585,28 +2397,65 @@ public class HConnectionManager {
         }
       }
 
+      /**
+       * Check that we can retry acts accordingly: logs, set the error status, call the callbacks.
+       * @param numAttempt the number of this attempt
+       * @param originalIndex the position in the list sent
+       * @param row the row
+       * @param canRetry if false, we won't retry whatever the settings.
+       * @param exception the exception, if any.
+       * @param location the location, if any
+       * @return true if the action can be retried, false otherwise.
+       */
+      private boolean manageError(int numAttempt, int originalIndex, Row row, boolean canRetry,
+                                  Throwable exception, HRegionLocation location) {
+        if (canRetry) {
+          if (numAttempt >= numTries ||
+              (exception != null && exception instanceof DoNotRetryIOException)) {
+            canRetry = false;
+          }
+        }
+
+        if (canRetry) {
+          if (LOG.isTraceEnabled()) {
+            retriedErrors.add(exception, row, location);
+          }
+        } else {
+          this.hasError.set(true);
+          errors.add(exception, row, location);
+          if (callback != null) {
+            callback.failure(originalIndex, null, row.getRow(), null);
+          }
+        }
+
+        return canRetry;
+      }
+
+      /**
+       * Called when we receive the result of a server query.
+       * @param originalActionsList - the whole action list
+       * @param rsActions - the actions for this location
+       * @param location - the location
+       * @param responses - the response, if any
+       * @param numAttempt - the attempt
+       * @throws InterruptedException
+       * @throws IOException
+       */
       private void receiveMultiAction(List<Action<Row>> originalActionsList,
-         MultiAction<Row> rsActions, HRegionLocation location, MultiResponse responses,
-         int numAttempt)
-          throws InterruptedException, IOException {
+                                      MultiAction<Row> rsActions, HRegionLocation location,
+                                      MultiResponse responses,int numAttempt) {
         final List<Row> toReplay = new ArrayList<Row>();
-        ExecutionException exception = null;
 
         // Error case: no result at all for this multi action. We need to redo all actions
         if (responses == null) {
-          if (numAttempt >= hci.numTries) {
-            this.hasError.set(true);
-          }
           for (List<Action<Row>> actions : rsActions.actions.values()) {
             for (Action<Row> action : actions) {
               // Do not use the exception for updating cache because it might be coming from
               // any of the regions in the MultiAction.
               hci.updateCachedLocations(tableName, action.getAction(), null, location);
-              if (numAttempt < hci.numTries) {
+              if (manageError(numAttempt, action.getOriginalIndex(), action.getAction(),
+                  true, null, null)){
                 toReplay.add(action.getAction());
-                if (LOG.isTraceEnabled()) {
-                  retriedErrors.add(exception, (Row)(action.getAction()), location);
-                }
               }
             }
           }
@@ -2625,44 +2474,40 @@ public class HConnectionManager {
                 Action<Row> correspondingAction = originalActionsList.get(regionResult.getFirst());
                 Row row = correspondingAction.getAction();
                 hci.updateCachedLocations(this.tableName, row, result, location);
-                if (result instanceof DoNotRetryIOException || numAttempt >= hci.numTries) {
-                  errors.add((Throwable)result, row, location);
-                  this.hasError.set(true);
-                } else {
-                  if (LOG.isTraceEnabled()) {
-                    retriedErrors.add((Throwable)result, row, location);
-                  }
+
+                if (manageError(numAttempt, correspondingAction.getOriginalIndex(), row, true, (Throwable) result, location )){
                   toReplay.add(correspondingAction.getAction());
                 }
               } else // success
                 if (callback != null) {
                   Action<Row> correspondingAction = originalActionsList.get(regionResult.getFirst());
                   Row row = correspondingAction.getAction();
-                  this.callback.update(resultsForRS.getKey(), row.getRow(), (Res) result);
+                  this.callback.success(correspondingAction.getOriginalIndex(),
+                      resultsForRS.getKey(), row.getRow(), (Res) result);
                 }
             }
           }
         }
-        if (!toReplay.isEmpty()){
+        if (!toReplay.isEmpty()) {
           submit(toReplay, numAttempt + 1, true);
         }
       }
 
+      /**
+       * Wait until the async does not have more than max tasks in progress.
+       */
       private void waitForMaximumTaskNumber(int max) throws InterruptedIOException {
-        long nextLog = 0;
-        while (this.taskCounter.get() > max){
-          if (nextLog == 0){
-            nextLog = EnvironmentEdgeManager.currentTimeMillis() + 3000;
-          } else {
-            if (EnvironmentEdgeManager.currentTimeMillis() > nextLog) {
-              LOG.info(Bytes.toString(tableName) +
-                  ": Waiting for number of tasks to be equals or less than " + max +
-                  ", currently it's " + this.taskCounter.get());
-            }
-            nextLog = EnvironmentEdgeManager.currentTimeMillis() + 5000;
+        long lastLog = 0;
+        while (this.taskCounter.get() > max) {
+          long now = EnvironmentEdgeManager.currentTimeMillis();
+          if (now > lastLog + 5000) {
+            lastLog = now;
+            LOG.info(Bytes.toString(tableName) +
+                ": Waiting for number of tasks to be equals or less than " + max +
+                ", currently it's " + this.taskCounter.get());
           }
           try {
-            synchronized (this.taskCounter){
+            synchronized (this.taskCounter) {
               this.taskCounter.wait(200);
             }
           } catch (InterruptedException e) {
@@ -2672,39 +2517,55 @@ public class HConnectionManager {
       }
 
       /**
-       * Wait until all tasks are executed, successfully or not. If some of the tasks failed
-       *  after all retries, a RetriesExhaustedWithDetailsException is thrown.
+       * Wait until all tasks are executed, successfully or not.
        */
-      public void waitUntilDone() throws RetriesExhaustedWithDetailsException,
-          InterruptedIOException  {
+      public void waitUntilDone() throws InterruptedIOException {
         waitForMaximumTaskNumber(0);
-
-        if (hasError()){
-          retriedErrors = new BatchErrors<Row>();
-          RetriesExhaustedWithDetailsException exception = errors.makeException();
-          errors  = new BatchErrors<Row>();
-          retriedErrors = new BatchErrors<Row>();
-          hasError.set(false);
-          throw exception;
-        }
       }
 
 
-      private void incCounters(String regionName){
+      public boolean hasError() {
+        return hasError.get();
+      }
+
+      public List<? extends Row> getFailedOperations() {
+        return errors.actions;
+      }
+
+      /**
+       * Clean the errors stacks. Should be called only when there are no actions in progress.
+       */
+      public void clearErrors(){
+        errors.clear();
+        retriedErrors.clear();
+        hasError.set(false);
+      }
+
+      public RetriesExhaustedWithDetailsException getErrors(){
+        return errors.makeException();
+      }
+
+      /**
+       * incrementer the tasks counters for a given region. MT safe.
+       */
+      private void incTaskCounters(String regionName) {
         taskCounter.incrementAndGet();
 
-        AtomicInteger counterPerServer =  taskCounterPerRegion.get(regionName);
-        if (counterPerServer == null){
+        AtomicInteger counterPerServer = taskCounterPerRegion.get(regionName);
+        if (counterPerServer == null) {
           taskCounterPerRegion.putIfAbsent(regionName, new AtomicInteger());
-          counterPerServer =  taskCounterPerRegion.get(regionName);
+          counterPerServer = taskCounterPerRegion.get(regionName);
         }
         counterPerServer.incrementAndGet();
       }
 
-      private void decCounters(String hostnamePort){
+      /**
+       * Decrements the counters for a given region
+       */
+      private void decTaskCounters(String regionName) {
         taskCounter.decrementAndGet();
 
-        AtomicInteger counterPerServer =  taskCounterPerRegion.get(hostnamePort);
+        AtomicInteger counterPerServer = taskCounterPerRegion.get(regionName);
         counterPerServer.decrementAndGet();
 
         synchronized (taskCounter) {
@@ -2713,32 +2574,61 @@ public class HConnectionManager {
       }
 
 
+      /**
+       * Create a specific Runnable that will wait a given amount of ms before executing the
+       *  call to the region servers.
+       * @param originalActionsList
+       * @param delay - how long to wait
+       * @param loc - location
+       * @param multi - the multi action to execute
+       * @param numAttempt - the number of attempt
+       * @return the Runnable
+       */
       private Runnable createDelayedRunnable(
           final List<Action<Row>> originalActionsList, final long delay, final HRegionLocation loc,
           final MultiAction<Row> multi, final int numAttempt) {
 
         final Callable<MultiResponse> delegate = hci.createCallable(loc, multi, tableName);
         final String regionName = loc.getRegionInfo().getEncodedName();
-        incCounters(regionName);
+        incTaskCounters(regionName);
 
         return new Runnable() {
-          private final long creationTime = System.currentTimeMillis();
+          private final long creationTime = EnvironmentEdgeManager.currentTimeMillis();
 
           @Override
-          public void run()  {
+          public void run() {
             try {
-              final long waitingTime = delay + creationTime - System.currentTimeMillis();
+              final long waitingTime = delay + creationTime -
+                  EnvironmentEdgeManager.currentTimeMillis();
               if (waitingTime > 0) {
-                Thread.sleep(waitingTime);
+                try {
+                  Thread.sleep(waitingTime);
+                } catch (InterruptedException e) {
+                  LOG.warn("We've been interrupted while waiting to send" +
+                      " for regionName=" + regionName);
+                  for (Action<Row> action:originalActionsList){
+                    manageError(numAttempt, action.getOriginalIndex(),
+                        action.getAction(), false, e, loc);
+                  }
+                  Thread.interrupted();
+                  return;
+                }
               }
-              MultiResponse res =  delegate.call();
+              MultiResponse res = null;
+              try {
+                res = delegate.call();
+              } catch (Exception e) {
+                LOG.warn("The call to the RS failed, we don't know where we stand. regionName="
+                    + regionName, e);
+                for (Action<Row> action:originalActionsList){
+                  manageError(numAttempt, action.getOriginalIndex(),
+                      action.getAction(), false, e, loc);
+                }
+                return;
+              }
               receiveMultiAction(originalActionsList, multi, loc, res, numAttempt);
-            } catch (InterruptedException e) {
-              hasError.set(true);
-            } catch (Exception e) {
-              hasError.set(true);
             } finally {
-              decCounters(regionName);
+              decTaskCounters(regionName);
             }
           }
         };
@@ -2762,7 +2652,7 @@ public class HConnectionManager {
         }
       }
 
-      public String getDescriptionAndClear(){
+      public String getDescriptionAndClear() {
         if (exceptions.isEmpty()) {
           return "";
         }
@@ -2776,6 +2666,12 @@ public class HConnectionManager {
 
       private RetriesExhaustedWithDetailsException makeException() {
         return new RetriesExhaustedWithDetailsException(exceptions, actions, addresses);
+      }
+
+      public void clear(){
+        exceptions.clear();
+        actions.clear();
+        addresses.clear();
       }
     }
 
@@ -2798,8 +2694,9 @@ public class HConnectionManager {
     /**
      * Check the region cache to see whether a region is cached yet or not.
      * Called by unit tests.
+     *
      * @param tableName tableName
-     * @param row row
+     * @param row       row
      * @return Region cached or not.
      */
     boolean isRegionCached(final byte[] tableName, final byte[] row) {
@@ -2809,11 +2706,10 @@ public class HConnectionManager {
 
     @Override
     public void setRegionCachePrefetch(final byte[] tableName,
-        final boolean enable) {
+                                       final boolean enable) {
       if (!enable) {
         regionCachePrefetchDisabledTables.add(Bytes.mapKey(tableName));
-      }
-      else {
+      } else {
         regionCachePrefetchDisabledTables.remove(Bytes.mapKey(tableName));
       }
     }
@@ -2826,12 +2722,12 @@ public class HConnectionManager {
     @Override
     public void abort(final String msg, Throwable t) {
       if (t instanceof KeeperException.SessionExpiredException
-        && keepAliveZookeeper != null) {
+          && keepAliveZookeeper != null) {
         synchronized (masterAndZKLock) {
           if (keepAliveZookeeper != null) {
             LOG.warn("This client just lost it's session with ZooKeeper," +
-              " closing it." +
-              " It will be recreated next time someone needs it", t);
+                " closing it." +
+                " It will be recreated next time someone needs it", t);
             closeZooKeeperWatcher();
           }
         }
@@ -2853,7 +2749,7 @@ public class HConnectionManager {
     }
 
     @Override
-    public boolean isAborted(){
+    public boolean isAborted() {
       return this.aborted;
     }
 
@@ -2938,7 +2834,7 @@ public class HConnectionManager {
       MasterMonitorKeepAliveConnection master = getKeepAliveMasterMonitorService();
       try {
         GetTableDescriptorsRequest req =
-          RequestConverter.buildGetTableDescriptorsRequest(null);
+            RequestConverter.buildGetTableDescriptorsRequest(null);
         return ProtobufUtil.getHTableDescriptorArray(master.getTableDescriptors(null, req));
       } catch (ServiceException se) {
         throw ProtobufUtil.getRemoteException(se);
@@ -2953,7 +2849,7 @@ public class HConnectionManager {
       MasterMonitorKeepAliveConnection master = getKeepAliveMasterMonitorService();
       try {
         GetTableDescriptorsRequest req =
-          RequestConverter.buildGetTableDescriptorsRequest(tableNames);
+            RequestConverter.buildGetTableDescriptorsRequest(tableNames);
         return ProtobufUtil.getHTableDescriptorArray(master.getTableDescriptors(null, req));
       } catch (ServiceException se) {
         throw ProtobufUtil.getRemoteException(se);
@@ -2964,14 +2860,15 @@ public class HConnectionManager {
 
     /**
      * Connects to the master to get the table descriptor.
+     *
      * @param tableName table name
      * @return
      * @throws IOException if the connection to master fails or if the table
-     *  is not found.
+     *                     is not found.
      */
     @Override
     public HTableDescriptor getHTableDescriptor(final byte[] tableName)
-    throws IOException {
+        throws IOException {
       if (tableName == null || tableName.length == 0) return null;
       if (Bytes.equals(tableName, HConstants.META_TABLE_NAME)) {
         return HTableDescriptor.META_TABLEDESC;
@@ -2980,7 +2877,7 @@ public class HConnectionManager {
       GetTableDescriptorsResponse htds;
       try {
         GetTableDescriptorsRequest req =
-          RequestConverter.buildGetTableDescriptorsRequest(null);
+            RequestConverter.buildGetTableDescriptorsRequest(null);
         htds = master.getTableDescriptors(null, req);
       } catch (ServiceException se) {
         throw ProtobufUtil.getRemoteException(se);
@@ -3016,7 +2913,8 @@ public class HConnectionManager {
       /**
        * Calculates the back-off time for a retrying request to a particular server.
        * This is here, and package private, for testing (no good way to get at it).
-       * @param server The server in question.
+       *
+       * @param server    The server in question.
        * @param basePause The default hci pause.
        * @return The time to wait before sending next request.
        */
@@ -3042,6 +2940,7 @@ public class HConnectionManager {
       /**
        * Reports that there was an error on the server to do whatever bean-counting necessary.
        * This is here, and package private, for testing (no good way to get at it).
+       *
        * @param server The server in question.
        */
       void reportServerError(HRegionLocation server) {
@@ -3079,28 +2978,32 @@ public class HConnectionManager {
     public boolean isUsingServerTrackerForRetries() {
       return this.useServerTrackerForRetries;
     }
+
     /**
      * Creates the server error tracker to use inside process.
      * Currently, to preserve the main assumption about current retries, and to work well with
      * the retry-limit-based calculation, the calculation is local per Process object.
      * We may benefit from connection-wide tracking of server errors.
+     *
      * @return ServerErrorTracker to use.
      */
     ServerErrorTracker createServerErrorTracker() {
       return new ServerErrorTracker(this.serverTrackerTimeout);
     }
   }
+
   /**
    * Set the number of retries to use serverside when trying to communicate
    * with another server over {@link HConnection}.  Used updating catalog
    * tables, etc.  Call this method before we create any Connections.
-   * @param c The Configuration instance to set the retries into.
+   *
+   * @param c   The Configuration instance to set the retries into.
    * @param log Used to log what we set in here.
    */
   public static void setServerSideHConnectionRetries(final Configuration c, final String sn,
-      final Log log) {
+                                                     final Log log) {
     int hcRetries = c.getInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER,
-      HConstants.DEFAULT_HBASE_CLIENT_RETRIES_NUMBER);
+        HConstants.DEFAULT_HBASE_CLIENT_RETRIES_NUMBER);
     // Go big.  Multiply by 10.  If we can't get to meta after this many retries
     // then something seriously wrong.
     int serversideMultiplier = c.getInt("hbase.client.serverside.retries.multiplier", 10);

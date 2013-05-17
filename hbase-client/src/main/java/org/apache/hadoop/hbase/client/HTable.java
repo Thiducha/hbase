@@ -132,6 +132,9 @@ public class HTable implements HTableInterface {
   private final boolean cleanupPoolOnClose; // shutdown the pool in close()
   private final boolean cleanupConnectionOnClose; // close the connection in close()
 
+  /** The Async process for puts with autoflush set to false or multiputs */
+  private HConnectionManager.HConnectionImplementation.AsyncProcess<Object> ap;
+
   /**
    * Creates an object to access a HBase table.
    * Shares zookeeper connection and other resources with other HTable instances
@@ -399,6 +402,13 @@ public class HTable implements HTableInterface {
   }
 
   /**
+   * Kept in 0.96 for backward compatibility
+   */
+  public List<Row> getWriteBuffer() {
+    return writeAsyncBuffer;
+  }
+
+  /**
    * Sets the number of rows that a scanner will fetch at once.
    * <p>
    * This will override the value specified by
@@ -614,21 +624,19 @@ public class HTable implements HTableInterface {
   @Override
   public void batch(final List<?extends Row> actions, final Object[] results)
       throws InterruptedException, IOException {
-    connection.processBatchCallback(actions, tableName, pool, results, null);
+    batchCallback(actions, results, null);
   }
 
   @Override
   public Object[] batch(final List<? extends Row> actions)
      throws InterruptedException, IOException {
-    Object[] results = new Object[actions.size()];
-    connection.processBatchCallback(actions, tableName, pool, results, null);
-    return results;
+    return batchCallback(actions, null);
   }
 
   @Override
   public <R> void batchCallback(
-    final List<? extends Row> actions, final Object[] results, final Batch.Callback<R> callback)
-    throws IOException, InterruptedException {
+      final List<? extends Row> actions, final Object[] results, final Batch.Callback<R> callback)
+      throws IOException, InterruptedException {
     connection.processBatchCallback(actions, tableName, pool, results, callback);
   }
 
@@ -637,7 +645,7 @@ public class HTable implements HTableInterface {
     final List<? extends Row> actions, final Batch.Callback<R> callback) throws IOException,
       InterruptedException {
     Object[] results = new Object[actions.size()];
-    connection.processBatchCallback(actions, tableName, pool, results, callback);
+    batchCallback(actions, results, callback);
     return results;
   }
 
@@ -669,7 +677,7 @@ public class HTable implements HTableInterface {
   throws IOException {
     Object[] results = new Object[deletes.size()];
     try {
-      connection.processBatch((List) deletes, tableName, pool, results);
+      batch(deletes, results);
     } catch (InterruptedException e) {
       throw new IOException(e);
     } finally {
@@ -709,52 +717,68 @@ public class HTable implements HTableInterface {
     }
   }
 
-  private HConnectionManager.HConnectionImplementation.AsyncProcess<Object> ap;
 
+  /**
+   * Add the put to the buffer. If the buffer is already too large, sends the buffer to the
+   *  cluster.
+   * @throws IOException if there is an error on the cluster.
+   */
   private void doPut(Put put) throws IOException {
     validatePut(put);
     currentWriteBufferSize += put.heapSize();
 
     writeAsyncBuffer.add(put);
     while (currentWriteBufferSize > writeBufferSize) {
-      backgroundFlushCommits();
-    }
-    if (ap.hasError()) {
-      flushCommits();
+      backgroundFlushCommits(false);
     }
   }
 
 
-  private void backgroundFlushCommits() throws IOException {
-    if (writeAsyncBuffer.isEmpty()) {
-      // Early exit: we can be called on empty buffers.
-      return;
-    }
+  /**
+   * Send the operations in the buffer to the servers. Does not wait for the server's answer.
+   * If the is an error (max retried reach from a previous flush or bad operation), it tries to
+   * send all operations in the buffer and sends an exception.
+   */
+  private void backgroundFlushCommits(boolean synchronous) throws
+      InterruptedIOException, RetriesExhaustedWithDetailsException {
 
     int previousSize = writeAsyncBuffer.size();
+
     try {
-      ap.submit(writeAsyncBuffer);
-      while (previousSize == writeAsyncBuffer.size()) {
-        try {
-          Thread.sleep(1000);
-        } catch (InterruptedException e) {
-          throw new InterruptedIOException("Still not sent: " + writeAsyncBuffer.size() + " rows.");
-        }
+      if (!ap.hasError()) {
         ap.submit(writeAsyncBuffer);
-      }
-    } catch (IOException e) {
-      if (!clearBufferOnFail){
-        if (ap.hasError()){
-          ap.waitUntilDone();
-          writeAsyncBuffer.addAll(ap.getFailedOperation());
+        while (!ap.hasError() && previousSize == writeAsyncBuffer.size()) {
+          try {
+            Thread.sleep(1000);
+          } catch (InterruptedException e) {
+            throw new InterruptedIOException("Still not sent: " +
+                writeAsyncBuffer.size() + " rows.");
+          }
+          ap.submit(writeAsyncBuffer);
         }
       }
-      throw e;
+
+      if (synchronous) {
+        ap.waitUntilDone();
+      }
+
+      if (ap.hasError()) {
+        ap.waitUntilDone();
+
+        if (!clearBufferOnFail) {
+          // if clearBufferOnFailed is not set, we're supposed to keep the failed operation in the
+          //  write buffer. This is a questionable feature kept here for backward compatibility
+          writeAsyncBuffer.addAll(ap.getFailedOperations());
+        }
+        RetriesExhaustedWithDetailsException e = ap.getErrors();
+        ap.clearErrors();
+        throw e;
+      }
     } finally {
       currentWriteBufferSize = 0;
       for (Row mut : writeAsyncBuffer) {
-        if (mut instanceof Mutation){
-          currentWriteBufferSize += ((Mutation)mut).heapSize();
+        if (mut instanceof Mutation) {
+          currentWriteBufferSize += ((Mutation) mut).heapSize();
         }
       }
     }
@@ -1088,10 +1112,10 @@ public class HTable implements HTableInterface {
    * {@inheritDoc}
    */
   @Override
-  public void flushCommits() throws IOException {
+  public void flushCommits() throws InterruptedIOException, RetriesExhaustedWithDetailsException {
+    // We're looping, as if one region is overloaded we keep its operations in the buffer.
     while (!writeAsyncBuffer.isEmpty()){
-      backgroundFlushCommits();
-      ap.waitUntilDone();
+      backgroundFlushCommits(true);
     }
   }
 
@@ -1109,7 +1133,7 @@ public class HTable implements HTableInterface {
   public <R> void processBatchCallback(
     final List<? extends Row> list, final Object[] results, final Batch.Callback<R> callback)
     throws IOException, InterruptedException {
-    connection.processBatchCallback(list, tableName, pool, results, callback);
+    batchCallback(list, results, callback);
   }
 
 

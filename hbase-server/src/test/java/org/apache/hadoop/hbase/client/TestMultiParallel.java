@@ -319,7 +319,7 @@ public class TestMultiParallel {
     LOG.info("done");
   }
 
-  @Test (timeout=300000)
+  @Test
   public void testBatchWithPut() throws Exception {
     LOG.info("test=testBatchWithPut");
     HTable table = new HTable(UTIL.getConfiguration(), TEST_TABLE);
@@ -348,7 +348,7 @@ public class TestMultiParallel {
     table.close();
   }
 
-  @Test(timeout=300000)
+  @Test
   public void testBatchWithDelete() throws Exception {
     LOG.info("test=testBatchWithDelete");
     HTable table = new HTable(UTIL.getConfiguration(), TEST_TABLE);
