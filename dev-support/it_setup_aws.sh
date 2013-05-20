@@ -6,7 +6,7 @@
 #JAVAS=jdk1.6.0_38
 
 JAVA=jdk-7u21-linux-x64.tar.gz
-JAVAS=jdk-7u21
+JAVAS=jdk1.7.0_21
 
 MAVEN=apache-maven-3.0.4-bin.tar.gz
 MAVENS=apache-maven-3.0.4
@@ -18,16 +18,18 @@ echo "the $BOX1 will contain the hbase source code to run mvn it tests"
 for CBOX in $*; do
   RCBOX=root@$CBOX
 
-#  if ssh -o StrictHostKeyChecking=no $RCBOX "ls $JAVA" >/dev/null 2>/dev/null; then
-#    echo "it seems $JAVA is already installed"
-#  else
+  ssh -A -o StrictHostKeyChecking=no $RCBOX "echo connect ok to $$RCBOX"
+
+  if ssh -o StrictHostKeyChecking=no $RCBOX "ls $JAVA" >/dev/null 2>/dev/null; then
+    echo "it seems $JAVA is already installed"
+  else
     echo installing java from sun
     scp ~/soft/$JAVA $RCBOX:
     #ssh $RCBOX "chmod oug+x $JAVA; yes | ./$JAVA"
     #ssh $RCBOX "mv $JAVAS /opt/jdk1.6"
     ssh $RCBOX "tar -xvf $JAVA"
     ssh $RCBOX "mv $JAVAS /opt/jdk1.7"
-#  fi
+  fi
 
   echo creating maven repo and tmp-recotest dir
   ssh $RCBOX "mkdir -p /grid/0/.m2"
@@ -76,23 +78,23 @@ echo "Now  doing the global setup"
 
 echo "export JAVA_HOME=/opt/jdk1.7"          > /tmp/env.tosource
 echo "export MAVEN_HOME=/opt/apache-maven"   >> /tmp/env.tosource
-echo "PATH=$JAVA_HOME/bin:$MAVEN_HOME/bin:\$PATH"    >> /tmp/env.tosource
+echo "PATH=/opt/jdk1.7/bin:/opt/apache-maven/bin:\$PATH"    >> /tmp/env.tosource
 
 for CBOX in $*; do
   scp /tmp/env.tosource root@$CBOX:tmp-recotest/env.tosource
-  ssh root@$CBOX "cat tmp-recotest/env.tosource >> .bashrc"
+  ssh root@$CBOX "echo 'source /root/tmp-recotest/env.tosource' >> .bashrc"
 done
 
 echo "We don't need to set the sticky bits on dev-support firewall config here: we're root on aws"
 
 
 echo "we're done. You must now run the setup locally on $BOX1 - command: ssh -A $BOX1"
-echo "launch:    git checkout fw_6295"
+echo "launch:    git checkout ycsb"
 echo "launch:    mvn clean install -DskipTests -Dhadoop.profile=2.0"
 echo "launch:    cd dev-support; ./it_setup_local.sh ec2-107-20-111-63.compute-1.amazonaws.com  ec2-184-73-90-197.compute-1.amazonaws.com  ec2-23-21-23-42.compute-1.amazonaws.com  ec2-23-23-14-66.compute-1.amazonaws.com"
 
 echo "launch:    git clone https://github.com/nkeywal/YCSB.git   "
 echo "launch:    mvn clean package -DskipTests -Dhbase-96 -Dhbase.version=0.97.0-SNAPSHOT -Dhadoop.profile=2.0"
 echo "launch:    mvn verify -Dit.test=IntegrationTestLaunchYSCBCluster -pl hbase-it -Dhadoop.profile=2.0 -Dtest.output.tofile=false"
-echo "update     YCSB/hbase/src/main/conf/hbase-site.xml "
+echo "update     vi hbase/src/main/conf/hbase-site.xml "
 echo "launch:    bin/ycsb load hbase -P workloads/workloada -p columnfamily=family -p recordcount=10000000 | grep -v CLEANUP | grep -v INSERT | grep -v UPDATE "
