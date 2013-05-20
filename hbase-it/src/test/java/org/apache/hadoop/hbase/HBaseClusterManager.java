@@ -213,7 +213,7 @@ public class HBaseClusterManager extends ClusterManager {
       cmd += "export HBASE_CONF_DIR=" + getConfigDir() + ";";
       cmd += "export HBASE_HOME=" + getHBaseHome() + ";";
       cmd += "export HBASE_REGIONSERVER_OPTS=" +
-          "'server -XX:ParallelGCThreads=4 -XX:+UseParNewGC -Xmn512m " +
+          "'-XX:ParallelGCThreads=4 -XX:+UseParNewGC -Xmn512m " +
           "-XX:CMSInitiatingOccupancyFraction=80 -verbose:gc -XX:+PrintGCDetails " +
           "-XX:+PrintGCTimeStamps -XX:+PrintGCDateStamps -Xloggc:" +
           getHBaseHome() +"/gc" + service + ".log " +
