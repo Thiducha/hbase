@@ -18,6 +18,7 @@
  */
 package org.apache.hadoop.hbase.client;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.protobuf.BlockingRpcChannel;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
@@ -46,7 +47,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
->>>>>>> clean
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -594,23 +595,7 @@ public class HConnectionManager {
             }, conf, listenerClass);
       }
     }
- 
-    /**
-     * @return The cluster registry implementation to use.
-     * @throws IOException
-     */
-    private Registry setupRegistry() throws IOException {
-      String registryClass = this.conf.get("hbase.client.registry.impl",
-        ZooKeeperRegistry.class.getName());
-      Registry registry = null;
-      try {
-        registry = (Registry)Class.forName(registryClass).newInstance();
-      } catch (Throwable t) {
-        throw new IOException(t);
-      }
-      registry.init(this);
-      return registry;
-    }
+
 
     /**
      * @return The cluster registry implementation to use.

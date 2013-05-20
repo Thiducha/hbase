@@ -358,12 +358,9 @@ MasterServices, Server {
 
   /** flag used in test cases in order to simulate RS failures during master initialization */
   private volatile boolean initializationBeforeMetaAssignment = false;
-<<<<<<< HEAD
-=======
 
   /** The following is used in master recovery scenario to re-register listeners */
   private List<ZooKeeperListener> registeredZKListenersBeforeRecovery;
->>>>>>> clean
 
   /**
    * Initializes the HMaster. The steps are as follows:
@@ -2057,8 +2054,6 @@ MasterServices, Server {
       IOException, KeeperException, ExecutionException {
 
     this.zooKeeper.unregisterAllListeners();
-<<<<<<< HEAD
-=======
     // add back listeners which were registered before master initialization
     // because they won't be added back in below Master re-initialization code
     if (this.registeredZKListenersBeforeRecovery != null) {
@@ -2067,7 +2062,6 @@ MasterServices, Server {
       }
     }
 
->>>>>>> clean
     this.zooKeeper.reconnectAfterExpiration();
 
     Callable<Boolean> callable = new Callable<Boolean> () {

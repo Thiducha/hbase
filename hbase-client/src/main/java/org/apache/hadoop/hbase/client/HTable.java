@@ -135,6 +135,9 @@ public class HTable implements HTableInterface {
   /** The Async process for puts with autoflush set to false or multiputs */
   private HConnectionManager.HConnectionImplementation.AsyncProcess<Object> ap;
 
+  /** if we're synchronous as in 0.94- */
+  protected boolean synchronousProcess;
+
   /**
    * Creates an object to access a HBase table.
    * Shares zookeeper connection and other resources with other HTable instances
@@ -745,6 +748,7 @@ public class HTable implements HTableInterface {
     int previousSize = writeAsyncBuffer.size();
 
     try {
+      // If there is an error on the operations in progress, we don't add new operations.
       if (!ap.hasError()) {
         ap.submit(writeAsyncBuffer);
         while (!ap.hasError() && previousSize == writeAsyncBuffer.size()) {
