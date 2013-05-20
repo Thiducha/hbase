@@ -2,8 +2,11 @@
 
 # we need the JAVA and MAVEN binaries to be available in ~/soft
 # we will install them in /opt
-JAVA=jdk-6u38-linux-x64.bin
-JAVAS=jdk1.6.0_38
+#JAVA=jdk-6u38-linux-x64.bin
+#JAVAS=jdk1.6.0_38
+
+JAVA=jdk-7u21-linux-x64.tar.gz
+JAVAS=jdk-7u21
 
 MAVEN=apache-maven-3.0.4-bin.tar.gz
 MAVENS=apache-maven-3.0.4
@@ -15,14 +18,16 @@ echo "the $BOX1 will contain the hbase source code to run mvn it tests"
 for CBOX in $*; do
   RCBOX=root@$CBOX
 
-  if ssh -o StrictHostKeyChecking=no $RCBOX "ls $JAVA" >/dev/null 2>/dev/null; then
-    echo "it seems $JAVA is already installed"
-  else
+#  if ssh -o StrictHostKeyChecking=no $RCBOX "ls $JAVA" >/dev/null 2>/dev/null; then
+#    echo "it seems $JAVA is already installed"
+#  else
     echo installing java from sun
     scp ~/soft/$JAVA $RCBOX:
-    ssh $RCBOX "chmod oug+x $JAVA; yes | ./$JAVA"
-    ssh $RCBOX "mv $JAVAS /opt/jdk1.6"
-  fi
+    #ssh $RCBOX "chmod oug+x $JAVA; yes | ./$JAVA"
+    #ssh $RCBOX "mv $JAVAS /opt/jdk1.6"
+    ssh $RCBOX "tar -xvf $JAVA"
+    ssh $RCBOX "mv $JAVAS /opt/jdk1.7"
+#  fi
 
   echo creating maven repo and tmp-recotest dir
   ssh $RCBOX "mkdir -p /grid/0/.m2"
@@ -35,6 +40,10 @@ for CBOX in $*; do
   ssh $RCBOX "echo 'host *' > ~/.ssh/config"
   ssh $RCBOX "echo 'ForwardAgent yes' >> ~/.ssh/config"
   ssh $RCBOX "chmod 600 ~/.ssh/config"
+
+  echo "Maxing the ulimit for nofile"
+  ssh $RCBOX "echo 'root         hard     nofile          65535' >> /etc/security/limits.conf"
+  ssh $RCBOX "echo 'root         soft     nofile          65535' >> /etc/security/limits.conf"
 done
 
 echo "Install git on $BOX1"
@@ -44,7 +53,10 @@ ssh $BOX1 "yes | yum install -y git"
 
 echo "Cloning hbase repo on $BOX1"
 ssh $BOX1 "mkdir -p ~/dev"
-ssh $BOX1 "cd dev ; git clone https://github.com/nkeywal/hbase.git"
+ssh $BOX1 "cd ~/dev ; git clone https://github.com/nkeywal/hbase.git"
+
+echo "Cloning YCSB repo on $BOX1"
+ssh $BOX1 "cd ~/dev ; git clone https://github.com/nkeywal/YCSB.git"
 
 echo installing maven on box1 - redhat does not have wget by default
 if ssh -o StrictHostKeyChecking=no $BOX1 "ls $MAVEN" >/dev/null 2>/dev/null; then
@@ -56,13 +68,13 @@ else
 fi
 
 
-echo "Copying the data from the cluster dir (hadoop & cie)"
-ssh $BOX1 "mkdir -p cluster"
-rsync  -az --delete ~/cluster/* $BOX1:~/cluster
+echo "Copying the data from the hcluster dir (hadoop & cie)"
+ssh $BOX1 "mkdir -p hcluster"
+rsync  -az --delete ~/hcluster/* $BOX1:~/hcluster
 
 echo "Now  doing the global setup"
 
-echo "export JAVA_HOME=/opt/jdk1.6"          > /tmp/env.tosource
+echo "export JAVA_HOME=/opt/jdk1.7"          > /tmp/env.tosource
 echo "export MAVEN_HOME=/opt/apache-maven"   >> /tmp/env.tosource
 echo "PATH=$JAVA_HOME/bin:$MAVEN_HOME/bin:\$PATH"    >> /tmp/env.tosource
 

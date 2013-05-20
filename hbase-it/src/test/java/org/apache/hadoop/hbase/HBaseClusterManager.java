@@ -202,14 +202,23 @@ public class HBaseClusterManager extends ClusterManager {
       return cur;
     }
 
+
     @Override
     public String getCommand(ServiceType service, Operation op) {
+      final int heapSize = 5000;
       String cmd = "";
       cmd += "export JAVA_HOME=" + getJavaHome() + ";";
       cmd += "export HBASE_SSH_OPTS=" + getSSH_OPTS() + ";";
-      cmd += "export HBASE_HEAPSIZE=5000;";
+      cmd += "export HBASE_HEAPSIZE=" + heapSize+";";
       cmd += "export HBASE_CONF_DIR=" + getConfigDir() + ";";
       cmd += "export HBASE_HOME=" + getHBaseHome() + ";";
+      cmd += "export HBASE_REGIONSERVER_OPTS=" +
+          "'server -XX:ParallelGCThreads=4 -XX:+UseParNewGC -Xmn512m " +
+          "-XX:CMSInitiatingOccupancyFraction=80 -verbose:gc -XX:+PrintGCDetails " +
+          "-XX:+PrintGCTimeStamps -XX:+PrintGCDateStamps -Xloggc:" +
+          getHBaseHome() +"/gc" + service + ".log " +
+          "-Xms" + heapSize+ "m Xmx"+heapSize +"m -XX:ErrorFile=" +
+          getHBaseHome() +"/gc" + service + "-err.log'";
       return cmd + String.format("%s/bin/hbase-daemon%s.sh %s  %s",
           getHBaseHome(),
           service.equals(ServiceType.ZOOKEEPER) ? "s" : "",
@@ -274,7 +283,7 @@ public class HBaseClusterManager extends ClusterManager {
       cmd += "export HADOOP_VERSION=" + getHadoopVersion() + ";";
       cmd += "export HADOOP_HDFS_HOME=" + getHDFSHome() + ";";
       if (isHadoopOne()){
-        // These two settings are not availavle in hadoop 2
+        // These two settings are not available in hadoop 2
         cmd += "export HADOOP_CONF_DIR=" + getConfigDir() + ";";
         cmd += "export HADOOP_ROOT_LOGGER=INFO,DRFA;";
       }

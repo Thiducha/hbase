@@ -2248,7 +2248,6 @@ public class HConnectionManager {
       private final long pause;
       private final long numTries;
 
-
       public AsyncProcess(HConnection hc, byte[] tableName, ExecutorService pool,
                           AsyncProcessCallback<Res> callback) {
         this.hci = (HConnectionImplementation) hc;
@@ -2261,8 +2260,11 @@ public class HConnectionManager {
         this.callback = callback;
         this.maxTotalConcurrentTasks =
             hci.getConfiguration().getInt("hbase.client.max.total.tasks", 200);
+
+        // We've one, we ensure that the ordering of the queries is respected: we don't start
+        //  a set of operations on a region before the previous one is done.
         this.maxConcurrentTasksPerRegion =
-            hci.getConfiguration().getInt("hbase.client.max.perregion.tasks", 3);
+            hci.getConfiguration().getInt("hbase.client.max.perregion.tasks", 1);
       }
 
       /**
@@ -2276,28 +2278,10 @@ public class HConnectionManager {
 
 
       /**
-       * Loop until all the rows as been submitted: i.e. wait if the regionserver are overloaded
-       * when submit is called.
+       * Submit all the operations, whatever the server workload.
        */
       public void submitAll(List<? extends Row> rowList) throws InterruptedIOException {
-        long lastLog = 0;
-        while (!rowList.isEmpty()) {
-          waitForMaximumTaskNumber(maxTotalConcurrentTasks);
-          submit(rowList, 1, true);
-          if (!rowList.isEmpty()) {
-            long now = EnvironmentEdgeManager.currentTimeMillis();
-            if (now > lastLog + 5000 ) {
-              lastLog = now;
-              LOG.info("Can't submit all rows yet: some regions are overloaded. tableName=" +
-                  Bytes.toString(tableName));
-            }
-            try {
-              Thread.sleep(1000);
-            } catch (InterruptedException e) {
-              throw new InterruptedIOException("Still not sent: " + rowList.size() + " rows.");
-            }
-          }
-        }
+        submit(rowList, 1, true);
       }
 
       /**

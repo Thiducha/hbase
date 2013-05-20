@@ -3,8 +3,8 @@
 #!/bin/bash
 ORIG_HBASE_DIR=`readlink -f ..`
 ORIG_HDFS_DIR=`readlink -f $ORIG_HBASE_DIR/../hadoop-common`
-ORIG_HDFS_DIR=`readlink -f ~/cluster/hadoop-1.1.2`
-ORIG_HDFS_DIR=`readlink -f ~/cluster/hadoop-2.0.2-alpha`
+ORIG_HDFS_DIR=`readlink -f ~/hcluster/hadoop-1.1.2`
+ORIG_HDFS_DIR=`readlink -f ~/hcluster/hadoop-2.0.2-alpha`
 
 ORIG_CONF=$ORIG_HBASE_DIR/hbase-it/src/test/resources/
 
