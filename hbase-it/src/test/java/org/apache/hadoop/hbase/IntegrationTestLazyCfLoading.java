@@ -232,6 +232,7 @@ public class IntegrationTestLazyCfLoading {
     LOG.info("Starting writer; the number of keys to write is " + keysToWrite);
     writer.start(1, keysToWrite, WRITER_THREADS);
 
+
     // Now, do scans.
     long now = EnvironmentEdgeManager.currentTimeMillis();
     long timeLimit = now + (maxRuntime * 60000);

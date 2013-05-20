@@ -41,7 +41,7 @@
   <build>
     <testResources>
       <testResource>
-         <!-- We depend on hbase-server test resources -->
+        <!-- We depend on hbase-server test resources -->
         <directory>../hbase-server/src/test/resources</directory>
       </testResource>
     </testResources>
@@ -92,6 +92,10 @@
               <LD_LIBRARY_PATH>${env.LD_LIBRARY_PATH}:${project.build.directory}/nativelib</LD_LIBRARY_PATH>
               <DYLD_LIBRARY_PATH>${env.DYLD_LIBRARY_PATH}:${project.build.directory}/nativelib</DYLD_LIBRARY_PATH>
               <MALLOC_ARENA_MAX>4</MALLOC_ARENA_MAX>
+              <HADOOP_VERSION>${hadoop.version}</HADOOP_VERSION>
+              <HBASE_HOME>${env.HBASE_HOME}</HBASE_HOME>
+              <HADOOP_HOME>${env.HADOOP_HOME}</HADOOP_HOME>
+              <HADOOP_CONF_DIR>${env.HADOOP_CONF_DIR}</HADOOP_CONF_DIR>
             </environmentVariables>
             <failIfNoTests>false</failIfNoTests>
             <testFailureIgnore>false</testFailureIgnore>
@@ -141,7 +145,8 @@
             <skip>false</skip>
             <forkMode>always</forkMode>
             <!-- TODO: failsafe does timeout, but verify does not fail the build because of the timeout.
-                 I believe it is a failsafe bug, we may consider using surefire -->
+                 It's a failsafe feature. Failsafe does not break the build when there is an error.
+                 -->
             <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
             <argLine>-enableassertions -Xmx1900m
               -Djava.security.egd=file:/dev/./urandom</argLine>

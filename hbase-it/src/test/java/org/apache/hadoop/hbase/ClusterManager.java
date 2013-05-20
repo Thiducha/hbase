@@ -19,6 +19,8 @@
 package org.apache.hadoop.hbase;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -42,6 +44,15 @@ public abstract class ClusterManager extends Configured {
   public ClusterManager() {
   }
 
+  public abstract void formatNameNode(String hostname) throws IOException;
+
+  // Not in ClusterManager because it uses 'exec'
+  public abstract void killAllServices(String hostname) throws IOException;
+
+  public abstract void rmHDFSDataDir(String hostname) throws IOException;
+
+  public abstract void checkAccessible(String hostname) throws IOException, InterruptedException;
+
   /**
    * Type of the service daemon
    */
@@ -51,7 +62,8 @@ public abstract class ClusterManager extends Configured {
     HADOOP_JOBTRACKER("jobtracker"),
     HADOOP_TASKTRACKER("tasktracker"),
     HBASE_MASTER("master"),
-    HBASE_REGIONSERVER("regionserver");
+    HBASE_REGIONSERVER("regionserver"),
+    ZOOKEEPER("zookeeper");  //é
 
     private String name;
 
@@ -116,6 +128,55 @@ public abstract class ClusterManager extends Configured {
    * service still has a pid.
    */
   public abstract boolean isRunning(ServiceType service, String hostname) throws IOException;
+
+
+  /**
+   * Simulate an unplug of a remote host. Always calls replug after!
+   * Technically, this is implemented by configuring the firewall: all messages from this
+   *  hosts are discarded locally. So the connection between this machine and the other will
+   *  still be possible. As a consequence, it's not possible to simulate all failure. As well,
+   *  obviously, the services are still running on the remote computer and will need to be stopped
+   *  at the end of the test. Lastly, it's mandatory to replug {@link #replug(String)} at then end
+   *  of the test, if not the machine won't be accessible.
+   */
+  public abstract void unplug(String hostname) throws Exception;
+
+  /**
+   * Simulates a replug of a hostname after being unplug.
+   */
+  public abstract void replug(String hostname) throws IOException, Exception;
+
+
+
+  /**
+   * Helper function to get an environment variable, fails with an assert if it's not defined.
+   * @param envVN
+   * @return
+   */
+  @SuppressWarnings("CallToSystemGetenv")
+  public static String getEnvNotNull(String envVN){
+    assert System.getenv(envVN) != null : envVN + " is not defined.";
+    return System.getenv(envVN);
+  }
+
+  public static boolean isReachablePort(String hostname, int port) {
+    //  a minimum connect timeout. If it succeeds, it means there is still a process there...
+    Socket socket = new Socket();
+    try {
+      InetSocketAddress dest = new InetSocketAddress(hostname, port);
+      socket.connect(dest, 400);
+      return true;
+    } catch (IOException ignored) {
+      return false;
+    } finally {
+      try {
+        socket.close();
+      } catch (IOException ignored) {
+      }
+    }
+  }
+
+
 
   /* TODO: further API ideas:
    *

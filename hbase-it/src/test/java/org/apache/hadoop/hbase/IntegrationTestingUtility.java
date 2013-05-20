@@ -72,7 +72,7 @@ public class IntegrationTestingUtility extends HBaseTestingUtility {
    */
   public void initializeCluster(int numSlaves) throws Exception {
     if (isDistributedCluster()) {
-      createDistributedHBaseCluster();
+      createDistributedHBaseCluster(numSlaves > 0);
       checkNodeCount(numSlaves);
     } else {
       startMiniCluster(numSlaves);
@@ -84,6 +84,9 @@ public class IntegrationTestingUtility extends HBaseTestingUtility {
    * exception otherwise.
    */
   public void checkNodeCount(int numSlaves) throws Exception {
+    if (numSlaves <= 0){
+      return;
+    }
     HBaseCluster cluster = getHBaseClusterInterface();
     if (cluster.getClusterStatus().getServers().size() < numSlaves) {
       throw new Exception("Cluster does not have enough nodes:" + numSlaves);
@@ -118,7 +121,7 @@ public class IntegrationTestingUtility extends HBaseTestingUtility {
    */
   private boolean isDistributedCluster() {
     Configuration conf = getConfiguration();
-    boolean isDistributedCluster = false;
+    boolean isDistributedCluster;
     isDistributedCluster = Boolean.parseBoolean(System.getProperty(IS_DISTRIBUTED_CLUSTER, "false"));
     if (!isDistributedCluster) {
       isDistributedCluster = conf.getBoolean(IS_DISTRIBUTED_CLUSTER, false);
@@ -126,14 +129,16 @@ public class IntegrationTestingUtility extends HBaseTestingUtility {
     return isDistributedCluster;
   }
 
-  private void createDistributedHBaseCluster() throws IOException {
+  public ClusterManager createClusterManager(){
     Configuration conf = getConfiguration();
     Class<? extends ClusterManager> clusterManagerClass = conf.getClass(HBASE_CLUSTER_MANAGER_CLASS,
-      DEFAULT_HBASE_CLUSTER_MANAGER_CLASS, ClusterManager.class);
-    ClusterManager clusterManager = ReflectionUtils.newInstance(
-      clusterManagerClass, conf);
-    setHBaseCluster(new DistributedHBaseCluster(conf, clusterManager));
-    getHBaseAdmin();
+        DEFAULT_HBASE_CLUSTER_MANAGER_CLASS, ClusterManager.class);
+    return  ReflectionUtils.newInstance(clusterManagerClass, conf);
   }
 
+  private void createDistributedHBaseCluster(boolean connected) throws IOException {
+    Configuration conf = getConfiguration();
+    ClusterManager clusterManager = createClusterManager();
+    setHBaseCluster(new DistributedHBaseCluster(conf, clusterManager, connected));
+  }
 }

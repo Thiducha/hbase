@@ -1,0 +1,87 @@
+
+
+This packages contains tests decidated to MTTR validations. The umbrella JIRA is HBASE-5843.
+
+
+MTTR tests makes sense mainly on a real cluster, even if sometimes some sub parts can be tested
+with a minicluster.
+
+There are 4 ways to lose a process:
+- clean stop
+- kill 15 - this leaves room for shutdown hooks.
+- kill 9 - no shutdown hooks possible, but the OS will close the socket, and remote process will
+    know if they want to connect to this process again.
+- box disappeared - then the network layer cannot distinguish between a slow box and a dead box. We
+    then rely on timemouts.
+
+
+As well you can lose a regionserver or a regionserver and a datanode. Losing a datanode is much
+ more complex than losing a single regionserver, as we are also losing the data, and as we have
+ now a dependency on HDFS recovery.
+
+For this reason, MTTR tests use HDFS versions built locally.
+
+
+Lastly, to simulate a dead box, we rely on firewall configuration. This requires a C program own by
+ root with the sticky bit on.
+
+So to use the mttr test you must:
+ 1) Compile the C program in dev-support with 'sudo dev-support/it_test_make.sh'. This should be done
+        only once per installation (i.e. if the C source file does not change you don't have to do it again).
+ 2) Compile Hadoop. Step to be redone if you change Hadoop of course.
+ 3) Then HBase on top of the Hadoop version built. Step to be redone if you change Hadoop or HBase of course.
+ 4) Have a proper configuration on all the machine you're using: Java version, user accounts, SSH config & so on.
+ 5) Copy the products just build on all the machine you're going to use. This is done by the script
+      in hase-it/src/test/scripts/setup.sh. This requires a proper installation of ssh.
+      This setp should be redone after each rebuild of Hadoop or HBase
+ 6) Run the integration tests with
+mvn clean package test verify -Dit.test="IntegrationTestRecoveryEmptyTable*" -Dtest=nonono -pl hbase-it -Dhadoop.profile=2.0
+
+ If you modify just the tests, you don't have to rerun the previous steps (i.e. copying the files on all targets).
+
+
+ ********************** Example
+
+Full example for AWS, from scratch;
+create a dir tu put the binaries for java and maven ~/soft
+get java 1.6u38 from sun, put the bin in ~/soft
+get maven 3.0.4, put the bin in ~/soft
+
+create a dir for the sources: ~/dev
+clone hadoop-common in ~/dev/hadoop-common
+install it (mvn clean install -DskipTests -Pdist with hadoop 2)
+
+clone hbase in ~/dev/common
+install it with hadoop (mvn clean install package -DskipTests -Dhadoop.profile=2.0 -Dhadoop-two.version=2.0.3-alpha
+
+
+create the aws cluster (4 nodes)
+add the ssh-key in your local ssh-agent. Do a ssh-add -t 100000 to keep the keys for a long time.
+run setup_aws.sh with in parameters the list of the aws node. Ex: ~/dev/hbase/hbase-it/src/test/script$ ./setup_aws.sh ec2-50-16-6-93.compute-1.amazonaws.com ec2-23-20-24-189.compute-1.amazonaws.com ec2-50-17-98-49.compute-1.amazonaws.com ec2-184-72-153-152.compute-1.amazonaws.com
+
+ssh -A to the first aws node. ex: ssh -A ec2-50-16-6-93.compute-1.amazonaws.com
+package HBase
+ mvn install package -DskipTests -Dhadoop.profile=2.0 -Dhadoop-two.version=2.0.3-alpha
+
+
+run setup.sh from hbase-it/src/test/script/src to initiate all the cluster. Ex:
+  ~/dev/hbase/hbase-it/src/test/script$ ./setup_aws.sh ec2-23-20-24-189.compute-1.amazonaws.com ec2-50-17-98-49.compute-1.amazonaws.com ec2-184-72-153-152.compute-1.amazonaws.com
+
+execute the integration tests  (
+ mvn verify -pl hbase-it -Dit.test=IntegrationTestRecoveryEmptyTableKill15 -Dhadoop.profile=2.0 -Dhadoop-two.version=2.0.3-alpha -Dtest.output.tofile=false
+ mvn verify -pl hbase-it -Dit.test=IntegrationTestRecoveryEmptyTableKill15 -Dhadoop-one.version=1.1.2 -Dtest.output.tofile=false
+ )
+
+**************** What can go wrong
+Everything.
+
+
+
+WARN  namenode.NameNodeResourceChecker (NameNodeResourceChecker.java:isResourceAvailable(89)) - Space available on volume '/dev/sda1' is 14225408, which is below the configured reserved amount 104857600
+=> You don't have enough place available on the node, so the namenode don't really start, and the master will wait.
+
+
+testKillRS(org.apache.hadoop.hbase.mttr.IntegrationTestRecoveryEmptyTableKill15): Error executing ping -c 1 null result is 2
+=> The env variable are not defined, source ~/tmp-recotest/
+
+

@@ -22,6 +22,8 @@ import java.util.HashMap;
 
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.ClusterManager.ServiceType;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.HConnection;
@@ -38,6 +40,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Threads;
 
 import com.google.common.collect.Sets;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
 
 /**
  * Manages the interactions with an already deployed distributed cluster (as opposed to
@@ -51,11 +54,23 @@ public class DistributedHBaseCluster extends HBaseCluster {
   private ClusterManager clusterManager;
 
   public DistributedHBaseCluster(Configuration conf, ClusterManager clusterManager)
-      throws IOException {
+    throws IOException {
+    this(conf, clusterManager, true);
+  }
+
+  public DistributedHBaseCluster(Configuration conf, ClusterManager clusterManager,
+                                 boolean connected) throws IOException {
     super(conf);
     this.clusterManager = clusterManager;
-    this.admin = new HBaseAdmin(conf);
-    this.initialClusterStatus = getClusterStatus();
+    if (connected) {
+      this.admin = new HBaseAdmin(conf);
+      this.initialClusterStatus = getClusterStatus();
+    }
+  }
+
+  public DistributedHBaseCluster(Configuration conf)
+      throws IOException {
+    super(conf);
   }
 
   public void setClusterManager(ClusterManager clusterManager) {
@@ -68,11 +83,12 @@ public class DistributedHBaseCluster extends HBaseCluster {
 
   /**
    * Returns a ClusterStatus for this HBase cluster
+   *
    * @throws IOException
    */
   @Override
   public ClusterStatus getClusterStatus() throws IOException {
-    return admin.getClusterStatus();
+    return getAdmin().getClusterStatus();
   }
 
   @Override
@@ -81,10 +97,18 @@ public class DistributedHBaseCluster extends HBaseCluster {
   }
 
   @Override
-  public void close() throws IOException {
+  public synchronized void close() throws IOException {
     if (this.admin != null) {
       admin.close();
     }
+  }
+
+  public synchronized HBaseAdmin getAdmin() throws IOException {
+    if (admin == null) {
+      //noinspection NonPrivateFieldAccessedInSynchronizedContext
+      admin = new HBaseAdmin(conf);
+    }
+    return admin;
   }
 
   @Override
@@ -123,7 +147,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
   }
 
   private void waitForServiceToStop(ServiceType service, ServerName serverName, long timeout)
-    throws IOException {
+      throws IOException {
     LOG.info("Waiting service:" + service + " to stop: " + serverName.getServerName());
     long start = System.currentTimeMillis();
 
@@ -131,7 +155,7 @@ public class DistributedHBaseCluster extends HBaseCluster {
       if (!clusterManager.isRunning(service, serverName.getHostname())) {
         return;
       }
-      Threads.sleep(1000);
+      Threads.sleep(200);
     }
     throw new IOException("did timeout waiting for service to stop:" + serverName);
   }
@@ -192,11 +216,11 @@ public class DistributedHBaseCluster extends HBaseCluster {
 
   @Override
   public ServerName getServerHoldingRegion(byte[] regionName) throws IOException {
-    HConnection connection = admin.getConnection();
+    HConnection connection = getAdmin().getConnection();
     HRegionLocation regionLoc = connection.locateRegion(regionName);
     if (regionLoc == null) {
       LOG.warn("Cannot find region server holding region " + Bytes.toString(regionName)
-          + " for table " + HRegionInfo.getTableName(regionName) + ", start key [" +
+          + " for table " + new String(HRegionInfo.getTableName(regionName)) + ", start key [" +
           Bytes.toString(HRegionInfo.getStartKey(regionName)) + "]");
       return null;
     }
@@ -205,6 +229,30 @@ public class DistributedHBaseCluster extends HBaseCluster {
       connection.getAdmin(regionLoc.getServerName());
     ServerInfo info = ProtobufUtil.getServerInfo(client);
     return ProtobufUtil.toServerName(info.getServerName());
+  }
+
+  public void waitForDatanodesRegistered(int minDatanodes) throws Exception {
+    DistributedFileSystem fs = (DistributedFileSystem) FileSystem.get(conf);
+    while (fs.getDataNodeStats().length < minDatanodes) {
+      Thread.sleep(200);
+    }
+  }
+
+  public void waitForNamenodeAvailable() throws InterruptedException {
+    int nbLoop = 0;
+    boolean ok = false;
+    do {
+      try {
+        DistributedFileSystem fs = (DistributedFileSystem) FileSystem.get(conf);
+        ok = (fs.getContentSummary(new Path("/")) != null);
+      } catch (IOException e) {
+        if (nbLoop++ % 50 == 0){
+          LOG.info("Waiting for the namenode, current message is " + e.getMessage());
+        }
+        Thread.sleep(200);
+      }
+
+    } while (!ok);
   }
 
   @Override
