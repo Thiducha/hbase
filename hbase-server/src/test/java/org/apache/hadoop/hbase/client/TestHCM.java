@@ -209,7 +209,7 @@ public class TestHCM {
    * that we really delete it.
    * @throws Exception
    */
-  @Test(timeout = 60000)
+  @Test
   public void testRegionCaching() throws Exception{
     HTable table = TEST_UTIL.createTable(TABLE_NAME, FAM_NAM);
     TEST_UTIL.createMultiRegions(table, FAM_NAM);
@@ -323,9 +323,9 @@ public class TestHCM {
     }catch (Throwable e){
       LOG.info("Put done, exception caught: "+e.getClass());
       // Now check that we have the exception we wanted
-      Assert.assertTrue(e instanceof RetriesExhaustedWithDetailsException);
+      Assert.assertTrue(e.getClass().getName(), e instanceof RetriesExhaustedWithDetailsException);
       RetriesExhaustedWithDetailsException re = (RetriesExhaustedWithDetailsException)e;
-      Assert.assertTrue(re.getNumExceptions() == 1);
+      Assert.assertEquals(1, re.getNumExceptions());
       Assert.assertTrue(Arrays.equals(re.getRow(0).getRow(), ROW));
     }
     Assert.assertNotNull(conn.getCachedLocation(TABLE_NAME, ROW));

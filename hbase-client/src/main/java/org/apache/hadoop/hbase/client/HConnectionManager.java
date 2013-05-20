@@ -2272,16 +2272,10 @@ public class HConnectionManager {
           new ConcurrentHashMap<String, AtomicInteger>();
       private final int maxTotalConcurrentTasks;
       private final int maxConcurrentTasksPerRegion;
-      private final long pause;
-      private final long numTries;
 
       public AsyncProcess(HConnection hc, byte[] tableName, ExecutorService pool,
                           AsyncProcessCallback<Res> callback) {
         this.hci = (HConnectionImplementation) hc;
-        pause = hc.getConfiguration().getLong(HConstants.HBASE_CLIENT_PAUSE,
-            HConstants.DEFAULT_HBASE_CLIENT_PAUSE);
-        numTries = hc.getConfiguration().getInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER,
-            HConstants.DEFAULT_HBASE_CLIENT_RETRIES_NUMBER);
         this.tableName = tableName;
         this.pool = pool;
         this.callback = callback;
@@ -2390,7 +2384,7 @@ public class HConnectionManager {
         for (Entry<HRegionLocation, MultiAction<Row>> e : actionsByServer.entrySet()) {
           long backoffTime = 0;
           if (numAttempt > 1) {
-            backoffTime = ConnectionUtils.getPauseTime(pause, numAttempt - 1);
+            backoffTime = ConnectionUtils.getPauseTime(hci.pause, numAttempt - 1);
           }
           Runnable runnable =
               createDelayedRunnable(retainedActions, backoffTime, e.getKey(),
@@ -2421,7 +2415,7 @@ public class HConnectionManager {
       private boolean manageError(int numAttempt, int originalIndex, Row row, boolean canRetry,
                                   Throwable exception, HRegionLocation location) {
         if (canRetry) {
-          if (numAttempt >= numTries ||
+          if (numAttempt >= hci.numTries ||
               (exception != null && exception instanceof DoNotRetryIOException)) {
             canRetry = false;
           }
@@ -2676,7 +2670,9 @@ public class HConnectionManager {
       }
 
       private RetriesExhaustedWithDetailsException makeException() {
-        return new RetriesExhaustedWithDetailsException(exceptions, actions, addresses);
+        return new RetriesExhaustedWithDetailsException(
+            new ArrayList<Throwable>(exceptions),
+            new ArrayList<Row>(actions), new ArrayList<String>(addresses));
       }
 
       public void clear(){

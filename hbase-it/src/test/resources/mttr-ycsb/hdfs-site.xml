@@ -4,7 +4,7 @@
 <configuration>
   <property>
     <name>dfs.http.address</name>
-    <value>0.0.0.0:11080</value>
+    <value>0.0.0.0:50070</value>
     <description>The name of the default file system. Either the
       literal string "local" or a host:port for HDFS.
     </description>
@@ -16,7 +16,19 @@
     <value>4096</value>
   </property>
 
-  <!-- stale mode - 2.0.3 -->
+
+  <property>
+    <name>dfs.socket.timeout</name>
+    <value>20000</value>
+  </property>
+
+  <!-- stale mode - all versions -->
+  <property>
+    <name>dfs.namenode.stale.datanode.interval</name>
+    <value>15000</value>
+  </property>
+
+  <!-- stale mode - 2.0.3+ -->
   <property>
     <name>dfs.namenode.avoid.read.stale.datanode</name>
     <value>true</value>
