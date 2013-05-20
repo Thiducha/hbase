@@ -217,7 +217,7 @@ public class HBaseClusterManager extends ClusterManager {
           "-XX:CMSInitiatingOccupancyFraction=80 -verbose:gc -XX:+PrintGCDetails " +
           "-XX:+PrintGCTimeStamps -XX:+PrintGCDateStamps -Xloggc:" +
           getHBaseHome() +"/gc" + service + ".log " +
-          "-Xms" + heapSize+ "m Xmx"+heapSize +"m -XX:ErrorFile=" +
+          "-Xms" + heapSize+ "m -Xmx"+heapSize +"m -XX:ErrorFile=" +
           getHBaseHome() +"/gc" + service + "-err.log'; ";
       return cmd + String.format("%s/bin/hbase-daemon%s.sh %s  %s",
           getHBaseHome(),
