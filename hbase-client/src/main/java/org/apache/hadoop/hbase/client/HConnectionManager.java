@@ -18,10 +18,35 @@
  */
 package org.apache.hadoop.hbase.client;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.protobuf.BlockingRpcChannel;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
+import java.io.Closeable;
+import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.UndeclaredThrowableException;
+import java.net.SocketException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.NavigableMap;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+
+>>>>>>> clean
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -259,11 +284,11 @@ public class HConnectionManager {
     synchronized (CONNECTION_INSTANCES) {
       HConnectionImplementation connection = CONNECTION_INSTANCES.get(connectionKey);
       if (connection == null) {
-        connection = (HConnectionImplementation) createConnection(conf, true);
+        connection = (HConnectionImplementation)createConnection(conf, true);
         CONNECTION_INSTANCES.put(connectionKey, connection);
       } else if (connection.isClosed()) {
         HConnectionManager.deleteConnection(connectionKey, true);
-        connection = (HConnectionImplementation) createConnection(conf, true);
+        connection = (HConnectionImplementation)createConnection(conf, true);
         CONNECTION_INSTANCES.put(connectionKey, connection);
       }
       connection.incCount();
@@ -282,14 +307,14 @@ public class HConnectionManager {
    * @throws ZooKeeperConnectionException
    */
   public static HConnection createConnection(Configuration conf)
-      throws IOException {
+  throws IOException {
     return createConnection(conf, false);
   }
 
   static HConnection createConnection(final Configuration conf, final boolean managed)
-      throws IOException {
+  throws IOException {
     String className = conf.get("hbase.client.connection.impl",
-        HConnectionManager.HConnectionImplementation.class.getName());
+      HConnectionManager.HConnectionImplementation.class.getName());
     Class<?> clazz = null;
     try {
       clazz = Class.forName(className);
@@ -299,7 +324,7 @@ public class HConnectionManager {
     try {
       // Default HCM#HCI is not accessible; make it so before invoking.
       Constructor<?> constructor =
-          clazz.getDeclaredConstructor(Configuration.class, boolean.class);
+        clazz.getDeclaredConstructor(Configuration.class, boolean.class);
       constructor.setAccessible(true);
       return (HConnection) constructor.newInstance(conf, managed);
     } catch (Exception e) {
@@ -568,6 +593,23 @@ public class HConnectionManager {
               }
             }, conf, listenerClass);
       }
+    }
+ 
+    /**
+     * @return The cluster registry implementation to use.
+     * @throws IOException
+     */
+    private Registry setupRegistry() throws IOException {
+      String registryClass = this.conf.get("hbase.client.registry.impl",
+        ZooKeeperRegistry.class.getName());
+      Registry registry = null;
+      try {
+        registry = (Registry)Class.forName(registryClass).newInstance();
+      } catch (Throwable t) {
+        throw new IOException(t);
+      }
+      registry.init(this);
+      return registry;
     }
 
     /**
@@ -1539,7 +1581,7 @@ public class HConnectionManager {
         stub = (ClientService.BlockingInterface) this.stubs.get(key);
         if (stub == null) {
           BlockingRpcChannel channel = this.rpcClient.createBlockingRpcChannel(sn,
-              User.getCurrent(), this.rpcTimeout);
+            User.getCurrent(), this.rpcTimeout);
           stub = ClientService.newBlockingStub(channel);
           // In old days, after getting stub/proxy, we'd make a call.  We are not doing that here.
           // Just fail on first actual call rather than in here on setup.
@@ -1566,7 +1608,7 @@ public class HConnectionManager {
      * @return The shared instance. Never returns null.
      */
     ZooKeeperKeepAliveConnection getKeepAliveZooKeeperWatcher()
-        throws IOException {
+      throws IOException {
       synchronized (masterAndZKLock) {
         if (keepAliveZookeeper == null) {
           if (this.closed) {
@@ -1583,12 +1625,12 @@ public class HConnectionManager {
     }
 
     void releaseZooKeeperWatcher(final ZooKeeperWatcher zkw) {
-      if (zkw == null) {
+      if (zkw == null){
         return;
       }
       synchronized (masterAndZKLock) {
         --keepAliveZookeeperUserCount;
-        if (keepAliveZookeeperUserCount <= 0) {
+        if (keepAliveZookeeperUserCount <= 0 ){
           keepZooKeeperWatcherAliveUntil = System.currentTimeMillis() + keepAlive;
         }
       }

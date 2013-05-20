@@ -771,6 +771,7 @@ public class TestDistributedLogSplitting {
       Path editsdir =
         HLogUtil.getRegionDirRecoveredEditsDir(HRegion.getRegionDir(tdir, hri.getEncodedName()));
       LOG.debug("checking edits dir " + editsdir);
+      if(!fs.exists(editsdir)) continue;
       FileStatus[] files = fs.listStatus(editsdir);
       if(files != null) {
         for(FileStatus file : files) {
@@ -809,7 +810,7 @@ public class TestDistributedLogSplitting {
   @Test (timeout=300000)
   public void testWorkerAbort() throws Exception {
     LOG.info("testWorkerAbort");
-    startCluster(1);
+    startCluster(2);
     final int NUM_LOG_LINES = 10000;
     final SplitLogManager slm = master.getMasterFileSystem().splitLogManager;
     FileSystem fs = master.getMasterFileSystem().getFileSystem();
