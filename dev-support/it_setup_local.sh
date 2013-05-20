@@ -84,7 +84,6 @@ for CBOX in $*; do
   ssh $CBOX "rm -rf tmp-recotest/data"
   ssh $CBOX "rm -rf /grid/2/data"
   ssh $CBOX "rm -rf /grid/3/data"
-  ssh $CBOX "rm -rf /grid/4/data"
 
   rsync -az --delete ~/tmp-recotest/* $CBOX:tmp-recotest/
   if [ $? -ne 0 ]; then
@@ -94,7 +93,6 @@ for CBOX in $*; do
 
   ssh $CBOX "mkdir /grid/2/data"
   ssh $CBOX "mkdir /grid/3/data"
-  ssh $CBOX "mkdir /grid/4/data"
 done
 
 echo export
