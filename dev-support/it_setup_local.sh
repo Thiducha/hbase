@@ -80,13 +80,21 @@ find . -name "*.jar" | xargs -n 1 -i  mv {}   ~/tmp-recotest/hadoop-common/lib/
 echo now copying tmp-recotest dirs to all boxes, deleting the data dir if any
 for CBOX in $*; do
   echo "copying from $1 to $CBOX"
-  ssh -o StrictHostKeyChecking=no $CBOX "mkdir -p tmp-recotest"
-  ssh -o StrictHostKeyChecking=no $CBOX "rm -rf tmp-recotest/data"
+  ssh $CBOX "mkdir -p tmp-recotest"
+  ssh $CBOX "rm -rf tmp-recotest/data"
+  ssh $CBOX "rm -rf /grid/2/data"
+  ssh $CBOX "rm -rf /grid/3/data"
+  ssh $CBOX "rm -rf /grid/4/data"
+
   rsync -az --delete ~/tmp-recotest/* $CBOX:tmp-recotest/
   if [ $? -ne 0 ]; then
     echo "rsync failed"
     exit
   fi
+
+  ssh $CBOX "mkdir /grid/2/data"
+  ssh $CBOX "mkdir /grid/3/data"
+  ssh $CBOX "mkdir /grid/4/data"
 done
 
 echo export
