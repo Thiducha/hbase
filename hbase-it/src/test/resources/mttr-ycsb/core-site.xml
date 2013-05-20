@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+
+<configuration>
+
+  <property>
+    <name>hadoop.tmp.dir</name>
+    <value>${user.home}/tmp-recotest/data/2,${user.home}/tmp-recotest/data/3,${user.home}/tmp-recotest/data/4</value>
+  </property>
+
+  <property>
+    <name>fs.default.name</name>
+    <value>hdfs://HBASE_IT_BOX_0</value>
+  </property>
+
+</configuration>
+

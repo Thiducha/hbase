@@ -55,11 +55,11 @@ mkdir -p $CONF_DIR/conf-hadoop
 
 echo The main box will be $HBASE_IT_MAIN_BOX
 
-sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/core-site.xml > $CONF_DIR/conf-hadoop/core-site.xml
-sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/hdfs-site.xml > $CONF_DIR/conf-hadoop/hdfs-site.xml
+sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr-ycsb/core-site.xml > $CONF_DIR/conf-hadoop/core-site.xml
+sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr-ycsb/hdfs-site.xml > $CONF_DIR/conf-hadoop/hdfs-site.xml
 
-sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/core-site.xml  > $HBASE_REP/conf/core-site.xml
-sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr/hbase-site.xml > $HBASE_REP/conf/hbase-site.xml
+sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr-ycsb/core-site.xml  > $HBASE_REP/conf/core-site.xml
+sed 's/HBASE_IT_BOX_0/'$HBASE_IT_MAIN_BOX'/g' $ORIG_CONF/mttr-ycsb/hbase-site.xml > $HBASE_REP/conf/hbase-site.xml
 
 echo "Copying the libs we need locally"
 mkdir -p ~/tmp-recotest/hbase

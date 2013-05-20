@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+
+<configuration>
+  <property>
+    <name>dfs.http.address</name>
+    <value>0.0.0.0:50070</value>
+    <description>The name of the default file system. Either the
+      literal string "local" or a host:port for HDFS.
+    </description>
+    <final>true</final>
+  </property>
+
+  <property>
+    <name>dfs.datanode.max.xcievers</name>
+    <value>4096</value>
+  </property>
+
+
+  <property>
+    <name>dfs.socket.timeout</name>
+    <value>20000</value>
+  </property>
+
+  <!-- stale mode - all versions -->
+  <property>
+    <name>dfs.namenode.stale.datanode.interval</name>
+    <value>15000</value>
+  </property>
+
+  <!-- stale mode - 2.0.3+ -->
+  <property>
+    <name>dfs.namenode.avoid.read.stale.datanode</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.avoid.write.stale.datanode</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.write.stale.datanode.ratio</name>
+    <value>1.0f</value>
+  </property>
+
+  <!-- stale mode - branch 1.1.1+ -->
+  <property>
+    <name>dfs.namenode.check.stale.datanode</name>
+    <value>true</value>
+  </property>
+
+
+</configuration>
+
