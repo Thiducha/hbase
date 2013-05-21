@@ -98,4 +98,9 @@
     </description>
   </property>
 
+  <property>
+    <name>hbase.master.distributed.log.replay</name>
+    <value>true</value>
+  </property>
+
 </configuration>

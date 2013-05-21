@@ -25,6 +25,7 @@ for CBOX in $* $HOST_NAME 127.0.0.1; do
   for CBOX2 in $* $HOST_NAME; do
     ssh -A -o StrictHostKeyChecking=no $CBOX2 "ssh -o StrictHostKeyChecking=no $CBOX 'echo on $CBOX2 ssh ok to / from $CBOX / $CBOX2'"  &
   done
+  ssh $CBOX "jps -q | xargs kill"
 done
 
 wait
