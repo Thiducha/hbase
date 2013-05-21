@@ -2528,7 +2528,7 @@ public class HConnectionManager {
       }
 
       /**
-       * Resubmit all the actions from this multiaction.
+       * Resubmit all the actions from this multiaction after a failure.
        * @param rsActions the actions
        * @param location the destination
        * @param numAttempt the number of attemp so far
@@ -2732,28 +2732,19 @@ public class HConnectionManager {
                   Thread.sleep(waitingTime);
                 } catch (InterruptedException e) {
                   LOG.warn("We've been interrupted while waiting to send" +
-                      " for regionName=" + regionName);    /*
-                  for (Action<? extends Row> action:originalActionsList){
-                    manageError(numAttempt, action.getOriginalIndex(),
-                        action.getAction(), false, e, loc);
-                  }       */
+                      " for regionName=" + regionName);
+                  resubmitAll(initialActions, multi, loc, numAttempt +1);
                   Thread.interrupted();
                   return;
                 }
               }
-              MultiResponse res = null;
+              MultiResponse res;
               try {
                 res = delegate.call();
               } catch (Exception e) {
                 LOG.warn("The call to the RS failed, we don't know where we stand. regionName="
                     + regionName, e);
-
-                             /*
-                for (Action<? extends Row> action:originalActionsList){
-                  manageError(numAttempt, action.getOriginalIndex(),
-                      action.getAction(), false, e, loc);
-                }          */
-
+                resubmitAll(initialActions, multi, loc, numAttempt +1);
                 return;
               }
               receiveMultiAction(initialActions, multi, loc, res, numAttempt);
