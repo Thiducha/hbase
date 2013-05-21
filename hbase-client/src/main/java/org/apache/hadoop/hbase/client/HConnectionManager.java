@@ -2183,41 +2183,44 @@ public class HConnectionManager {
                                          Batch.Callback<R> callback)
         throws InterruptedIOException, RetriesExhaustedWithDetailsException {
 
-      // We do a copy to keep the previous contract with an immutable list.
-      ArrayList<? extends Row> actionsClone = new ArrayList<Row>(list);
-      // Historical contract was to change the result only on success. So we're working on a clone.
-      Object[] resultsClone = new Object[results.length];
-
-      ObjectResultFiller<R> cb = new ObjectResultFiller<R>(resultsClone, callback);
+      ObjectResultFiller<R> cb = new ObjectResultFiller<R>(results, callback);
 
       AsyncProcess<R> asyncProcess = new AsyncProcess<R>(this, tableName, pool, cb);
 
       // We're doing a submit all. This way, the originalIndex will match the initial list.
-      asyncProcess.submitAll(actionsClone);
+      asyncProcess.submitAll(list);
       asyncProcess.waitUntilDone();
 
       if (asyncProcess.hasError()) {
         throw asyncProcess.getErrors();
       }
-      System.arraycopy(resultsClone, 0, results, 0, results.length);
     }
 
     /**
      * This interface allows to keep the interface of the previous synchronous interface, that uses
      * an array of object to return the result.
      */
-    public static interface AsyncProcessCallback<R> {
+    public static interface AsyncProcessCallback<Res> {
       /**
        * Called on success. originalIndex holds the index in the action list.
        */
-      public void success(int originalIndex, byte[] region, byte[] row, R result);
+      void success(int originalIndex, byte[] region, byte[] row, Res result);
 
       /**
        * called on failure.
        */
-      public void failure(int originalIndex, byte[] region, byte[] row, Throwable t);
+      void failure(int originalIndex, byte[] region, byte[] row, Throwable t);
+
+      /**
+       * Called on a failure we plan to retry. This allows the user to stop retrying.
+       * @return false if we should retry, false otherwise.
+       */
+      boolean retriableFailure(int originalIndex, Row row,  byte[] region, Throwable exception);
     }
 
+    /**
+     * Fill the result array for the interfaces using it.
+     */
     private static class ObjectResultFiller<Res> implements AsyncProcessCallback<Res> {
       private final Object[] results;
       private Batch.Callback<Res> callback;
@@ -2241,6 +2244,11 @@ public class HConnectionManager {
         assert pos <= results.length;
         results[pos] = t;
         //Batch.Callback<Res> was not called on failure in 0.94. We keep this.
+      }
+
+      @Override
+      public boolean retriableFailure(int originalIndex, Row row,  byte[] region, Throwable exception){
+        return true;
       }
     }
 
@@ -2282,104 +2290,181 @@ public class HConnectionManager {
         this.maxTotalConcurrentTasks =
             hci.getConfiguration().getInt("hbase.client.max.total.tasks", 200);
 
-        // We've one, we ensure that the ordering of the queries is respected: we don't start
+        // With one, we ensure that the ordering of the queries is respected: we don't start
         //  a set of operations on a region before the previous one is done.
         this.maxConcurrentTasksPerRegion =
             hci.getConfiguration().getInt("hbase.client.max.perregion.tasks", 1);
       }
 
       /**
-       * @param rowList - the rows actually taken will be removed from the list. The rows that
-       *                cannot be sent (overloaded region) will be kept in the list.
+       * Extract from the list what we can submit.
+       * @param rows - the rows actually taken will be removed from the list. The rows that
+       *             cannot be sent (overloaded region) will be kept in the list.
        */
-      public void submit(List<? extends Row> rowList)  throws InterruptedIOException {
+      public void submit(List<Row> rows) throws InterruptedIOException {
         waitForMaximumTaskNumber(maxTotalConcurrentTasks);
-        submit(rowList, 1, false);
-      }
 
+        final Map<HRegionLocation, MultiAction<Row>> actionsByServer =
+            new HashMap<HRegionLocation, MultiAction<Row>>();
+        Map<String, Boolean> regionStatus = new HashMap<String, Boolean>();
+
+        List<Action<Row>> retainedActions = new ArrayList<Action<Row>>(rows.size());
+
+        int posInList = -1;
+        Iterator<? extends Row> it = rows.iterator();
+        while (it.hasNext()) {
+          Row r = it.next();
+          HRegionLocation loc = shouldSubmit(r, 1, posInList, false, regionStatus);
+
+          if (loc != null) {
+            Action<Row> action = new Action<Row>(r, ++posInList);
+            retainedActions.add(action);
+            addAction(loc, action, actionsByServer);
+            it.remove();
+          }
+        }
+
+        sendMultiAction(retainedActions, actionsByServer, 1);
+      }
 
       /**
-       * Submit all the operations, whatever the server workload.
+       * Group the actions per region server.
+       * @param loc the destination
+       * @param action the action to add to the multiaction
+       * @param actionsByServer the multiaction per servers
        */
-      public void submitAll(List<? extends Row> rowList) throws InterruptedIOException {
-        submit(rowList, 1, true);
+      private void addAction(HRegionLocation loc, Action<Row> action, Map<HRegionLocation,
+          MultiAction<Row>> actionsByServer) {
+        if (loc != null) {
+          final byte[] regionName = loc.getRegionInfo().getRegionName();
+          MultiAction<Row> multiAction = actionsByServer.get(loc);
+          if (multiAction == null) {
+            multiAction = new MultiAction<Row>();
+            actionsByServer.put(loc, multiAction);
+          }
+
+          multiAction.add(regionName, action);
+        }
       }
+
+      /**
+       *
+       * @param row the row OR
+       * @param numAttempt the num attempt
+       * @param posInList the position in the list
+       * @param force if we must submit whatever the server load
+       * @param regionStatus the
+       * @return  null if we should not submit, the destination otherwise.
+       */
+      private HRegionLocation shouldSubmit(Row row, int numAttempt,
+                                           int posInList, boolean force,
+                                           Map<String, Boolean> regionStatus) {
+        HRegionLocation loc = null;
+        IOException locationException = null;
+        try {
+          loc = hci.locateRegion(this.tableName, row.getRow());
+          if (loc == null) {
+            locationException = new IOException("No location found, aborting submit for" +
+                " tableName=" + Bytes.toString(tableName));
+          }
+        } catch (IOException e) {
+          locationException = e;
+        }
+        if (locationException != null) {
+          // There are multiple retries in locateRegion already. No need to add new.
+          // We can't continue with this row
+          manageError(numAttempt, posInList, row, false, locationException, null);
+          return null;
+        }
+
+        Boolean addit = force;
+        if (!addit) {
+          String regionName = loc.getRegionInfo().getEncodedName();
+          addit = regionStatus.get(regionName);
+          if (addit == null) {
+            AtomicInteger ct = taskCounterPerRegion.get(regionName);
+            long nbTask = ct == null ? 0 : ct.get();
+            addit = (nbTask < maxConcurrentTasksPerRegion);
+            regionStatus.put(regionName, addit);
+            if (LOG.isTraceEnabled()) {
+              LOG.debug("Region " + regionName + " has " + nbTask +
+                  " tasks, max is " + maxConcurrentTasksPerRegion +
+                  ", " + (addit ? "" : "NOT ") + "adding task");
+            }
+          }
+        }
+
+        if (!addit){
+          return null;
+        }
+
+        return loc;
+      }
+
+      /**
+       * Submit immediately the list of rows, whatever the server status. Kept for backward
+       *  compatibility
+       * @param rows the list of rows.
+       */
+      private void submitAll(List<? extends Row> rows) {
+        List<Action<Row>> actions = new ArrayList<Action<Row>>(rows.size());
+
+        int posInList = -1;
+        for (Row r: rows){
+          posInList++;
+          Action<Row> action = new Action<Row>(r, posInList);
+          actions.add(action);
+        }
+
+        submit(actions, 1, true);
+      }
+
 
       /**
        * Group a list of actions per region servers, and send them. The created MultiActions are
        * added to the inProgress list.
        *
-       * @param rowList    the list of row to submit
+       * @param actions    the list of row to submit
        * @param numAttempt the current numAttempt (first attempt is 1)
        * @param force      true if we submit the rowList without taking into account the server load
        * @throws IOException - if we can't locate a region after multiple retries.
        */
-      private void submit(List<? extends Row> rowList, int numAttempt, boolean force) {
+      private void submit(List<Action<Row>> actions, int numAttempt, boolean force) {
         // group per location => regions server
         final Map<HRegionLocation, MultiAction<Row>> actionsByServer =
             new HashMap<HRegionLocation, MultiAction<Row>>();
-        List<Action<Row>> retainedActions = new ArrayList<Action<Row>>(rowList.size());
+        List<Action<Row>> retainedActions =
+            new ArrayList<Action<Row>>(actions.size());
 
         // We have the same policy for a single region per call to submit: we don't want
         //  to send half of the actions because the status changed in the middle. So we keep the
         //  status
-        HashMap<String, Boolean> regionStatus = new HashMap<String, Boolean>();
+        Map<String, Boolean> regionStatus = new HashMap<String, Boolean>();
 
-        Iterator<? extends Row> it = rowList.iterator();
+        Iterator<Action<Row>> it = actions.iterator();
         int posInList = -1;
         while (it.hasNext()) {
           posInList++;
-          Row row = it.next();
-          if (row != null) {
-            HRegionLocation loc = null;
-            IOException locationException = null;
-            try {
-              loc = hci.locateRegion(this.tableName, row.getRow());
-              if (loc == null){
-                locationException = new IOException("No location found, aborting submit for" +
-                    " tableName=" + Bytes.toString(tableName));
-              }
-            } catch (IOException e) {
-              locationException = e;
-            }
-            if (locationException != null) {
-              // There are multiple retries in locateRegion already. No need to add new.
-              // We can't continue with this row
-              manageError(numAttempt, posInList, row, false, locationException, null);
-              it.remove();
-            }
+          Action<Row> action = it.next();
+          HRegionLocation loc = shouldSubmit(action.getAction(), 1, posInList, force, regionStatus);
 
-            Boolean addit = (locationException == null);
-            if (!force && addit) {
-              String regionName = loc.getRegionInfo().getEncodedName();
-              addit = regionStatus.get(regionName);
-              if (addit == null) {
-                AtomicInteger ct = taskCounterPerRegion.get(regionName);
-                long nbTask = ct == null ? 0 : ct.get();
-                addit = (nbTask < maxConcurrentTasksPerRegion);
-                regionStatus.put(regionName, addit);
-                if (LOG.isTraceEnabled()) {
-                  LOG.debug("Region " + regionName + " has " + nbTask +
-                      " tasks, max is " + maxConcurrentTasksPerRegion +
-                      ", " + (addit ? "" : "NOT ") + "adding task");
-                }
-              }
-            }
-            if (addit) {
-              final byte[] regionName = loc.getRegionInfo().getRegionName();
-              MultiAction<Row> actions = actionsByServer.get(loc);
-              if (actions == null) {
-                actions = new MultiAction<Row>();
-                actionsByServer.put(loc, actions);
-              }
-              it.remove();
-              Action<Row> aAction = new Action<Row>(row, posInList);
-              retainedActions.add(aAction);
-              actions.add(regionName, aAction);
-            }
+          if (loc != null) {
+            addAction(loc, action, actionsByServer);
+            retainedActions.add(action);
           }
         }
 
+        sendMultiAction(retainedActions, actionsByServer, numAttempt);
+      }
+
+      /**
+       *
+       * @param retainedActions
+       * @param actionsByServer
+       * @param numAttempt
+       */
+     public void sendMultiAction(List<Action<Row>> retainedActions, Map<HRegionLocation,
+         MultiAction<Row>> actionsByServer, int numAttempt) {
         // Send the queries and add them to the inProgress list
         for (Entry<HRegionLocation, MultiAction<Row>> e : actionsByServer.entrySet()) {
           long backoffTime = 0;
@@ -2420,6 +2505,11 @@ public class HConnectionManager {
             canRetry = false;
           }
         }
+        byte[] region = location == null ? null : location.getRegionInfo().getEncodedNameAsBytes();
+
+        if (canRetry && callback != null) {
+          canRetry = callback.retriableFailure(originalIndex, row, region, exception);
+        }
 
         if (canRetry) {
           if (LOG.isTraceEnabled()) {
@@ -2429,11 +2519,33 @@ public class HConnectionManager {
           this.hasError.set(true);
           errors.add(exception, row, location);
           if (callback != null) {
-            callback.failure(originalIndex, null, row.getRow(), null);
+            callback.failure(originalIndex, region, row.getRow(), exception);
           }
         }
 
         return canRetry;
+      }
+
+      /**
+       *
+       * @param rsActions
+       * @param location
+       * @param numAttempt
+       */
+      private void resubmitAll(MultiAction<Row> rsActions, HRegionLocation location, int numAttempt) {
+        List<Action<Row>> toReplay = new ArrayList<Action<Row>>();
+        for (List<Action<Row>> actions : rsActions.actions.values()) {
+          for (Action<Row> action : actions) {
+            // Do not use the exception for updating cache because it might be coming from
+            // any of the regions in the MultiAction.
+            hci.updateCachedLocations(tableName, action.getAction(), null, location);
+            if (manageError(numAttempt, action.getOriginalIndex(), action.getAction(),
+                true, null, null)) {
+              toReplay.add(action);
+            }
+          }
+        }
+        submit(toReplay, numAttempt + 1, true);
       }
 
       /**
@@ -2449,54 +2561,51 @@ public class HConnectionManager {
       private void receiveMultiAction(List<Action<Row>> originalActionsList,
                                       MultiAction<Row> rsActions, HRegionLocation location,
                                       MultiResponse responses,int numAttempt) {
-        final List<Row> toReplay = new ArrayList<Row>();
 
-        // Error case: no result at all for this multi action. We need to redo all actions
         if (responses == null) {
-          for (List<Action<Row>> actions : rsActions.actions.values()) {
-            for (Action<Row> action : actions) {
-              // Do not use the exception for updating cache because it might be coming from
-              // any of the regions in the MultiAction.
-              hci.updateCachedLocations(tableName, action.getAction(), null, location);
-              if (manageError(numAttempt, action.getOriginalIndex(), action.getAction(),
-                  true, null, null)){
-                toReplay.add(action.getAction());
+          // Error case: no result at all for this multi action. We need to redo all actions
+          resubmitAll(rsActions, location, numAttempt);
+          return;
+        }
+
+        // Success or partial success
+        // Analyze detailed results. We can still have individual failures to be redo.
+        // two specific exceptions are managed:
+        //  - DoNotRetryIOException: we continue to retry for other actions
+        //  - RegionMovedException: we update the cache with the new region location
+
+        List<Action<Row>> toReplay = new ArrayList<Action<Row>>();
+
+        for (Entry<byte[], List<Pair<Integer, Object>>> resultsForRS :
+            responses.getResults().entrySet()) {
+          for (Pair<Integer, Object> regionResult : resultsForRS.getValue()) {
+            Object result = regionResult.getSecond();
+
+            // Failure: retry if it's make sense else update the errors lists
+            if (result == null || result instanceof Throwable) {
+              Action<Row> correspondingAction = originalActionsList.get(regionResult.getFirst());
+              Row row = correspondingAction.getAction();
+              hci.updateCachedLocations(this.tableName, row, result, location);
+
+              if (manageError(numAttempt, correspondingAction.getOriginalIndex(), row, true,
+                  (Throwable) result, location)) {
+                toReplay.add(correspondingAction);
               }
-            }
-          }
-        } else { // Success or partial success
-          // Analyze detailed results. We can still have individual failures to be redo.
-          // two specific exceptions are managed:
-          //  - DoNotRetryIOException: we continue to retry for other actions
-          //  - RegionMovedException: we update the cache with the new region location
-          for (Entry<byte[], List<Pair<Integer, Object>>> resultsForRS :
-              responses.getResults().entrySet()) {
-            for (Pair<Integer, Object> regionResult : resultsForRS.getValue()) {
-              Object result = regionResult.getSecond();
-
-              // Failure: retry if it's make sense else update the errors lists
-              if (result == null || result instanceof Throwable) {
-                Action<Row> correspondingAction = originalActionsList.get(regionResult.getFirst());
+            } else // success
+              if (callback != null) {
+                Action<? extends Row> correspondingAction = originalActionsList.get(regionResult.getFirst());
                 Row row = correspondingAction.getAction();
-                hci.updateCachedLocations(this.tableName, row, result, location);
-
-                if (manageError(numAttempt, correspondingAction.getOriginalIndex(), row, true, (Throwable) result, location )){
-                  toReplay.add(correspondingAction.getAction());
-                }
-              } else // success
-                if (callback != null) {
-                  Action<Row> correspondingAction = originalActionsList.get(regionResult.getFirst());
-                  Row row = correspondingAction.getAction();
-                  this.callback.success(correspondingAction.getOriginalIndex(),
-                      resultsForRS.getKey(), row.getRow(), (Res) result);
-                }
-            }
+                this.callback.success(correspondingAction.getOriginalIndex(),
+                    resultsForRS.getKey(), row.getRow(), (Res) result);
+              }
           }
         }
+
         if (!toReplay.isEmpty()) {
           submit(toReplay, numAttempt + 1, true);
         }
       }
+
 
       /**
        * Wait until the async does not have more than max tasks in progress.
@@ -2611,7 +2720,7 @@ public class HConnectionManager {
                 } catch (InterruptedException e) {
                   LOG.warn("We've been interrupted while waiting to send" +
                       " for regionName=" + regionName);
-                  for (Action<Row> action:originalActionsList){
+                  for (Action<? extends Row> action:originalActionsList){
                     manageError(numAttempt, action.getOriginalIndex(),
                         action.getAction(), false, e, loc);
                   }
@@ -2625,7 +2734,7 @@ public class HConnectionManager {
               } catch (Exception e) {
                 LOG.warn("The call to the RS failed, we don't know where we stand. regionName="
                     + regionName, e);
-                for (Action<Row> action:originalActionsList){
+                for (Action<? extends Row> action:originalActionsList){
                   manageError(numAttempt, action.getOriginalIndex(),
                       action.getAction(), false, e, loc);
                 }
