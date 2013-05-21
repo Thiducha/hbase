@@ -19,11 +19,6 @@
   </property>
 
   <property>
-    <name>hbase.zookeeper.property.clientPort</name>
-    <value>2181</value>
-  </property>
-
-  <property>
     <name>hbase.zookeeper.property.dataDir</name>
     <value>${user.home}/tmp-recotest/data/zookeeper</value>
     <!-- subdir of hdfs data dir to have deleted -->
