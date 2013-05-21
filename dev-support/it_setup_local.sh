@@ -82,6 +82,7 @@ for CBOX in $*; do
   echo "copying from $1 to $CBOX"
   ssh $CBOX "mkdir -p tmp-recotest"
   ssh $CBOX "rm -rf tmp-recotest/data"
+  ssh $CBOX "rm -rf /grid/1/data"
   ssh $CBOX "rm -rf /grid/2/data"
   ssh $CBOX "rm -rf /grid/3/data"
 
@@ -91,6 +92,7 @@ for CBOX in $*; do
     exit
   fi
 
+  ssh $CBOX "mkdir /grid/1/data"
   ssh $CBOX "mkdir /grid/2/data"
   ssh $CBOX "mkdir /grid/3/data"
 done
