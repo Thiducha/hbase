@@ -31,6 +31,9 @@ for CBOX in $*; do
     ssh $RCBOX "mv $JAVAS /opt/jdk1.7"
   fi
 
+  echo installing iostat
+  ssh $RCBOX "yes | yum install sysstat"
+
   echo creating maven repo and tmp-recotest dir
   ssh $RCBOX "mkdir -p /grid/0/.m2"
   ssh $RCBOX "mkdir -p /grid/0/tmp-recotest"
