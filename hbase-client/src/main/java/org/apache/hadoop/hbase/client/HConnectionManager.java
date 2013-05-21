@@ -2183,8 +2183,9 @@ public class HConnectionManager {
                                          Batch.Callback<R> callback)
         throws InterruptedIOException, RetriesExhaustedWithDetailsException {
 
+      // To fulfill the original contract, we have a special callback. This callback
+      //  will set the results in the Object array.
       ObjectResultFiller<R> cb = new ObjectResultFiller<R>(results, callback);
-
       AsyncProcess<R> asyncProcess = new AsyncProcess<R>(this, tableName, pool, cb);
 
       // We're doing a submit all. This way, the originalIndex will match the initial list.
@@ -2207,12 +2208,13 @@ public class HConnectionManager {
       void success(int originalIndex, byte[] region, byte[] row, Res result);
 
       /**
-       * called on failure.
+       * called on failure, if we don't retry (i.e. called once).
        */
       void failure(int originalIndex, byte[] region, byte[] row, Throwable t);
 
       /**
-       * Called on a failure we plan to retry. This allows the user to stop retrying.
+       * Called on a failure we plan to retry. This allows the user to stop retrying. Will be
+       *  called multiple times for a single action if it fails multiple times.
        * @return false if we should retry, false otherwise.
        */
       boolean retriableFailure(int originalIndex, Row row,  byte[] region, Throwable exception);
@@ -2293,7 +2295,7 @@ public class HConnectionManager {
         // With one, we ensure that the ordering of the queries is respected: we don't start
         //  a set of operations on a region before the previous one is done.
         this.maxConcurrentTasksPerRegion =
-            hci.getConfiguration().getInt("hbase.client.max.perregion.tasks", 1);
+            hci.getConfiguration().getInt("hbase.client.max.perregion.tasks", 3);
       }
 
       /**
@@ -2601,6 +2603,7 @@ public class HConnectionManager {
               if (callback != null) {
                 Action<Row> correspondingAction = initialActions.get(regionResult.getFirst());
                 Row row = correspondingAction.getAction();
+                //noinspection unchecked
                 this.callback.success(correspondingAction.getOriginalIndex(),
                     resultsForRS.getKey(), row.getRow(), (Res) result);
               }
@@ -2609,7 +2612,7 @@ public class HConnectionManager {
 
         if (!toReplay.isEmpty()) {
           LOG.info("Attempt #" + numAttempt + " failed for " + failureCount +
-              "operations on server " + location.getServerName() + " , resubmitting " +
+              " operations on server " + location.getServerName() + ", resubmitting " +
               toReplay.size() + ", tableName=" + Bytes.toString(tableName));
           submit(initialActions, toReplay, numAttempt + 1, true);
         } else if (failureCount != 0) {
@@ -2704,7 +2707,7 @@ public class HConnectionManager {
       /**
        * Create a specific Runnable that will wait a given amount of ms before executing the
        *  call to the region servers.
-       * @param initialActions
+       * @param initialActions - the original list of actions
        * @param delay - how long to wait
        * @param loc - location
        * @param multi - the multi action to execute
@@ -2715,6 +2718,7 @@ public class HConnectionManager {
                                              final long delay, final HRegionLocation loc,
           final MultiAction<Row> multi, final int numAttempt) {
 
+        @SuppressWarnings("deprecation")
         final Callable<MultiResponse> delegate = hci.createCallable(loc, multi, tableName);
         final String regionName = loc.getRegionInfo().getEncodedName();
         incTaskCounters(regionName);
