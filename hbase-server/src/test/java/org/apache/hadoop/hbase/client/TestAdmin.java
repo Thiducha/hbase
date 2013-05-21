@@ -1694,27 +1694,4 @@ public class TestAdmin {
       ct.stop();
     }
   }
-
-  @Test
-  public void testMoveNoDest() throws Exception {
-    final String name = "testMoveNoDest";
-    LOG.info("Started " + name);
-    final byte [] nameBytes = Bytes.toBytes(name);
-    TEST_UTIL.createTable(nameBytes, HConstants.CATALOG_FAMILY);
-    TEST_UTIL.waitTableAvailable(nameBytes);
-
-    HRegionInfo hri = admin.getTableRegions(name.getBytes()).get(0);
-    byte[] regionName = hri.getRegionName();
-    HRegionLocation regionLoc = admin.getConnection().locateRegion(regionName);
-    ServerName snOrig = regionLoc.getServerName();
-
-    admin.move(hri.getEncodedNameAsBytes(), null);
-    do {
-      Thread.sleep(200);
-    } while (!admin.getClusterStatus().getRegionsInTransition().isEmpty());
-
-
-    ServerName snDest = admin.getConnection().locateRegion(regionName).getServerName();
-    Assert.assertNotEquals(snOrig, snDest);
-  }
 }

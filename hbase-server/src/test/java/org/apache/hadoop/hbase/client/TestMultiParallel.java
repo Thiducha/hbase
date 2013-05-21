@@ -327,8 +327,8 @@ public class TestMultiParallel {
     // put multiple rows using a batch
     List<Row> puts = constructPutRequests();
 
-    Object[] results;// = table.batch(puts);
-    //validateSizeAndEmpty(results, KEYS.length);
+    Object[] results = table.batch(puts);
+    validateSizeAndEmpty(results, KEYS.length);
 
     if (true) {
       int liveRScount = UTIL.getMiniHBaseCluster().getLiveRegionServerThreads()

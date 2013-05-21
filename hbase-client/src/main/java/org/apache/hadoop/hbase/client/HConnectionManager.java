@@ -2295,7 +2295,7 @@ public class HConnectionManager {
         // With one, we ensure that the ordering of the queries is respected: we don't start
         //  a set of operations on a region before the previous one is done.
         this.maxConcurrentTasksPerRegion =
-            hci.getConfiguration().getInt("hbase.client.max.perregion.tasks", 3);
+            hci.getConfiguration().getInt("hbase.client.max.perregion.tasks", 1);
       }
 
       /**
