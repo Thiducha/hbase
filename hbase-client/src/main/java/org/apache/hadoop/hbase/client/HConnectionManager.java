@@ -2297,14 +2297,14 @@ public class HConnectionManager {
       }
 
       /**
-       * Extract from the list what we can submit.
+       * Extract from the rows list what we can submit.
        * @param rows - the rows actually taken will be removed from the list. The rows that
        *             cannot be sent (overloaded region) will be kept in the list.
        */
       public void submit(List<Row> rows) throws InterruptedIOException {
         waitForMaximumTaskNumber(maxTotalConcurrentTasks);
 
-        final Map<HRegionLocation, MultiAction<Row>> actionsByServer =
+        Map<HRegionLocation, MultiAction<Row>> actionsByServer =
             new HashMap<HRegionLocation, MultiAction<Row>>();
         Map<String, Boolean> regionStatus = new HashMap<String, Boolean>();
 
@@ -2465,6 +2465,11 @@ public class HConnectionManager {
        */
      public void sendMultiAction(List<Action<Row>> retainedActions, Map<HRegionLocation,
          MultiAction<Row>> actionsByServer, int numAttempt) {
+
+       if (retainedActions.isEmpty()){
+         return;
+       }
+
         // Send the queries and add them to the inProgress list
         for (Entry<HRegionLocation, MultiAction<Row>> e : actionsByServer.entrySet()) {
           long backoffTime = 0;
@@ -2545,7 +2550,7 @@ public class HConnectionManager {
             }
           }
         }
-        submit(toReplay, numAttempt + 1, true);
+        submit(toReplay, numAttempt, true);
       }
 
       /**
@@ -2563,8 +2568,9 @@ public class HConnectionManager {
                                       MultiResponse responses,int numAttempt) {
 
         if (responses == null) {
-          // Error case: no result at all for this multi action. We need to redo all actions
-          resubmitAll(rsActions, location, numAttempt);
+          LOG.info("Attempt #" + numAttempt + " failed for all operations on server " +
+              location.getServerName() + " , trying to resubmit.");
+          resubmitAll(rsActions, location, numAttempt + 1);
           return;
         }
 
@@ -2576,6 +2582,7 @@ public class HConnectionManager {
 
         List<Action<Row>> toReplay = new ArrayList<Action<Row>>();
 
+        int failureCount = 0;
         for (Entry<byte[], List<Pair<Integer, Object>>> resultsForRS :
             responses.getResults().entrySet()) {
           for (Pair<Integer, Object> regionResult : resultsForRS.getValue()) {
@@ -2583,6 +2590,7 @@ public class HConnectionManager {
 
             // Failure: retry if it's make sense else update the errors lists
             if (result == null || result instanceof Throwable) {
+              failureCount++;
               Action<Row> correspondingAction = originalActionsList.get(regionResult.getFirst());
               Row row = correspondingAction.getAction();
               hci.updateCachedLocations(this.tableName, row, result, location);
@@ -2593,7 +2601,7 @@ public class HConnectionManager {
               }
             } else // success
               if (callback != null) {
-                Action<? extends Row> correspondingAction = originalActionsList.get(regionResult.getFirst());
+                Action<Row> correspondingAction = originalActionsList.get(regionResult.getFirst());
                 Row row = correspondingAction.getAction();
                 this.callback.success(correspondingAction.getOriginalIndex(),
                     resultsForRS.getKey(), row.getRow(), (Res) result);
@@ -2602,7 +2610,14 @@ public class HConnectionManager {
         }
 
         if (!toReplay.isEmpty()) {
+          LOG.info("Attempt #" + numAttempt + " failed for " + failureCount +
+              "operations on server " + location.getServerName() + " , resubmitting " +
+              toReplay.size() + ", tableName=" + Bytes.toString(tableName));
           submit(toReplay, numAttempt + 1, true);
+        } else if (failureCount != 0) {
+          LOG.warn("Attempt #" + numAttempt + " failed for " + failureCount +
+              "operations on server " + location.getServerName() + " NOT resubmitting." +
+              ", tableName=" + Bytes.toString(tableName));
         }
       }
 
