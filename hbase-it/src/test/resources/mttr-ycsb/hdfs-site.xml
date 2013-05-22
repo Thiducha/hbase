@@ -56,5 +56,66 @@
   </property>
 
 
+
+  <property>
+    <name>dfs.block.local-path-access.user</name>
+    <value>root</value>
+    <description>the user who is allowed to perform short
+      circuit reads.
+    </description>
+    <final>true</final>
+  </property>
+
+  <property>
+    <name>dfs.namenode.handler.count</name>
+    <value>40</value>
+    <description>The number of server threads for the namenode.</description>
+  </property>
+
+  <property>
+    <name>dfs.umaskmode</name>
+    <value>022</value>
+    <description>
+      The octal umask used when creating files and directories.
+    </description>
+  </property>
+
+  <property>
+    <name>dfs.namenode.handler.count</name>
+    <value>100</value>
+    <description>Added to grow Queue size so that more client connections are allowed</description>
+  </property>
+
+  <property>
+    <name>ipc.server.max.response.size</name>
+    <value>5242880</value>
+  </property>
+
+  <property>
+    <name>dfs.block.access.token.enable</name>
+    <value>false</value>
+    <description>
+      If "true", access tokens are used as capabilities for accessing datanodes.
+      If "false", no access tokens are checked on accessing datanodes.
+    </description>
+  </property>
+
+  <property>
+    <name>dfs.access.time.precision</name>
+    <value>0</value>
+    <description>The access time for HDFS file is precise upto this value.
+      The default value is 1 hour. Setting a value of 0 disables
+      access times for HDFS.
+    </description>
+  </property>
+
+  <property>
+    <name>ipc.server.read.threadpool.size</name>
+    <value>5</value>
+    <description></description>
+  </property>
+
+
+
 </configuration>
 

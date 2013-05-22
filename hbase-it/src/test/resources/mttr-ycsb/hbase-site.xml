@@ -36,7 +36,8 @@
 
   <property>
     <name>dfs.client.read.shortcircuit</name>
-    <value>false</value>     <!-- should be yes, -->
+    <value>false</value>
+    <!-- should be yes, -->
   </property>
 
   <property>
@@ -78,10 +79,11 @@
 
   <property>
     <name>zookeeper.session.timeout</name>
-    <value>40000</value>  <!-- to be decreased once master marks the nodes as stale -->
+    <value>40000</value>
+    <!-- to be decreased once master marks the nodes as stale -->
     <description>ZooKeeper session timeout.
       HBase passes this to the zk quorum as suggested maximum time for a
-      session (This setting becomes zookeeper's 'maxSessionTimeout').  See
+      session (This setting becomes zookeeper's 'maxSessionTimeout'). See
       http://hadoop.apache.org/zookeeper/docs/current/zookeeperProgrammers.html#ch_zkSessions
       "The client sends a requested timeout, the server responds with the
       timeout that it can give the client. " In milliseconds.
@@ -91,7 +93,7 @@
   <property>
     <name>hbase.client.retries.number</name>
     <value>20</value>
-    <description>Maximum retries.  Used as maximum for all retryable
+    <description>Maximum retries. Used as maximum for all retryable
       operations such as fetching of the root region from root region
       server, getting a cell's value, starting a row update, etc.
       Default: 10.
@@ -102,5 +104,94 @@
     <name>hbase.master.distributed.log.replay</name>
     <value>true</value>
   </property>
+
+
+  <property>
+    <name>hbase.regionserver.checksum.verify</name>
+    <value>true</value>
+  </property>
+
+
+  <property>
+    <name>hbase.regionserver.global.memstore.upperLimit</name>
+    <value>0.4</value>
+    <description>Maximum size of all memstores in a region server before new
+      updates are blocked and flushes are forced. Defaults to 40% of heap
+    </description>
+  </property>
+  <property>
+    <name>hbase.regionserver.global.memstore.lowerLimit</name>
+    <value>0.35</value>
+    <description>When memstores are being forced to flush to make room in
+      memory, keep flushing until we hit this mark. Defaults to 35% of heap.
+      This value equal to hbase.regionserver.global.memstore.upperLimit causes
+      the minimum possible flushing to occur when updates are blocked due to
+      memstore limiting.
+    </description>
+  </property>
+  <property>
+    <name>hbase.hregion.memstore.mslab.enabled</name>
+    <value>true</value>
+    <description>
+      Enables the MemStore-Local Allocation Buffer,
+      a feature which works to prevent heap fragmentation under
+      heavy write loads. This can reduce the frequency of stop-the-world
+      GC pauses on large heaps.
+    </description>
+  </property>
+  <property>
+    <name>hbase.hregion.max.filesize</name>
+    <value>107374182400</value>
+    <description>
+      Maximum HStoreFile size. If any one of a column families' HStoreFiles has
+      grown to exceed this value, the hosting HRegion is split in two.
+      Default: 1G.
+    </description>
+  </property>
+  <property>
+    <name>hbase.hstore.compactionThreshold</name>
+    <value>3</value>
+    <description>
+      If more than this number of HStoreFiles in any one HStore
+      (one HStoreFile is written per flush of memstore) then a compaction
+      is run to rewrite all HStoreFiles files as one. Larger numbers
+      put off compaction but when it runs, it takes longer to complete.
+    </description>
+  </property>
+  <property>
+    <name>hbase.hstore.blockingStoreFiles</name>
+    <value>7</value>
+    <description>
+      If more than this number of StoreFiles in any one Store
+      (one StoreFile is written per flush of MemStore) then updates are
+      blocked for this HRegion until a compaction is completed, or
+      until hbase.hstore.blockingWaitTime has been exceeded.
+    </description>
+  </property>
+  <property>
+    <name>hfile.block.cache.size</name>
+    <value>0.25</value>
+    <description>
+      Percentage of maximum heap (-Xmx setting) to allocate to block cache
+      used by HFile/StoreFile. Default of 0.25 means allocate 25%.
+      Set to 0 to disable but it's not recommended.
+    </description>
+  </property>
+
+  <property>
+    <name>dfs.client.read.shortcircuit</name>
+    <value>true</value>
+    <description>Enable/Disable short circuit read for your client.
+      Hadoop servers should be configured to allow short circuit read
+      for the hbase user for this to take effect
+    </description>
+  </property>
+
+  <property>
+    <name>dfs.client.read.shortcircuit.skip.checksum</name>
+    <value>true</value>
+    <description>Enable/disbale skipping the checksum check</description>
+  </property>
+
 
 </configuration>
