@@ -19,6 +19,7 @@ public class IntegrationTestLaunchYSCBClusterWithKill extends IntegrationTestLau
         String curBox = System.getenv("HBASE_IT_BOX_" + nbBox);
         if (curBox != null) {
           hcm.kill(ClusterManager.ServiceType.HBASE_REGIONSERVER, curBox);
+          Thread.sleep(10000);
           hcm.start(ClusterManager.ServiceType.HBASE_REGIONSERVER, curBox);
         } else {
           break;
