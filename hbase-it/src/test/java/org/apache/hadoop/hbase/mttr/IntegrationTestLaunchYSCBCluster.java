@@ -67,6 +67,15 @@ public class IntegrationTestLaunchYSCBCluster extends AbstractIntegrationTestRec
     HTableDescriptor desc = new HTableDescriptor("usertable");
     desc.addFamily(new HColumnDescriptor("family"));
     admin.createTable(desc);
+
+    for (int nbBox = 1; ; nbBox++) {
+      String curBox = System.getenv("HBASE_IT_BOX_" + nbBox);
+      if (curBox != null) {
+        hcm.kill(ClusterManager.ServiceType.HBASE_REGIONSERVER, curBox);
+      } else {
+        break;
+      }
+    }
   }
 
   @Override

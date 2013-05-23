@@ -387,7 +387,6 @@ public class HBaseClusterManager extends ClusterManager {
     return ret.length() > 0;
   }
 
-
   @Override
   public void formatNameNode(String hostname) throws IOException {
     exec(hostname,
