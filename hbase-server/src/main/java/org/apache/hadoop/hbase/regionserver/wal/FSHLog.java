@@ -347,7 +347,7 @@ class FSHLog implements HLog, Syncable {
 
     this.logSyncer = new LogSyncer(this.optionalFlushInterval);
 
-    LOG.info("HLog configuration: blocksize=" +
+    LOG.info("WAL/HLog configuration: blocksize=" +
       StringUtils.byteDesc(this.blocksize) +
       ", rollsize=" + StringUtils.byteDesc(this.logrollsize) +
       ", enabled=" + this.enabled +
@@ -519,9 +519,10 @@ class FSHLog implements HLog, Syncable {
           this.hdfs_out = nextHdfsOut;
           this.numEntries.set(0);
         }
-        LOG.info("Rolled log" + (oldFile != null ? " for file=" + FSUtils.getPath(oldFile)
-          + ", entries=" + oldNumEntries + ", filesize=" + this.fs.getFileStatus(oldFile).getLen()
-          : "" ) + "; new path=" + FSUtils.getPath(newPath));
+        LOG.info("Rolled WAL " + (oldFile != null ?
+          FSUtils.getPath(oldFile) + ", entries=" + oldNumEntries + ", filesize=" +
+            StringUtils.humanReadableInt(this.fs.getFileStatus(oldFile).getLen()):
+          "" ) + "; new WAL=" + FSUtils.getPath(newPath));
 
         // Tell our listeners that a new log was created
         if (!this.listeners.isEmpty()) {
@@ -701,7 +702,7 @@ class FSHLog implements HLog, Syncable {
         i.preLogArchive(p, newPath);
       }
     }
-    if (!this.fs.rename(p, newPath)) {
+    if (!FSUtils.renameAndSetModifyTime(this.fs, p, newPath)) {
       throw new IOException("Unable to rename " + p + " to " + newPath);
     }
     // Tell our listeners that a log has been archived.
@@ -754,7 +755,7 @@ class FSHLog implements HLog, Syncable {
           }
         }
 
-        if (!fs.rename(file.getPath(),p)) {
+        if (!FSUtils.renameAndSetModifyTime(fs, file.getPath(), p)) {
           throw new IOException("Unable to rename " + file.getPath() + " to " + p);
         }
         // Tell our listeners that a log was archived.

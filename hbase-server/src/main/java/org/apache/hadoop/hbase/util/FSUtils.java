@@ -322,11 +322,11 @@ public abstract class FSUtils {
    * @return output stream to the created file
    * @throws IOException if the file cannot be created
    */
-  @SuppressWarnings("deprecation")
   public static FSDataOutputStream create(FileSystem fs, Path path,
       FsPermission perm, boolean overwrite) throws IOException {
-    LOG.debug("Creating file=" + path + " with permission=" + perm);
-
+    if (LOG.isTraceEnabled()) {
+      LOG.trace("Creating file=" + path + " with permission=" + perm + ", overwrite=" + overwrite);
+    }
     return fs.create(path, perm, overwrite, getDefaultBufferSize(fs),
         getDefaultReplication(fs, path), getDefaultBlockSize(fs, path), null);
   }
@@ -1640,5 +1640,13 @@ public abstract class FSUtils {
         LOG.debug(prefix + file.getPath().getName());
       }
     }
+  }
+
+  public static boolean renameAndSetModifyTime(final FileSystem fs, Path src, Path dest)
+      throws IOException {
+    if (!fs.rename(src, dest)) return false;
+    // set the modify time for TimeToLive Cleaner
+    fs.setTimes(dest, EnvironmentEdgeManager.currentTimeMillis(), -1);
+    return true;
   }
 }
