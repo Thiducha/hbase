@@ -3029,7 +3029,7 @@ public class HConnectionManager {
       private long canRetryUntil = 0;
 
       public ServerErrorTracker(long timeout) {
-        LOG.info("Server tracker timeout is " + timeout + "ms");
+        LOG.trace("Server tracker timeout is " + timeout + "ms");
         this.canRetryUntil = EnvironmentEdgeManager.currentTimeMillis() + timeout;
       }
 

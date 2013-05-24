@@ -92,7 +92,6 @@ import org.apache.hadoop.hbase.exceptions.NoSuchColumnFamilyException;
 import org.apache.hadoop.hbase.exceptions.NotServingRegionException;
 import org.apache.hadoop.hbase.exceptions.OutOfOrderScannerNextException;
 import org.apache.hadoop.hbase.exceptions.RegionAlreadyInTransitionException;
-import org.apache.hadoop.hbase.exceptions.RegionInRecoveryException;
 import org.apache.hadoop.hbase.exceptions.RegionMovedException;
 import org.apache.hadoop.hbase.exceptions.RegionOpeningException;
 import org.apache.hadoop.hbase.exceptions.RegionServerRunningException;
@@ -165,6 +164,7 @@ import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutateRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutateResponse;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutationProto;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ResultCellMeta;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MutationProto.MutationType;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ScanRequest;
 import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ScanResponse;
@@ -300,7 +300,7 @@ public class HRegionServer implements ClientProtos.ClientService.BlockingInterfa
    */
   protected final Map<String, InetSocketAddress[]> regionFavoredNodesMap =
       new ConcurrentHashMap<String, InetSocketAddress[]>();
-   
+
   /**
    * Set of regions currently being in recovering state which means it can accept writes(edits from
    * previous failed region server) but not reads. A recovering region is also an online region.
@@ -472,7 +472,7 @@ public class HRegionServer implements ClientProtos.ClientService.BlockingInterfa
 
   /** Handle all the snapshot requests to this server */
   RegionServerSnapshotManager snapshotManager;
-  
+
   // configuration setting on if replay WAL edits directly to another RS
   private final boolean distributedLogReplay;
 
@@ -567,7 +567,7 @@ public class HRegionServer implements ClientProtos.ClientService.BlockingInterfa
     };
     this.rsHost = new RegionServerCoprocessorHost(this, this.conf);
 
-    this.distributedLogReplay = this.conf.getBoolean(HConstants.DISTRIBUTED_LOG_REPLAY_KEY, 
+    this.distributedLogReplay = this.conf.getBoolean(HConstants.DISTRIBUTED_LOG_REPLAY_KEY,
       HConstants.DEFAULT_DISTRIBUTED_LOG_REPLAY_CONFIG);
   }
 
@@ -1903,6 +1903,8 @@ public class HRegionServer implements ClientProtos.ClientService.BlockingInterfa
         LOG.fatal("Master rejected startup because clock is out of sync", ioe);
         // Re-throw IOE will cause RS to abort
         throw ioe;
+      } else if (ioe instanceof ServerNotRunningYetException) {
+        LOG.debug("Master is not running yet");
       } else {
         LOG.warn("error telling master we are up", se);
       }
@@ -2947,7 +2949,6 @@ public class HRegionServer implements ClientProtos.ClientService.BlockingInterfa
         RegionScannerHolder rsh = null;
         boolean moreResults = true;
         boolean closeScanner = false;
-        Long resultsWireSize = null;
         ScanResponse.Builder builder = ScanResponse.newBuilder();
         if (request.hasCloseScanner()) {
           closeScanner = request.getCloseScanner();
@@ -2974,7 +2975,6 @@ public class HRegionServer implements ClientProtos.ClientService.BlockingInterfa
             scan.setLoadColumnFamiliesOnDemand(region.isLoadingCfsOnDemandDefault());
           }
           byte[] hasMetrics = scan.getAttribute(Scan.SCAN_ATTRIBUTES_METRICS_ENABLE);
-          resultsWireSize = (hasMetrics != null && Bytes.toBoolean(hasMetrics)) ? 0L : null;
           region.prepareScanner(scan);
           if (region.getCoprocessorHost() != null) {
             scanner = region.getCoprocessorHost().preScannerOpen(scan);
@@ -3081,18 +3081,16 @@ public class HRegionServer implements ClientProtos.ClientService.BlockingInterfa
               moreResults = false;
               results = null;
             } else {
-              for (Result result: results) {
-                if (result != null) {
-                  ClientProtos.Result pbResult = ProtobufUtil.toResult(result);
-                  if (resultsWireSize != null) {
-                    resultsWireSize += pbResult.getSerializedSize();
-                  }
-                  builder.addResult(pbResult);
-                }
+              ResultCellMeta.Builder rcmBuilder = ResultCellMeta.newBuilder();
+              List<CellScannable> cellScannables = new ArrayList<CellScannable>(results.size());
+              for (Result res : results) {
+                cellScannables.add(res);
+                rcmBuilder.addCellsLength(res.size());
               }
-              if (resultsWireSize != null) {
-                builder.setResultSizeBytes(resultsWireSize.longValue());
-              }
+              builder.setResultCellMeta(rcmBuilder.build());
+              // TODO is this okey to assume the type and cast
+              ((PayloadCarryingRpcController) controller).setCellScanner(CellUtil
+                  .createCellScanner(cellScannables));
             }
           } finally {
             // We're done. On way out re-add the above removed lease.
@@ -3520,7 +3518,8 @@ public class HRegionServer implements ClientProtos.ClientService.BlockingInterfa
     return builder.build();
   }
 
-  private void updateRegionFavoredNodesMapping(String encodedRegionName,
+  @Override
+  public void updateRegionFavoredNodesMapping(String encodedRegionName,
       List<org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName> favoredNodes) {
     InetSocketAddress[] addr = new InetSocketAddress[favoredNodes.size()];
     // Refer to the comment on the declaration of regionFavoredNodesMap on why
@@ -3538,6 +3537,7 @@ public class HRegionServer implements ClientProtos.ClientService.BlockingInterfa
    * @param encodedRegionName
    * @return array of favored locations
    */
+  @Override
   public InetSocketAddress[] getFavoredNodesForRegion(String encodedRegionName) {
     return regionFavoredNodesMap.get(encodedRegionName);
   }
@@ -3775,7 +3775,7 @@ public class HRegionServer implements ClientProtos.ClientService.BlockingInterfa
   @QosPriority(priority = HConstants.REPLAY_QOS)
   public MultiResponse replay(final RpcController rpcc, final MultiRequest request)
       throws ServiceException {
-    long before = EnvironmentEdgeManager.currentTimeMillis();  
+    long before = EnvironmentEdgeManager.currentTimeMillis();
     PayloadCarryingRpcController controller = (PayloadCarryingRpcController) rpcc;
     CellScanner cellScanner = controller != null ? controller.cellScanner() : null;
     // Clear scanner so we are not holding on to reference across call.
@@ -3809,7 +3809,7 @@ public class HRegionServer implements ClientProtos.ClientService.BlockingInterfa
     } catch (IOException ie) {
       throw new ServiceException(ie);
     } finally {
-      metricsRegionServer.updateReplay(EnvironmentEdgeManager.currentTimeMillis() - before); 
+      metricsRegionServer.updateReplay(EnvironmentEdgeManager.currentTimeMillis() - before);
     }
   }
 
@@ -3947,7 +3947,7 @@ public class HRegionServer implements ClientProtos.ClientService.BlockingInterfa
       final HRegion region, final List<MutationProto> mutates, final CellScanner cells) {
     doBatchOp(builder, region, mutates, cells, false);
   }
-  
+
   /**
    * Execute a list of Put/Delete mutations.
    *
@@ -4257,7 +4257,7 @@ public class HRegionServer implements ClientProtos.ClientService.BlockingInterfa
       // one level deeper for failed RS
       nodePath = ZKUtil.joinZNode(nodePath, previousRSName);
       ZKUtil.setData(zkw, nodePath, ZKUtil.positionToByteArray(minSeqIdForLogReplay));
-      LOG.debug("Update last flushed sequence id of region " + region.getEncodedName() + " for " 
+      LOG.debug("Update last flushed sequence id of region " + region.getEncodedName() + " for "
           + previousRSName);
     } else {
       LOG.warn("Can't find failed region server for recovering region " + region.getEncodedName());

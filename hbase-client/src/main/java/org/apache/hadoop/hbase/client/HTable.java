@@ -249,9 +249,11 @@ public class HTable implements HTableInterface {
    */
   private void finishSetup() throws IOException {
     this.connection.locateRegion(tableName, HConstants.EMPTY_START_ROW);
-    this.operationTimeout = HTableDescriptor.isMetaTable(tableName) ? HConstants.DEFAULT_HBASE_CLIENT_OPERATION_TIMEOUT
-        : this.configuration.getInt(HConstants.HBASE_CLIENT_OPERATION_TIMEOUT,
-            HConstants.DEFAULT_HBASE_CLIENT_OPERATION_TIMEOUT);
+    this.operationTimeout = HTableDescriptor.isMetaTable(tableName) ?
+      this.configuration.getInt(HConstants.HBASE_CLIENT_META_OPERATION_TIMEOUT,
+        HConstants.DEFAULT_HBASE_CLIENT_OPERATION_TIMEOUT):
+      this.configuration.getInt(HConstants.HBASE_CLIENT_OPERATION_TIMEOUT,
+        HConstants.DEFAULT_HBASE_CLIENT_OPERATION_TIMEOUT);
     this.writeBufferSize = this.configuration.getLong(
         "hbase.client.write.buffer", 2097152);
     this.clearBufferOnFail = true;
@@ -504,8 +506,23 @@ public class HTable implements HTableInterface {
    */
   public List<HRegionLocation> getRegionsInRange(final byte [] startKey,
     final byte [] endKey) throws IOException {
-    return getKeysAndRegionsInRange(startKey, endKey, false).getSecond();
-    }
+    return getRegionsInRange(startKey, endKey, false);
+  }
+
+  /**
+   * Get the corresponding regions for an arbitrary range of keys.
+   * <p>
+   * @param startKey Starting row in range, inclusive
+   * @param endKey Ending row in range, exclusive
+   * @param reload true to reload information or false to use cached information
+   * @return A list of HRegionLocations corresponding to the regions that
+   * contain the specified range
+   * @throws IOException if a remote or network exception occurs
+   */
+  public List<HRegionLocation> getRegionsInRange(final byte [] startKey,
+      final byte [] endKey, final boolean reload) throws IOException {
+    return getKeysAndRegionsInRange(startKey, endKey, false, reload).getSecond();
+  }
 
   /**
    * Get the corresponding start keys and regions for an arbitrary range of
@@ -521,6 +538,24 @@ public class HTable implements HTableInterface {
   private Pair<List<byte[]>, List<HRegionLocation>> getKeysAndRegionsInRange(
       final byte[] startKey, final byte[] endKey, final boolean includeEndKey)
       throws IOException {
+    return getKeysAndRegionsInRange(startKey, endKey, includeEndKey, false);
+  }
+
+  /**
+   * Get the corresponding start keys and regions for an arbitrary range of
+   * keys.
+   * <p>
+   * @param startKey Starting row in range, inclusive
+   * @param endKey Ending row in range
+   * @param includeEndKey true if endRow is inclusive, false if exclusive
+   * @param reload true to reload information or false to use cached information
+   * @return A pair of list of start keys and list of HRegionLocations that
+   *         contain the specified range
+   * @throws IOException if a remote or network exception occurs
+   */
+  private Pair<List<byte[]>, List<HRegionLocation>> getKeysAndRegionsInRange(
+      final byte[] startKey, final byte[] endKey, final boolean includeEndKey,
+      final boolean reload) throws IOException {
     final boolean endKeyIsEndOfTable = Bytes.equals(endKey,HConstants.EMPTY_END_ROW);
     if ((Bytes.compareTo(startKey, endKey) > 0) && !endKeyIsEndOfTable) {
       throw new IllegalArgumentException(
@@ -531,7 +566,7 @@ public class HTable implements HTableInterface {
     List<HRegionLocation> regionsInRange = new ArrayList<HRegionLocation>();
     byte[] currentKey = startKey;
     do {
-      HRegionLocation regionLocation = getRegionLocation(currentKey, false);
+      HRegionLocation regionLocation = getRegionLocation(currentKey, reload);
       keysInRange.add(currentKey);
       regionsInRange.add(regionLocation);
       currentKey = regionLocation.getRegionInfo().getEndKey();
@@ -564,8 +599,7 @@ public class HTable implements HTableInterface {
     if (scan.getCaching() <= 0) {
       scan.setCaching(getScannerCaching());
     }
-    return new ClientScanner(getConfiguration(), scan, getTableName(),
-        this.connection);
+    return new ClientScanner(getConfiguration(), scan, getTableName(), this.connection);
   }
 
   /**
@@ -962,6 +996,7 @@ public class HTable implements HTableInterface {
             try {
               GetRequest request = RequestConverter.buildGetRequest(
                   location.getRegionInfo().getRegionName(), get, true);
+
               GetResponse response = stub.get(null, request);
               return response.getExists();
             } catch (ServiceException se) {
