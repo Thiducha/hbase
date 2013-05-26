@@ -519,10 +519,10 @@ class FSHLog implements HLog, Syncable {
           this.hdfs_out = nextHdfsOut;
           this.numEntries.set(0);
         }
-        LOG.info("Rolled WAL " + (oldFile != null ?
-          FSUtils.getPath(oldFile) + ", entries=" + oldNumEntries + ", filesize=" +
-            StringUtils.humanReadableInt(this.fs.getFileStatus(oldFile).getLen()):
-          "" ) + "; new WAL=" + FSUtils.getPath(newPath));
+        if (oldFile == null) LOG.info("New WAL " + FSUtils.getPath(newPath));
+        else LOG.info("Rolled WAL " + FSUtils.getPath(oldFile) + " with entries=" + oldNumEntries +
+          ", filesize=" + StringUtils.humanReadableInt(this.fs.getFileStatus(oldFile).getLen()) +
+          "; new WAL " + FSUtils.getPath(newPath));
 
         // Tell our listeners that a new log was created
         if (!this.listeners.isEmpty()) {
@@ -765,8 +765,7 @@ class FSHLog implements HLog, Syncable {
           }
         }
       }
-      LOG.debug("Moved " + files.length + " log files to " +
-        FSUtils.getPath(this.oldLogDir));
+      LOG.debug("Moved " + files.length + " WAL file(s) to " + FSUtils.getPath(this.oldLogDir));
     }
     if (!fs.delete(dir, true)) {
       LOG.info("Unable to delete " + dir);
@@ -806,7 +805,7 @@ class FSHLog implements HLog, Syncable {
     synchronized (updateLock) {
       this.closed = true;
       if (LOG.isDebugEnabled()) {
-        LOG.debug("closing hlog writer in " + this.dir.toString());
+        LOG.debug("Closing WAL writer in " + this.dir.toString());
       }
       if (this.writer != null) {
         this.writer.close();
@@ -832,7 +831,13 @@ class FSHLog implements HLog, Syncable {
   public void append(HRegionInfo info, byte [] tableName, WALEdit edits,
     final long now, HTableDescriptor htd)
   throws IOException {
-    append(info, tableName, edits, HConstants.DEFAULT_CLUSTER_ID, now, htd);
+    append(info, tableName, edits, now, htd, true);
+  }
+
+  @Override
+  public void append(HRegionInfo info, byte [] tableName, WALEdit edits,
+    final long now, HTableDescriptor htd, boolean isInMemstore) throws IOException {
+    append(info, tableName, edits, HConstants.DEFAULT_CLUSTER_ID, now, htd, true, isInMemstore);
   }
 
   /**
@@ -862,9 +867,9 @@ class FSHLog implements HLog, Syncable {
    * @throws IOException
    */
   private long append(HRegionInfo info, byte [] tableName, WALEdit edits, UUID clusterId,
-      final long now, HTableDescriptor htd, boolean doSync)
+      final long now, HTableDescriptor htd, boolean doSync, boolean isInMemstore)
     throws IOException {
-      if (edits.isEmpty()) return this.unflushedEntries.get();;
+      if (edits.isEmpty()) return this.unflushedEntries.get();
       if (this.closed) {
         throw new IOException("Cannot append; log is closed");
       }
@@ -879,7 +884,7 @@ class FSHLog implements HLog, Syncable {
         // Use encoded name.  Its shorter, guaranteed unique and a subset of
         // actual  name.
         byte [] encodedRegionName = info.getEncodedNameAsBytes();
-        this.oldestUnflushedSeqNums.putIfAbsent(encodedRegionName, seqNum);
+        if (isInMemstore) this.oldestUnflushedSeqNums.putIfAbsent(encodedRegionName, seqNum);
         HLogKey logKey = makeKey(encodedRegionName, tableName, seqNum, now, clusterId);
         doWrite(info, logKey, edits, htd);
         this.numEntries.incrementAndGet();
@@ -903,14 +908,7 @@ class FSHLog implements HLog, Syncable {
   public long appendNoSync(HRegionInfo info, byte [] tableName, WALEdit edits,
     UUID clusterId, final long now, HTableDescriptor htd)
     throws IOException {
-    return append(info, tableName, edits, clusterId, now, htd, false);
-  }
-
-  @Override
-  public long append(HRegionInfo info, byte [] tableName, WALEdit edits,
-    UUID clusterId, final long now, HTableDescriptor htd)
-    throws IOException {
-    return append(info, tableName, edits, clusterId, now, htd, true);
+    return append(info, tableName, edits, clusterId, now, htd, false, true);
   }
 
   /**
