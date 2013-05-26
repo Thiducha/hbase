@@ -26,14 +26,17 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.CellScanner;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HRegionLocation;
+import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.RemoteExceptionHandler;
 import org.apache.hadoop.hbase.client.metrics.ScanMetrics;
 import org.apache.hadoop.hbase.exceptions.DoNotRetryIOException;
 import org.apache.hadoop.hbase.exceptions.NotServingRegionException;
 import org.apache.hadoop.hbase.exceptions.RegionServerStoppedException;
 import org.apache.hadoop.hbase.exceptions.UnknownScannerException;
+import org.apache.hadoop.hbase.ipc.PayloadCarryingRpcController;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.protobuf.ResponseConverter;
@@ -140,11 +143,11 @@ public class ScannerCallable extends ServerCallable<Result[]> {
         ScanRequest request = null;
         try {
           incRPCcallsMetrics();
-          request =
-            RequestConverter.buildScanRequest(scannerId, caching, false, nextCallSeq);
+          request = RequestConverter.buildScanRequest(scannerId, caching, false, nextCallSeq);
           ScanResponse response = null;
+          PayloadCarryingRpcController controller = new PayloadCarryingRpcController();
           try {
-            response = stub.scan(null, request);
+            response = stub.scan(controller, request);
             // Client and RS maintain a nextCallSeq number during the scan. Every next() call
             // from client to server will increment this number in both sides. Client passes this
             // number along with the request and at RS side both the incoming nextCallSeq and its
@@ -156,7 +159,9 @@ public class ScannerCallable extends ServerCallable<Result[]> {
             // See HBASE-5974
             nextCallSeq++;
             long timestamp = System.currentTimeMillis();
-            rrs = ResponseConverter.getResults(response);
+            // Results are returned via controller
+            CellScanner cellScanner = controller.cellScanner();
+            rrs = ResponseConverter.getResults(cellScanner, response);
             if (logScannerActivity) {
               long now = System.currentTimeMillis();
               if (now - timestamp > logCutOffLatency) {
@@ -174,7 +179,7 @@ public class ScannerCallable extends ServerCallable<Result[]> {
           } catch (ServiceException se) {
             throw ProtobufUtil.getRemoteException(se);
           }
-          updateResultsMetrics(response);
+          updateResultsMetrics(rrs);
         } catch (IOException e) {
           if (logScannerActivity) {
             LOG.info("Got exception making request " + TextFormat.shortDebugString(request), e);
@@ -194,19 +199,24 @@ public class ScannerCallable extends ServerCallable<Result[]> {
               LOG.info("Failed to relocate region", t);
             }
           }
+          // The below convertion of exceptions into DoNotRetryExceptions is a little strange.
+          // Why not just have these exceptions implment DNRIOE you ask?  Well, usually we want
+          // ServerCallable#withRetries to just retry when it gets these exceptions.  In here in
+          // a scan when doing a next in particular, we want to break out and get the scanner to
+          // reset itself up again.  Throwing a DNRIOE is how we signal this to happen (its ugly,
+          // yeah and hard to follow and in need of a refactor).
           if (ioe instanceof NotServingRegionException) {
             // Throw a DNRE so that we break out of cycle of calling NSRE
             // when what we need is to open scanner against new location.
-            // Attach NSRE to signal client that it needs to resetup scanner.
+            // Attach NSRE to signal client that it needs to re-setup scanner.
             if (this.scanMetrics != null) {
               this.scanMetrics.countOfNSRE.incrementAndGet();
             }
-            throw new DoNotRetryIOException("Reset scanner", ioe);
+            throw new DoNotRetryIOException("Resetting the scanner -- see exception cause", ioe);
           } else if (ioe instanceof RegionServerStoppedException) {
-            // Throw a DNRE so that we break out of cycle of calling RSSE
-            // when what we need is to open scanner against new location.
-            // Attach RSSE to signal client that it needs to resetup scanner.
-            throw new DoNotRetryIOException("Reset scanner", ioe);
+            // Throw a DNRE so that we break out of cycle of the retries and instead go and
+            // open scanner against new location.
+            throw new DoNotRetryIOException("Resetting the scanner -- see exception cause", ioe);
           } else {
             // The outer layers will retry
             throw ioe;
@@ -228,14 +238,19 @@ public class ScannerCallable extends ServerCallable<Result[]> {
     }
   }
 
-  private void updateResultsMetrics(ScanResponse response) {
-    if (this.scanMetrics == null || !response.hasResultSizeBytes()) {
+  private void updateResultsMetrics(Result[] rrs) {
+    if (this.scanMetrics == null || rrs == null || rrs.length == 0) {
       return;
     }
-    long value = response.getResultSizeBytes();
-    this.scanMetrics.countOfBytesInResults.addAndGet(value);
+    long resultSize = 0;
+    for (Result rr : rrs) {
+      for (KeyValue kv : rr.raw()) {
+        resultSize += kv.getLength();
+      }
+    }
+    this.scanMetrics.countOfBytesInResults.addAndGet(resultSize);
     if (isRegionServerRemote) {
-      this.scanMetrics.countOfBytesInRemoteResults.addAndGet(value);
+      this.scanMetrics.countOfBytesInRemoteResults.addAndGet(resultSize);
     }
   }
 

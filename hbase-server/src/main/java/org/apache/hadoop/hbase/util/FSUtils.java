@@ -24,7 +24,9 @@ import java.io.EOFException;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
@@ -56,6 +58,7 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.RemoteExceptionHandler;
 import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.exceptions.FileSystemVersionException;
+import org.apache.hadoop.hbase.fs.HFileSystem;
 import org.apache.hadoop.hbase.master.HMaster;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.generated.FSProtos;
@@ -66,6 +69,7 @@ import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.io.SequenceFile;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.util.Progressable;
 import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.util.StringUtils;
 
@@ -167,6 +171,87 @@ public abstract class FSUtils {
     return fs.exists(dir) && fs.delete(dir, true);
   }
 
+  /**
+   * Return the number of bytes that large input files should be optimally
+   * be split into to minimize i/o time.
+   *
+   * use reflection to search for getDefaultBlockSize(Path f)
+   * if the method doesn't exist, fall back to using getDefaultBlockSize()
+   *
+   * @param fs filesystem object
+   * @return the default block size for the path's filesystem
+   * @throws IOException e
+   */
+  public static long getDefaultBlockSize(final FileSystem fs, final Path path) throws IOException {
+    Method m = null;
+    Class<? extends FileSystem> cls = fs.getClass();
+    try {
+      m = cls.getMethod("getDefaultBlockSize", new Class<?>[] { Path.class });
+    } catch (NoSuchMethodException e) {
+      LOG.info("FileSystem doesn't support getDefaultBlockSize");
+    } catch (SecurityException e) {
+      LOG.info("Doesn't have access to getDefaultBlockSize on FileSystems", e);
+      m = null; // could happen on setAccessible()
+    }
+    if (m == null) {
+      return fs.getDefaultBlockSize();
+    } else {
+      try {
+        Object ret = m.invoke(fs, path);
+        return ((Long)ret).longValue();
+      } catch (Exception e) {
+        throw new IOException(e);
+      }
+    }
+  }
+
+  /*
+   * Get the default replication.
+   *
+   * use reflection to search for getDefaultReplication(Path f)
+   * if the method doesn't exist, fall back to using getDefaultReplication()
+   *
+   * @param fs filesystem object
+   * @param f path of file
+   * @return default replication for the path's filesystem
+   * @throws IOException e
+   */
+  public static short getDefaultReplication(final FileSystem fs, final Path path) throws IOException {
+    Method m = null;
+    Class<? extends FileSystem> cls = fs.getClass();
+    try {
+      m = cls.getMethod("getDefaultReplication", new Class<?>[] { Path.class });
+    } catch (NoSuchMethodException e) {
+      LOG.info("FileSystem doesn't support getDefaultReplication");
+    } catch (SecurityException e) {
+      LOG.info("Doesn't have access to getDefaultReplication on FileSystems", e);
+      m = null; // could happen on setAccessible()
+    }
+    if (m == null) {
+      return fs.getDefaultReplication();
+    } else {
+      try {
+        Object ret = m.invoke(fs, path);
+        return ((Number)ret).shortValue();
+      } catch (Exception e) {
+        throw new IOException(e);
+      }
+    }
+  }
+
+  /**
+   * Returns the default buffer size to use during writes.
+   *
+   * The size of the buffer should probably be a multiple of hardware
+   * page size (4096 on Intel x86), and it determines how much data is
+   * buffered during read and write operations.
+   *
+   * @param fs filesystem object
+   * @return default buffer size to use during writes
+   */
+  public static int getDefaultBufferSize(final FileSystem fs) {
+    return fs.getConf().getInt("io.file.buffer.size", 4096);
+  }
 
   /**
    * Create the specified file on the filesystem. By default, this will:
@@ -181,11 +266,42 @@ public abstract class FSUtils {
    *
    * @param fs {@link FileSystem} on which to write the file
    * @param path {@link Path} to the file to write
+   * @param perm permissions
+   * @param favoredNodes
    * @return output stream to the created file
    * @throws IOException if the file cannot be created
    */
   public static FSDataOutputStream create(FileSystem fs, Path path,
-      FsPermission perm) throws IOException {
+      FsPermission perm, InetSocketAddress[] favoredNodes) throws IOException {
+    if (fs instanceof HFileSystem) {
+      FileSystem backingFs = ((HFileSystem)fs).getBackingFs();
+      if (backingFs instanceof DistributedFileSystem) {
+        // Try to use the favoredNodes version via reflection to allow backwards-
+        // compatibility.
+        try {
+          return (FSDataOutputStream) (DistributedFileSystem.class
+              .getDeclaredMethod("create", Path.class, FsPermission.class,
+                  boolean.class, int.class, short.class, long.class,
+                  Progressable.class, InetSocketAddress[].class)
+                  .invoke(backingFs, path, FsPermission.getDefault(), true,
+                      getDefaultBufferSize(backingFs),
+                      getDefaultReplication(backingFs, path),
+                      getDefaultBlockSize(backingFs, path),
+                      null, favoredNodes));
+        } catch (InvocationTargetException ite) {
+          // Function was properly called, but threw it's own exception.
+          throw new IOException(ite.getCause());
+        } catch (NoSuchMethodException e) {
+          LOG.debug("Ignoring (most likely Reflection related exception) " + e);
+        } catch (IllegalArgumentException e) {
+          LOG.debug("Ignoring (most likely Reflection related exception) " + e);
+        } catch (SecurityException e) {
+          LOG.debug("Ignoring (most likely Reflection related exception) " + e);
+        } catch (IllegalAccessException e) {
+          LOG.debug("Ignoring (most likely Reflection related exception) " + e);
+        }
+      }
+    }
     return create(fs, path, perm, true);
   }
 
@@ -206,14 +322,13 @@ public abstract class FSUtils {
    * @return output stream to the created file
    * @throws IOException if the file cannot be created
    */
-  @SuppressWarnings("deprecation")
   public static FSDataOutputStream create(FileSystem fs, Path path,
       FsPermission perm, boolean overwrite) throws IOException {
-    LOG.debug("Creating file=" + path + " with permission=" + perm);
-
-    return fs.create(path, perm, overwrite,
-        fs.getConf().getInt("io.file.buffer.size", 4096),
-        fs.getDefaultReplication(), fs.getDefaultBlockSize(), null);
+    if (LOG.isTraceEnabled()) {
+      LOG.trace("Creating file=" + path + " with permission=" + perm + ", overwrite=" + overwrite);
+    }
+    return fs.create(path, perm, overwrite, getDefaultBufferSize(fs),
+        getDefaultReplication(fs, path), getDefaultBlockSize(fs, path), null);
   }
 
   /**
@@ -1525,5 +1640,13 @@ public abstract class FSUtils {
         LOG.debug(prefix + file.getPath().getName());
       }
     }
+  }
+
+  public static boolean renameAndSetModifyTime(final FileSystem fs, Path src, Path dest)
+      throws IOException {
+    if (!fs.rename(src, dest)) return false;
+    // set the modify time for TimeToLive Cleaner
+    fs.setTimes(dest, EnvironmentEdgeManager.currentTimeMillis(), -1);
+    return true;
   }
 }

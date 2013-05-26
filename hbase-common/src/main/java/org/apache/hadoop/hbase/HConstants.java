@@ -264,6 +264,10 @@ public final class HConstants {
   /** Parameter name for HBase client operation timeout, which overrides RPC timeout */
   public static final String HBASE_CLIENT_OPERATION_TIMEOUT = "hbase.client.operation.timeout";
 
+  /** Parameter name for HBase client operation timeout, which overrides RPC timeout */
+  public static final String HBASE_CLIENT_META_OPERATION_TIMEOUT =
+    "hbase.client.meta.operation.timeout";
+
   /** Default HBase client operation timeout, which is tantamount to a blocking call */
   public static final int DEFAULT_HBASE_CLIENT_OPERATION_TIMEOUT = Integer.MAX_VALUE;
 
@@ -717,6 +721,14 @@ public final class HConstants {
   public static final String DISTRIBUTED_LOG_SPLITTING_KEY =
       "hbase.master.distributed.log.splitting";
 
+  /** Conf key that enables unflushed WAL edits directly being replayed to region servers */
+  public static final String DISTRIBUTED_LOG_REPLAY_KEY = "hbase.master.distributed.log.replay";
+  public static final boolean DEFAULT_DISTRIBUTED_LOG_REPLAY_CONFIG = false;
+
+  /** Conf key that specifies timeout value to wait for a region ready */
+  public static final String LOG_REPLAY_WAIT_REGION_TIMEOUT = 
+      "hbase.master.log.replay.wait.region.timeout";
+
   /**
    * The name of the configuration parameter that specifies
    * the number of bytes in a newly created checksum chunk.
@@ -767,6 +779,7 @@ public final class HConstants {
   public static final int QOS_THRESHOLD = 10;
   public static final int HIGH_QOS = 100;
   public static final int REPLICATION_QOS = 5; // normal_QOS < replication_QOS < high_QOS
+  public static final int REPLAY_QOS = 6; // REPLICATION_QOS < REPLAY_QOS < high_QOS
 
   /** Directory under /hbase where archived hfiles are stored */
   public static final String HFILE_ARCHIVE_DIRECTORY = ".archive";

@@ -1064,7 +1064,12 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
   throws IOException {
     HTableDescriptor desc = new HTableDescriptor(tableName);
     for(byte[] family : families) {
-      desc.addFamily(new HColumnDescriptor(family));
+      HColumnDescriptor hcd = new HColumnDescriptor(family);
+      // Disable blooms (they are on by default as of 0.95) but we disable them here because
+      // tests have hard coded counts of what to expect in block cache, etc., and blooms being
+      // on is interfering.
+      hcd.setBloomFilterType(BloomType.NONE);
+      desc.addFamily(hcd);
     }
     getHBaseAdmin().createTable(desc);
     return new HTable(c, tableName);
@@ -1118,8 +1123,7 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
   throws IOException {
     HTableDescriptor desc = new HTableDescriptor(tableName);
     for (byte[] family : families) {
-      HColumnDescriptor hcd = new HColumnDescriptor(family)
-          .setMaxVersions(numVersions);
+      HColumnDescriptor hcd = new HColumnDescriptor(family).setMaxVersions(numVersions);
       desc.addFamily(hcd);
     }
     getHBaseAdmin().createTable(desc);
@@ -1683,10 +1687,13 @@ public class HBaseTestingUtility extends HBaseCommonTestingUtility {
       conf.get("mapred.local.dir")); //Hadoop MiniMR overwrites this while it should not
     LOG.info("Mini mapreduce cluster started");
 
-    // Needed for TestImportTsv.
+    // In hadoop2, YARN/MR2 starts a mini cluster with its own conf instance and updates settings.
+    // Our HBase MR jobs need several of these settings in order to properly run.  So we copy the
+    // necessary config properties here.  YARN-129 required adding a few properties.
     conf.set("mapred.job.tracker", jobConf.get("mapred.job.tracker"));
     // this for mrv2 support; mr1 ignores this
     conf.set("mapreduce.framework.name", "yarn");
+    conf.setBoolean("yarn.is.minicluster", true);
     String rmAddress = jobConf.get("yarn.resourcemanager.address");
     if (rmAddress != null) {
       conf.set("yarn.resourcemanager.address", rmAddress);

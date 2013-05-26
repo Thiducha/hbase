@@ -62,6 +62,8 @@ import org.apache.hadoop.hbase.exceptions.TableNotFoundException;
 import org.apache.hadoop.hbase.executor.EventHandler;
 import org.apache.hadoop.hbase.executor.EventType;
 import org.apache.hadoop.hbase.executor.ExecutorService;
+import org.apache.hadoop.hbase.master.balancer.FavoredNodeAssignmentHelper;
+import org.apache.hadoop.hbase.master.balancer.FavoredNodeLoadBalancer;
 import org.apache.hadoop.hbase.master.handler.ClosedRegionHandler;
 import org.apache.hadoop.hbase.master.handler.DisableTableHandler;
 import org.apache.hadoop.hbase.master.handler.EnableTableHandler;
@@ -73,6 +75,7 @@ import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.KeyLocker;
 import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.Threads;
+import org.apache.hadoop.hbase.util.Triple;
 import org.apache.hadoop.hbase.zookeeper.MetaRegionTracker;
 import org.apache.hadoop.hbase.zookeeper.ZKAssign;
 import org.apache.hadoop.hbase.zookeeper.ZKTable;
@@ -105,6 +108,8 @@ public class AssignmentManager extends ZooKeeperListener {
   protected final Server server;
 
   private ServerManager serverManager;
+
+  private boolean shouldAssignRegionsWithFavoredNodes;
 
   private CatalogTracker catalogTracker;
 
@@ -218,6 +223,10 @@ public class AssignmentManager extends ZooKeeperListener {
     this.regionsToReopen = Collections.synchronizedMap
                            (new HashMap<String, HRegionInfo> ());
     Configuration conf = server.getConfiguration();
+    // Only read favored nodes if using the favored nodes load balancer.
+    this.shouldAssignRegionsWithFavoredNodes = conf.getClass(
+           HConstants.HBASE_MASTER_LOADBALANCER_CLASS, Object.class).equals(
+           FavoredNodeLoadBalancer.class);
     this.tomActivated = conf.getBoolean("hbase.assignment.timeout.management", false);
     if (tomActivated){
       this.serversInUpdatingTimer =  new ConcurrentSkipListSet<ServerName>();
@@ -413,7 +422,8 @@ public class AssignmentManager extends ZooKeeperListener {
       return;
     }
 
-    boolean failover = !serverManager.getDeadServers().isEmpty();
+    boolean failover = (!serverManager.getDeadServers().isEmpty() || !serverManager
+        .getRequeuedDeadServers().isEmpty());
 
     if (!failover) {
       // Run through all regions.  If they are not assigned and not in RIT, then
@@ -524,7 +534,7 @@ public class AssignmentManager extends ZooKeeperListener {
     EventType et = rt.getEventType();
     // Get ServerName.  Could not be null.
     final ServerName sn = rt.getServerName();
-    String encodedRegionName = regionInfo.getEncodedName();
+    final String encodedRegionName = regionInfo.getEncodedName();
     LOG.info("Processing region " + regionInfo.getRegionNameAsString() + " in state " + et);
 
 
@@ -582,6 +592,8 @@ public class AssignmentManager extends ZooKeeperListener {
                 public void process() throws IOException {
                   ReentrantLock lock = locker.acquireLock(regionInfo.getEncodedName());
                   try {
+                    RegionPlan plan = new RegionPlan(regionInfo, null, sn);
+                    addPlan(encodedRegionName, plan);
                     assign(rs, false, false);
                   } finally {
                     lock.unlock();
@@ -969,6 +981,24 @@ public class AssignmentManager extends ZooKeeperListener {
     if (convertPendingCloseToSplitting(rs)) return true;
     LOG.warn("Dropped region split! Not in state good for SPLITTING; rs=" + rs);
     return false;
+  }
+
+  // TODO: processFavoredNodes might throw an exception, for e.g., if the
+  // meta could not be contacted/updated. We need to see how seriously to treat
+  // this problem as. Should we fail the current assignment. We should be able
+  // to recover from this problem eventually (if the meta couldn't be updated
+  // things should work normally and eventually get fixed up).
+  void processFavoredNodes(List<HRegionInfo> regions) throws IOException {
+    if (!shouldAssignRegionsWithFavoredNodes) return;
+    // The AM gets the favored nodes info for each region and updates the meta
+    // table with that info
+    Map<HRegionInfo, List<ServerName>> regionToFavoredNodes =
+        new HashMap<HRegionInfo, List<ServerName>>();
+    for (HRegionInfo region : regions) {
+      regionToFavoredNodes.put(region,
+          ((FavoredNodeLoadBalancer)this.balancer).getFavoredNodes(region));
+    }
+    FavoredNodeAssignmentHelper.updateMetaWithFavoredNodesInfo(regionToFavoredNodes, catalogTracker);
   }
 
   /**
@@ -1495,8 +1525,8 @@ public class AssignmentManager extends ZooKeeperListener {
       // that unnecessary timeout on RIT is reduced.
       this.addPlans(plans);
 
-      List<Pair<HRegionInfo, Integer>> regionOpenInfos =
-        new ArrayList<Pair<HRegionInfo, Integer>>(states.size());
+      List<Triple<HRegionInfo, Integer, List<ServerName>>> regionOpenInfos =
+        new ArrayList<Triple<HRegionInfo, Integer, List<ServerName>>>(states.size());
       for (RegionState state: states) {
         HRegionInfo region = state.getRegion();
         String encodedRegionName = region.getEncodedName();
@@ -1509,8 +1539,12 @@ public class AssignmentManager extends ZooKeeperListener {
         } else {
           regionStates.updateRegionState(region,
             RegionState.State.PENDING_OPEN, destination);
-          regionOpenInfos.add(new Pair<HRegionInfo, Integer>(
-            region, nodeVersion));
+          List<ServerName> favoredNodes = ServerName.EMPTY_SERVER_LIST;
+          if (this.shouldAssignRegionsWithFavoredNodes) {
+            favoredNodes = ((FavoredNodeLoadBalancer)this.balancer).getFavoredNodes(region);
+          }
+          regionOpenInfos.add(new Triple<HRegionInfo, Integer,  List<ServerName>>(
+            region, nodeVersion, favoredNodes));
         }
       }
 
@@ -1787,8 +1821,12 @@ public class AssignmentManager extends ZooKeeperListener {
       final String assignMsg = "Failed assignment of " + region.getRegionNameAsString() +
           " to " + plan.getDestination();
       try {
+        List<ServerName> favoredNodes = ServerName.EMPTY_SERVER_LIST;
+        if (this.shouldAssignRegionsWithFavoredNodes) {
+          favoredNodes = ((FavoredNodeLoadBalancer)this.balancer).getFavoredNodes(region);
+        }
         regionOpenState = serverManager.sendRegionOpen(
-            plan.getDestination(), region, versionOfOfflineNode);
+            plan.getDestination(), region, versionOfOfflineNode, favoredNodes);
 
         if (regionOpenState == RegionOpeningState.FAILED_OPENING) {
           // Failed opening this region, looping again on a new server.
@@ -2027,6 +2065,15 @@ public class AssignmentManager extends ZooKeeperListener {
         newPlan = true;
         randomPlan = new RegionPlan(region, null,
             balancer.randomAssignment(region, destServers));
+        if (!region.isMetaTable() && shouldAssignRegionsWithFavoredNodes) {
+          List<HRegionInfo> regions = new ArrayList<HRegionInfo>(1);
+          regions.add(region);
+          try {
+            processFavoredNodes(regions);
+          } catch (IOException ie) {
+            LOG.warn("Ignoring exception in processFavoredNodes " + ie);
+          }
+        }
         this.regionPlans.put(encodedName, randomPlan);
       }
     }
@@ -2345,6 +2392,7 @@ public class AssignmentManager extends ZooKeeperListener {
     // Generate a round-robin bulk assignment plan
     Map<ServerName, List<HRegionInfo>> bulkPlan
       = balancer.roundRobinAssignment(regions, servers);
+    processFavoredNodes(regions);
 
     assign(regions.size(), servers.size(),
       "round-robin=true", bulkPlan);
@@ -2402,8 +2450,14 @@ public class AssignmentManager extends ZooKeeperListener {
     Set<String> disabledOrDisablingOrEnabling = ZKTable.getDisabledOrDisablingTables(watcher);
     disabledOrDisablingOrEnabling.addAll(ZKTable.getEnablingTables(watcher));
     // Scan META for all user regions, skipping any disabled tables
-    Map<HRegionInfo, ServerName> allRegions = MetaReader.fullScan(
-      catalogTracker, disabledOrDisablingOrEnabling, true);
+    Map<HRegionInfo, ServerName> allRegions = null;
+    if (this.shouldAssignRegionsWithFavoredNodes) {
+      allRegions = FavoredNodeAssignmentHelper.fullScan(
+        catalogTracker, disabledOrDisablingOrEnabling, true, (FavoredNodeLoadBalancer)balancer);
+    } else {
+      allRegions = MetaReader.fullScan(
+        catalogTracker, disabledOrDisablingOrEnabling, true);
+    }
     if (allRegions == null || allRegions.isEmpty()) return;
 
     // Determine what type of assignment to do on startup
@@ -2677,18 +2731,38 @@ public class AssignmentManager extends ZooKeeperListener {
    */
   public void waitOnRegionToClearRegionsInTransition(final HRegionInfo hri)
       throws IOException, InterruptedException {
-    if (!regionStates.isRegionInTransition(hri)) return;
+    waitOnRegionToClearRegionsInTransition(hri, -1L);
+  }
+
+  /**
+   * Wait on region to clear regions-in-transition or time out
+   * @param hri
+   * @param timeOut Milliseconds to wait for current region to be out of transition state.
+   * @return True when a region clears regions-in-transition before timeout otherwise false
+   * @throws IOException
+   * @throws InterruptedException
+   */
+  public boolean waitOnRegionToClearRegionsInTransition(final HRegionInfo hri, long timeOut)
+      throws IOException, InterruptedException {
+    if (!regionStates.isRegionInTransition(hri)) return true;
     RegionState rs = null;
+    long end = (timeOut <= 0) ? Long.MAX_VALUE : EnvironmentEdgeManager.currentTimeMillis()
+        + timeOut;
     // There is already a timeout monitor on regions in transition so I
     // should not have to have one here too?
-    while(!this.server.isStopped() && regionStates.isRegionInTransition(hri)) {
-      LOG.info("Waiting on " + rs + " to clear regions-in-transition");
+    LOG.info("Waiting on " + rs + " to clear regions-in-transition");
+    while (!this.server.isStopped() && regionStates.isRegionInTransition(hri)) {
       regionStates.waitForUpdate(100);
+      if (EnvironmentEdgeManager.currentTimeMillis() > end) {
+        LOG.info("Timed out on waiting for region:" + hri.getEncodedName() + " to be assigned.");
+        return false;
+      }
     }
     if (this.server.isStopped()) {
-      LOG.info("Giving up wait on regions in " +
-        "transition because stoppable.isStopped is set");
+      LOG.info("Giving up wait on regions in transition because stoppable.isStopped is set");
+      return false;
     }
+    return true;
   }
 
   /**
@@ -2961,6 +3035,11 @@ public class AssignmentManager extends ZooKeeperListener {
             ZKAssign.deleteNodeFailSilent(watcher, hri);
           } catch (KeeperException ke) {
             server.abort("Unexpected ZK exception deleting node " + hri, ke);
+          }
+          if (zkTable.isDisablingOrDisabledTable(hri.getTableNameAsString())) {
+            it.remove();
+            regionStates.regionOffline(hri);
+            continue;
           }
           // Mark the region closed and assign it again by SSH
           regionStates.updateRegionState(hri, RegionState.State.CLOSED);

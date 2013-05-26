@@ -26,7 +26,7 @@
  * limitations under the License.
  */
 -->
-  <title>Apache HBase (TM) Operational Management</title>
+  <title>Apache HBase Operational Management</title>
   This chapter will cover operational tools and practices required of a running Apache HBase cluster.
   The subject of operations is related to the topics of <xref linkend="trouble" />, <xref linkend="performance"/>,
   and <xref linkend="configuration" /> but is a distinct topic in itself.
@@ -79,20 +79,20 @@ Valid program names are:
       <title>WAL Tools</title>
 
       <section xml:id="hlog_tool">
-        <title><classname>HLog</classname> tool</title>
+        <title><classname>FSHLog</classname> tool</title>
 
-        <para>The main method on <classname>HLog</classname> offers manual
+        <para>The main method on <classname>FSHLog</classname> offers manual
         split and dump facilities. Pass it WALs or the product of a split, the
         content of the <filename>recovered.edits</filename>. directory.</para>
 
         <para>You can get a textual dump of a WAL file content by doing the
-        following:<programlisting> <code>$ ./bin/hbase org.apache.hadoop.hbase.regionserver.wal.HLog --dump hdfs://example.org:8020/hbase/.logs/example.org,60020,1283516293161/10.10.21.10%3A60020.1283973724012</code> </programlisting>The
+        following:<programlisting> <code>$ ./bin/hbase org.apache.hadoop.hbase.regionserver.wal.FSHLog --dump hdfs://example.org:8020/hbase/.logs/example.org,60020,1283516293161/10.10.21.10%3A60020.1283973724012</code> </programlisting>The
         return code will be non-zero if issues with the file so you can test
         wholesomeness of file by redirecting <varname>STDOUT</varname> to
         <code>/dev/null</code> and testing the program return.</para>
 
         <para>Similarly you can force a split of a log file directory by
-        doing:<programlisting> $ ./<code>bin/hbase org.apache.hadoop.hbase.regionserver.wal.HLog --split hdfs://example.org:8020/hbase/.logs/example.org,60020,1283516293161/</code></programlisting></para>
+        doing:<programlisting> $ ./<code>bin/hbase org.apache.hadoop.hbase.regionserver.wal.FSHLog --split hdfs://example.org:8020/hbase/.logs/example.org,60020,1283516293161/</code></programlisting></para>
 
         <section xml:id="hlog_tool.prettyprint">
           <title><classname>HLogPrettyPrinter</classname></title>
@@ -419,13 +419,37 @@ false
             </para>
         </note>
         </para>
+        <section xml:id="draining.servers">
+            <title>Decommissioning several Regions Servers concurrently</title>
+            <para>If you have a large cluster, you may want to
+            decomission more than one machines at a time by gracefully
+            stopping mutiple RegionServers concurrently.
+	    </para>
+	    <para>To gracefully drain multiple regionservers at the
+	    same time, RegionServers can be put into a "draining"
+	    state.  This is done by marking a RegionServer as a
+	    draining node by creating an entry in ZooKeeper under the
+	    hbase_root/draining znode.  This znode has format
+	    "name,port,startcode" just like the regionserver entries
+	    under hbase_root/rs znode.
+	    </para>
+	    <para>Without this, when decommissioning mulitple nodes
+	    may be non-optimal because regions that are being drained
+	    from one region server may be moved to other regions that
+	    are also draining.  Marking RegionServers to be in the
+	    draining state prevents this from happening.  <note>See
+	    this <link xlink:href="http://inchoate-clatter.blogspot.com/2012/03/hbase-ops-automation.html">blog
+	    post</link> for more details. </note>
+	    </para>
+        </section>
+
         <section xml:id="bad.disk">
             <title>Bad or Failing Disk</title>
             <para>It is good having <xref linkend="dfs.datanode.failed.volumes.tolerated" /> set if you have a decent number of disks
             per machine for the case where a disk plain dies.  But usually disks do the "John Wayne" -- i.e. take a while
             to go down spewing errors in <filename>dmesg</filename> -- or for some reason, run much slower than their
             companions.  In this case you want to decommission the disk.  You have two options.  You can
-            <xlink href="http://wiki.apache.org/hadoop/FAQ#I_want_to_make_a_large_cluster_smaller_by_taking_out_a_bunch_of_nodes_simultaneously._How_can_this_be_done.3F">decommission the datanode</xlink>
+            <link xlink:href="http://wiki.apache.org/hadoop/FAQ#I_want_to_make_a_large_cluster_smaller_by_taking_out_a_bunch_of_nodes_simultaneously._How_can_this_be_done.3F">decommission the datanode</link>
             or, less disruptive in that only the bad disks data will be rereplicated, can stop the datanode,
             unmount the bad volume (You can't umount a volume while the datanode is using it), and then restart the
             datanode (presuming you have set dfs.datanode.failed.volumes.tolerated > 0).  The regionserver will
@@ -489,6 +513,34 @@ false
                 </listitem>
             </orderedlist>
         </para>
+	<para>It is important to drain HBase regions slowly when
+	restarting regionservers. Otherwise, multiple regions go
+	offline simultaneously as they are re-assigned to other
+	nodes. Depending on your usage patterns, this might not be
+	desirable.
+	</para>
+    </section>
+    <section xml:id="adding.new.node">
+        <title>Adding a New Node</title>
+        <para>Adding a new regionserver in HBase is essentially free, you simply start it like this:
+              <programlisting>$ ./bin/hbase-daemon.sh start regionserver</programlisting>
+              and it will register itself with the master. Ideally you also started a DataNode on the same
+              machine so that the RS can eventually start to have local files. If you rely on ssh to start your
+              daemons, don't forget to add the new hostname in <filename>conf/regionservers</filename> on the master.
+        </para>
+        <para>At this point the region server isn't serving data because no regions have moved to it yet. If the balancer is
+              enabled, it will start moving regions to the new RS. On a small/medium cluster this can have a very adverse effect
+              on latency as a lot of regions will be offline at the same time. It is thus recommended to disable the balancer
+              the same way it's done when decommissioning a node and move the regions manually (or even better, using a script
+              that moves them one by one).
+        </para>
+        <para>The moved regions will all have 0% locality and won't have any blocks in cache so the region server will have
+              to use the network to serve requests. Apart from resulting in higher latency, it may also be able to use all of
+              your network card's capacity. For practical purposes, consider that a standard 1GigE NIC won't be able to read
+              much more than <emphasis>100MB/s</emphasis>. In this case, or if you are in a OLAP environment and require having
+              locality, then it is recommended to major compact the moved regions.
+        </para>
+
     </section>
     </section>  <!--  node mgt -->
 
@@ -838,6 +890,32 @@ false
       RegionServer.  This affects both storage and hardware planning. See <xref linkend="perf.number.of.regions" />.
       </para>
     </section>
+  </section>
+  <section xml:id="table.rename"><title>Table Rename</title>
+      <para>In versions 0.90.x of hbase and earlier, we had a simple script that would rename the hdfs
+          table directory and then do an edit of the .META. table replacing all mentions of the old
+          table name with the new.  The script was called <command>./bin/rename_table.rb</command>.
+          The script was deprecated and removed mostly because it was unmaintained and the operation
+          performed by the script was brutal.
+      </para>
+      <para>
+          As of hbase 0.94.x, you can use the snapshot facility renaming a table.  Here is how you would
+do it using the hbase shell:
+<programlisting>hbase shell> disable 'tableName'
+hbase shell> snapshot 'tableName', 'tableSnapshot'
+hbase shell> clone 'tableSnapshot', 'newTableName'
+hbase shell> delete_snapshot 'tableSnapshot'
+hbase shell> drop 'tableName'</programlisting>
+or in code it would be as follows:
+<programlisting>void rename(HBaseAdmin admin, String oldTableName, String newTableName) {
+    String snapshotName = randomName();
+    admin.disableTable(oldTableName);
+    admin.snapshot(snapshotName, oldTableName);
+    admin.cloneSnapshot(snapshotName, newTableName);
+    admin.deleteSnapshot(snapshotName);
+    admin.deleteTable(oldTableName);
+}</programlisting>
+      </para>
   </section>
 
 </chapter>

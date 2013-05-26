@@ -69,7 +69,6 @@ import org.apache.hadoop.hbase.security.AuthMethod;
 import org.apache.hadoop.hbase.security.HBaseSaslRpcClient;
 import org.apache.hadoop.hbase.security.SecurityInfo;
 import org.apache.hadoop.hbase.security.User;
-import org.apache.hadoop.hbase.security.token.AuthenticationTokenIdentifier;
 import org.apache.hadoop.hbase.security.token.AuthenticationTokenSelector;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.Pair;
@@ -1492,6 +1491,14 @@ public class RpcClient {
     return rpcTimeout.get();
   }
 
+  /**
+   * Returns the lower of the thread-local RPC time from {@link #setRpcTimeout(int)} and the given
+   * default timeout.
+   */
+  public static int getRpcTimeout(int defaultTimeout) {
+    return Math.min(defaultTimeout, rpcTimeout.get());
+  }
+
   public static void resetRpcTimeout() {
     rpcTimeout.remove();
   }
@@ -1576,7 +1583,9 @@ public class RpcClient {
         final User ticket, final int rpcTimeout) {
       this.isa = new InetSocketAddress(sn.getHostname(), sn.getPort());
       this.rpcClient = rpcClient;
-      this.rpcTimeout = rpcTimeout;
+      // Set the rpc timeout to be the minimum of configured timeout and whatever the current
+      // thread local setting is.
+      this.rpcTimeout = getRpcTimeout(rpcTimeout);
       this.ticket = ticket;
     }
 

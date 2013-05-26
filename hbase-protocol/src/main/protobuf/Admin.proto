@@ -24,6 +24,7 @@ option java_generic_services = true;
 option java_generate_equals_and_hash = true;
 option optimize_for = SPEED;
 
+import "Client.proto";
 import "hbase.proto";
 import "WAL.proto";
 
@@ -70,6 +71,7 @@ message OpenRegionRequest {
   message RegionOpenInfo {
     required RegionInfo region = 1;
     optional uint32 versionOfOfflineNode = 2;
+    repeated ServerName favoredNodes = 3;
   }
 }
 
@@ -232,6 +234,9 @@ service AdminService {
 
   rpc replicateWALEntry(ReplicateWALEntryRequest)
     returns(ReplicateWALEntryResponse);
+    
+  rpc replay(MultiRequest)
+    returns(MultiResponse);    
 
   rpc rollWALWriter(RollWALWriterRequest)
     returns(RollWALWriterResponse);

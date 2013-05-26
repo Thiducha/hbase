@@ -169,8 +169,7 @@ public abstract class ServerCallable<T> implements Callable<T> {
         prepare(tries != 0); // if called with false, check table status on ZK
         return call();
       } catch (Throwable t) {
-        LOG.warn("Received exception, tries=" + tries + ", numRetries=" + numRetries + ":" +
-          t.getMessage());
+        LOG.warn("Call exception, tries=" + tries + ", numRetries=" + numRetries + ": " + t);
 
         t = translateException(t);
         // translateException throws an exception when we should not retry, i.e. when it's the
@@ -179,7 +178,7 @@ public abstract class ServerCallable<T> implements Callable<T> {
         if (t instanceof SocketTimeoutException ||
             t instanceof ConnectException ||
             t instanceof RetriesExhaustedException ||
-            getConnection().isDeadServer(location.getServerName())) {
+            (location != null && getConnection().isDeadServer(location.getServerName()))) {
           // if thrown these exceptions, we clear all the cache entries that
           // map to that slow/dead server; otherwise, let cache miss and ask
           // .META. again to find the new location
@@ -201,19 +200,19 @@ public abstract class ServerCallable<T> implements Callable<T> {
         // If the server is dead, we need to wait a little before retrying, to give
         //  a chance to the regions to be
         expectedSleep = ConnectionUtils.getPauseTime(pause, tries);
-        if (expectedSleep < MIN_WAIT_DEAD_SERVER &&
-            getConnection().isDeadServer(location.getServerName())){
+        if (expectedSleep < MIN_WAIT_DEAD_SERVER 
+            && (location == null || getConnection().isDeadServer(location.getServerName()))) {
           expectedSleep = ConnectionUtils.addJitter(MIN_WAIT_DEAD_SERVER, 0.10f);
         }
 
         // If, after the planned sleep, there won't be enough time left, we stop now.
-        if (((this.endTime - this.globalStartTime) + MIN_RPC_TIMEOUT + expectedSleep) >
-            this.callTimeout) {
+        long duration = singleCallDuration(expectedSleep);
+        if (duration > this.callTimeout) {
           throw (SocketTimeoutException) new SocketTimeoutException(
               "Call to access row '" + Bytes.toString(row) + "' on table '"
                   + Bytes.toString(tableName)
                   + "' failed on timeout. " + " callTimeout=" + this.callTimeout +
-                  ", time=" + (this.endTime - this.startTime)).initCause(t);
+                  ", callDuration=" + duration).initCause(t);
         }
       } finally {
         afterCall();
@@ -225,6 +224,14 @@ public abstract class ServerCallable<T> implements Callable<T> {
         throw new IOException("Interrupted after " + tries + " tries  on " + numRetries, e);
       }
     }
+  }
+
+  /**
+   * @param expectedSleep
+   * @return Calculate how long a single call took
+   */
+  private long singleCallDuration(final long expectedSleep) {
+    return (this.endTime - this.globalStartTime) + MIN_RPC_TIMEOUT + expectedSleep;
   }
 
   /**
@@ -262,7 +269,9 @@ public abstract class ServerCallable<T> implements Callable<T> {
    */
   protected static Throwable translateException(Throwable t) throws DoNotRetryIOException {
     if (t instanceof UndeclaredThrowableException) {
-      t = t.getCause();
+      if(t.getCause() != null) {
+        t = t.getCause();
+      }
     }
     if (t instanceof RemoteException) {
       t = ((RemoteException)t).unwrapRemoteException();

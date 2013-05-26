@@ -3118,6 +3118,16 @@ public final class AdminProtos {
       // optional uint32 versionOfOfflineNode = 2;
       boolean hasVersionOfOfflineNode();
       int getVersionOfOfflineNode();
+      
+      // repeated .ServerName favoredNodes = 3;
+      java.util.List<org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName> 
+          getFavoredNodesList();
+      org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName getFavoredNodes(int index);
+      int getFavoredNodesCount();
+      java.util.List<? extends org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerNameOrBuilder> 
+          getFavoredNodesOrBuilderList();
+      org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerNameOrBuilder getFavoredNodesOrBuilder(
+          int index);
     }
     public static final class RegionOpenInfo extends
         com.google.protobuf.GeneratedMessage
@@ -3171,9 +3181,31 @@ public final class AdminProtos {
         return versionOfOfflineNode_;
       }
       
+      // repeated .ServerName favoredNodes = 3;
+      public static final int FAVOREDNODES_FIELD_NUMBER = 3;
+      private java.util.List<org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName> favoredNodes_;
+      public java.util.List<org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName> getFavoredNodesList() {
+        return favoredNodes_;
+      }
+      public java.util.List<? extends org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerNameOrBuilder> 
+          getFavoredNodesOrBuilderList() {
+        return favoredNodes_;
+      }
+      public int getFavoredNodesCount() {
+        return favoredNodes_.size();
+      }
+      public org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName getFavoredNodes(int index) {
+        return favoredNodes_.get(index);
+      }
+      public org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerNameOrBuilder getFavoredNodesOrBuilder(
+          int index) {
+        return favoredNodes_.get(index);
+      }
+      
       private void initFields() {
         region_ = org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.RegionInfo.getDefaultInstance();
         versionOfOfflineNode_ = 0;
+        favoredNodes_ = java.util.Collections.emptyList();
       }
       private byte memoizedIsInitialized = -1;
       public final boolean isInitialized() {
@@ -3188,6 +3220,12 @@ public final class AdminProtos {
           memoizedIsInitialized = 0;
           return false;
         }
+        for (int i = 0; i < getFavoredNodesCount(); i++) {
+          if (!getFavoredNodes(i).isInitialized()) {
+            memoizedIsInitialized = 0;
+            return false;
+          }
+        }
         memoizedIsInitialized = 1;
         return true;
       }
@@ -3200,6 +3238,9 @@ public final class AdminProtos {
         }
         if (((bitField0_ & 0x00000002) == 0x00000002)) {
           output.writeUInt32(2, versionOfOfflineNode_);
+        }
+        for (int i = 0; i < favoredNodes_.size(); i++) {
+          output.writeMessage(3, favoredNodes_.get(i));
         }
         getUnknownFields().writeTo(output);
       }
@@ -3217,6 +3258,10 @@ public final class AdminProtos {
         if (((bitField0_ & 0x00000002) == 0x00000002)) {
           size += com.google.protobuf.CodedOutputStream
             .computeUInt32Size(2, versionOfOfflineNode_);
+        }
+        for (int i = 0; i < favoredNodes_.size(); i++) {
+          size += com.google.protobuf.CodedOutputStream
+            .computeMessageSize(3, favoredNodes_.get(i));
         }
         size += getUnknownFields().getSerializedSize();
         memoizedSerializedSize = size;
@@ -3251,6 +3296,8 @@ public final class AdminProtos {
           result = result && (getVersionOfOfflineNode()
               == other.getVersionOfOfflineNode());
         }
+        result = result && getFavoredNodesList()
+            .equals(other.getFavoredNodesList());
         result = result &&
             getUnknownFields().equals(other.getUnknownFields());
         return result;
@@ -3267,6 +3314,10 @@ public final class AdminProtos {
         if (hasVersionOfOfflineNode()) {
           hash = (37 * hash) + VERSIONOFOFFLINENODE_FIELD_NUMBER;
           hash = (53 * hash) + getVersionOfOfflineNode();
+        }
+        if (getFavoredNodesCount() > 0) {
+          hash = (37 * hash) + FAVOREDNODES_FIELD_NUMBER;
+          hash = (53 * hash) + getFavoredNodesList().hashCode();
         }
         hash = (29 * hash) + getUnknownFields().hashCode();
         return hash;
@@ -3377,6 +3428,7 @@ public final class AdminProtos {
         private void maybeForceBuilderInitialization() {
           if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
             getRegionFieldBuilder();
+            getFavoredNodesFieldBuilder();
           }
         }
         private static Builder create() {
@@ -3393,6 +3445,12 @@ public final class AdminProtos {
           bitField0_ = (bitField0_ & ~0x00000001);
           versionOfOfflineNode_ = 0;
           bitField0_ = (bitField0_ & ~0x00000002);
+          if (favoredNodesBuilder_ == null) {
+            favoredNodes_ = java.util.Collections.emptyList();
+            bitField0_ = (bitField0_ & ~0x00000004);
+          } else {
+            favoredNodesBuilder_.clear();
+          }
           return this;
         }
         
@@ -3443,6 +3501,15 @@ public final class AdminProtos {
             to_bitField0_ |= 0x00000002;
           }
           result.versionOfOfflineNode_ = versionOfOfflineNode_;
+          if (favoredNodesBuilder_ == null) {
+            if (((bitField0_ & 0x00000004) == 0x00000004)) {
+              favoredNodes_ = java.util.Collections.unmodifiableList(favoredNodes_);
+              bitField0_ = (bitField0_ & ~0x00000004);
+            }
+            result.favoredNodes_ = favoredNodes_;
+          } else {
+            result.favoredNodes_ = favoredNodesBuilder_.build();
+          }
           result.bitField0_ = to_bitField0_;
           onBuilt();
           return result;
@@ -3465,6 +3532,32 @@ public final class AdminProtos {
           if (other.hasVersionOfOfflineNode()) {
             setVersionOfOfflineNode(other.getVersionOfOfflineNode());
           }
+          if (favoredNodesBuilder_ == null) {
+            if (!other.favoredNodes_.isEmpty()) {
+              if (favoredNodes_.isEmpty()) {
+                favoredNodes_ = other.favoredNodes_;
+                bitField0_ = (bitField0_ & ~0x00000004);
+              } else {
+                ensureFavoredNodesIsMutable();
+                favoredNodes_.addAll(other.favoredNodes_);
+              }
+              onChanged();
+            }
+          } else {
+            if (!other.favoredNodes_.isEmpty()) {
+              if (favoredNodesBuilder_.isEmpty()) {
+                favoredNodesBuilder_.dispose();
+                favoredNodesBuilder_ = null;
+                favoredNodes_ = other.favoredNodes_;
+                bitField0_ = (bitField0_ & ~0x00000004);
+                favoredNodesBuilder_ = 
+                  com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders ?
+                     getFavoredNodesFieldBuilder() : null;
+              } else {
+                favoredNodesBuilder_.addAllMessages(other.favoredNodes_);
+              }
+            }
+          }
           this.mergeUnknownFields(other.getUnknownFields());
           return this;
         }
@@ -3477,6 +3570,12 @@ public final class AdminProtos {
           if (!getRegion().isInitialized()) {
             
             return false;
+          }
+          for (int i = 0; i < getFavoredNodesCount(); i++) {
+            if (!getFavoredNodes(i).isInitialized()) {
+              
+              return false;
+            }
           }
           return true;
         }
@@ -3516,6 +3615,12 @@ public final class AdminProtos {
               case 16: {
                 bitField0_ |= 0x00000002;
                 versionOfOfflineNode_ = input.readUInt32();
+                break;
+              }
+              case 26: {
+                org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.Builder subBuilder = org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.newBuilder();
+                input.readMessage(subBuilder, extensionRegistry);
+                addFavoredNodes(subBuilder.buildPartial());
                 break;
               }
             }
@@ -3633,6 +3738,192 @@ public final class AdminProtos {
           versionOfOfflineNode_ = 0;
           onChanged();
           return this;
+        }
+        
+        // repeated .ServerName favoredNodes = 3;
+        private java.util.List<org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName> favoredNodes_ =
+          java.util.Collections.emptyList();
+        private void ensureFavoredNodesIsMutable() {
+          if (!((bitField0_ & 0x00000004) == 0x00000004)) {
+            favoredNodes_ = new java.util.ArrayList<org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName>(favoredNodes_);
+            bitField0_ |= 0x00000004;
+           }
+        }
+        
+        private com.google.protobuf.RepeatedFieldBuilder<
+            org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName, org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.Builder, org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerNameOrBuilder> favoredNodesBuilder_;
+        
+        public java.util.List<org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName> getFavoredNodesList() {
+          if (favoredNodesBuilder_ == null) {
+            return java.util.Collections.unmodifiableList(favoredNodes_);
+          } else {
+            return favoredNodesBuilder_.getMessageList();
+          }
+        }
+        public int getFavoredNodesCount() {
+          if (favoredNodesBuilder_ == null) {
+            return favoredNodes_.size();
+          } else {
+            return favoredNodesBuilder_.getCount();
+          }
+        }
+        public org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName getFavoredNodes(int index) {
+          if (favoredNodesBuilder_ == null) {
+            return favoredNodes_.get(index);
+          } else {
+            return favoredNodesBuilder_.getMessage(index);
+          }
+        }
+        public Builder setFavoredNodes(
+            int index, org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName value) {
+          if (favoredNodesBuilder_ == null) {
+            if (value == null) {
+              throw new NullPointerException();
+            }
+            ensureFavoredNodesIsMutable();
+            favoredNodes_.set(index, value);
+            onChanged();
+          } else {
+            favoredNodesBuilder_.setMessage(index, value);
+          }
+          return this;
+        }
+        public Builder setFavoredNodes(
+            int index, org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.Builder builderForValue) {
+          if (favoredNodesBuilder_ == null) {
+            ensureFavoredNodesIsMutable();
+            favoredNodes_.set(index, builderForValue.build());
+            onChanged();
+          } else {
+            favoredNodesBuilder_.setMessage(index, builderForValue.build());
+          }
+          return this;
+        }
+        public Builder addFavoredNodes(org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName value) {
+          if (favoredNodesBuilder_ == null) {
+            if (value == null) {
+              throw new NullPointerException();
+            }
+            ensureFavoredNodesIsMutable();
+            favoredNodes_.add(value);
+            onChanged();
+          } else {
+            favoredNodesBuilder_.addMessage(value);
+          }
+          return this;
+        }
+        public Builder addFavoredNodes(
+            int index, org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName value) {
+          if (favoredNodesBuilder_ == null) {
+            if (value == null) {
+              throw new NullPointerException();
+            }
+            ensureFavoredNodesIsMutable();
+            favoredNodes_.add(index, value);
+            onChanged();
+          } else {
+            favoredNodesBuilder_.addMessage(index, value);
+          }
+          return this;
+        }
+        public Builder addFavoredNodes(
+            org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.Builder builderForValue) {
+          if (favoredNodesBuilder_ == null) {
+            ensureFavoredNodesIsMutable();
+            favoredNodes_.add(builderForValue.build());
+            onChanged();
+          } else {
+            favoredNodesBuilder_.addMessage(builderForValue.build());
+          }
+          return this;
+        }
+        public Builder addFavoredNodes(
+            int index, org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.Builder builderForValue) {
+          if (favoredNodesBuilder_ == null) {
+            ensureFavoredNodesIsMutable();
+            favoredNodes_.add(index, builderForValue.build());
+            onChanged();
+          } else {
+            favoredNodesBuilder_.addMessage(index, builderForValue.build());
+          }
+          return this;
+        }
+        public Builder addAllFavoredNodes(
+            java.lang.Iterable<? extends org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName> values) {
+          if (favoredNodesBuilder_ == null) {
+            ensureFavoredNodesIsMutable();
+            super.addAll(values, favoredNodes_);
+            onChanged();
+          } else {
+            favoredNodesBuilder_.addAllMessages(values);
+          }
+          return this;
+        }
+        public Builder clearFavoredNodes() {
+          if (favoredNodesBuilder_ == null) {
+            favoredNodes_ = java.util.Collections.emptyList();
+            bitField0_ = (bitField0_ & ~0x00000004);
+            onChanged();
+          } else {
+            favoredNodesBuilder_.clear();
+          }
+          return this;
+        }
+        public Builder removeFavoredNodes(int index) {
+          if (favoredNodesBuilder_ == null) {
+            ensureFavoredNodesIsMutable();
+            favoredNodes_.remove(index);
+            onChanged();
+          } else {
+            favoredNodesBuilder_.remove(index);
+          }
+          return this;
+        }
+        public org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.Builder getFavoredNodesBuilder(
+            int index) {
+          return getFavoredNodesFieldBuilder().getBuilder(index);
+        }
+        public org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerNameOrBuilder getFavoredNodesOrBuilder(
+            int index) {
+          if (favoredNodesBuilder_ == null) {
+            return favoredNodes_.get(index);  } else {
+            return favoredNodesBuilder_.getMessageOrBuilder(index);
+          }
+        }
+        public java.util.List<? extends org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerNameOrBuilder> 
+             getFavoredNodesOrBuilderList() {
+          if (favoredNodesBuilder_ != null) {
+            return favoredNodesBuilder_.getMessageOrBuilderList();
+          } else {
+            return java.util.Collections.unmodifiableList(favoredNodes_);
+          }
+        }
+        public org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.Builder addFavoredNodesBuilder() {
+          return getFavoredNodesFieldBuilder().addBuilder(
+              org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.getDefaultInstance());
+        }
+        public org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.Builder addFavoredNodesBuilder(
+            int index) {
+          return getFavoredNodesFieldBuilder().addBuilder(
+              index, org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.getDefaultInstance());
+        }
+        public java.util.List<org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.Builder> 
+             getFavoredNodesBuilderList() {
+          return getFavoredNodesFieldBuilder().getBuilderList();
+        }
+        private com.google.protobuf.RepeatedFieldBuilder<
+            org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName, org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.Builder, org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerNameOrBuilder> 
+            getFavoredNodesFieldBuilder() {
+          if (favoredNodesBuilder_ == null) {
+            favoredNodesBuilder_ = new com.google.protobuf.RepeatedFieldBuilder<
+                org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName, org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerName.Builder, org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.ServerNameOrBuilder>(
+                    favoredNodes_,
+                    ((bitField0_ & 0x00000004) == 0x00000004),
+                    getParentForChildren(),
+                    isClean());
+            favoredNodes_ = null;
+          }
+          return favoredNodesBuilder_;
         }
         
         // @@protoc_insertion_point(builder_scope:OpenRegionRequest.RegionOpenInfo)
@@ -13864,6 +14155,11 @@ public final class AdminProtos {
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryRequest request,
           com.google.protobuf.RpcCallback<org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryResponse> done);
       
+      public abstract void replay(
+          com.google.protobuf.RpcController controller,
+          org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest request,
+          com.google.protobuf.RpcCallback<org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse> done);
+      
       public abstract void rollWALWriter(
           com.google.protobuf.RpcController controller,
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterRequest request,
@@ -13965,6 +14261,14 @@ public final class AdminProtos {
         }
         
         @java.lang.Override
+        public  void replay(
+            com.google.protobuf.RpcController controller,
+            org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest request,
+            com.google.protobuf.RpcCallback<org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse> done) {
+          impl.replay(controller, request, done);
+        }
+        
+        @java.lang.Override
         public  void rollWALWriter(
             com.google.protobuf.RpcController controller,
             org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterRequest request,
@@ -14031,10 +14335,12 @@ public final class AdminProtos {
             case 9:
               return impl.replicateWALEntry(controller, (org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryRequest)request);
             case 10:
-              return impl.rollWALWriter(controller, (org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterRequest)request);
+              return impl.replay(controller, (org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest)request);
             case 11:
-              return impl.getServerInfo(controller, (org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoRequest)request);
+              return impl.rollWALWriter(controller, (org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterRequest)request);
             case 12:
+              return impl.getServerInfo(controller, (org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoRequest)request);
+            case 13:
               return impl.stopServer(controller, (org.apache.hadoop.hbase.protobuf.generated.AdminProtos.StopServerRequest)request);
             default:
               throw new java.lang.AssertionError("Can't get here.");
@@ -14071,10 +14377,12 @@ public final class AdminProtos {
             case 9:
               return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryRequest.getDefaultInstance();
             case 10:
-              return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterRequest.getDefaultInstance();
+              return org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest.getDefaultInstance();
             case 11:
-              return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoRequest.getDefaultInstance();
+              return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterRequest.getDefaultInstance();
             case 12:
+              return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoRequest.getDefaultInstance();
+            case 13:
               return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.StopServerRequest.getDefaultInstance();
             default:
               throw new java.lang.AssertionError("Can't get here.");
@@ -14111,10 +14419,12 @@ public final class AdminProtos {
             case 9:
               return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryResponse.getDefaultInstance();
             case 10:
-              return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterResponse.getDefaultInstance();
+              return org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse.getDefaultInstance();
             case 11:
-              return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoResponse.getDefaultInstance();
+              return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterResponse.getDefaultInstance();
             case 12:
+              return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoResponse.getDefaultInstance();
+            case 13:
               return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.StopServerResponse.getDefaultInstance();
             default:
               throw new java.lang.AssertionError("Can't get here.");
@@ -14173,6 +14483,11 @@ public final class AdminProtos {
         com.google.protobuf.RpcController controller,
         org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryRequest request,
         com.google.protobuf.RpcCallback<org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryResponse> done);
+    
+    public abstract void replay(
+        com.google.protobuf.RpcController controller,
+        org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest request,
+        com.google.protobuf.RpcCallback<org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse> done);
     
     public abstract void rollWALWriter(
         com.google.protobuf.RpcController controller,
@@ -14262,16 +14577,21 @@ public final class AdminProtos {
               done));
           return;
         case 10:
+          this.replay(controller, (org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest)request,
+            com.google.protobuf.RpcUtil.<org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse>specializeCallback(
+              done));
+          return;
+        case 11:
           this.rollWALWriter(controller, (org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterRequest)request,
             com.google.protobuf.RpcUtil.<org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterResponse>specializeCallback(
               done));
           return;
-        case 11:
+        case 12:
           this.getServerInfo(controller, (org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoRequest)request,
             com.google.protobuf.RpcUtil.<org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoResponse>specializeCallback(
               done));
           return;
-        case 12:
+        case 13:
           this.stopServer(controller, (org.apache.hadoop.hbase.protobuf.generated.AdminProtos.StopServerRequest)request,
             com.google.protobuf.RpcUtil.<org.apache.hadoop.hbase.protobuf.generated.AdminProtos.StopServerResponse>specializeCallback(
               done));
@@ -14311,10 +14631,12 @@ public final class AdminProtos {
         case 9:
           return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryRequest.getDefaultInstance();
         case 10:
-          return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterRequest.getDefaultInstance();
+          return org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest.getDefaultInstance();
         case 11:
-          return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoRequest.getDefaultInstance();
+          return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterRequest.getDefaultInstance();
         case 12:
+          return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoRequest.getDefaultInstance();
+        case 13:
           return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.StopServerRequest.getDefaultInstance();
         default:
           throw new java.lang.AssertionError("Can't get here.");
@@ -14351,10 +14673,12 @@ public final class AdminProtos {
         case 9:
           return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryResponse.getDefaultInstance();
         case 10:
-          return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterResponse.getDefaultInstance();
+          return org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse.getDefaultInstance();
         case 11:
-          return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoResponse.getDefaultInstance();
+          return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterResponse.getDefaultInstance();
         case 12:
+          return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoResponse.getDefaultInstance();
+        case 13:
           return org.apache.hadoop.hbase.protobuf.generated.AdminProtos.StopServerResponse.getDefaultInstance();
         default:
           throw new java.lang.AssertionError("Can't get here.");
@@ -14527,12 +14851,27 @@ public final class AdminProtos {
             org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryResponse.getDefaultInstance()));
       }
       
+      public  void replay(
+          com.google.protobuf.RpcController controller,
+          org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest request,
+          com.google.protobuf.RpcCallback<org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse> done) {
+        channel.callMethod(
+          getDescriptor().getMethods().get(10),
+          controller,
+          request,
+          org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse.getDefaultInstance(),
+          com.google.protobuf.RpcUtil.generalizeCallback(
+            done,
+            org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse.class,
+            org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse.getDefaultInstance()));
+      }
+      
       public  void rollWALWriter(
           com.google.protobuf.RpcController controller,
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterRequest request,
           com.google.protobuf.RpcCallback<org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterResponse> done) {
         channel.callMethod(
-          getDescriptor().getMethods().get(10),
+          getDescriptor().getMethods().get(11),
           controller,
           request,
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterResponse.getDefaultInstance(),
@@ -14547,7 +14886,7 @@ public final class AdminProtos {
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoRequest request,
           com.google.protobuf.RpcCallback<org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoResponse> done) {
         channel.callMethod(
-          getDescriptor().getMethods().get(11),
+          getDescriptor().getMethods().get(12),
           controller,
           request,
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoResponse.getDefaultInstance(),
@@ -14562,7 +14901,7 @@ public final class AdminProtos {
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.StopServerRequest request,
           com.google.protobuf.RpcCallback<org.apache.hadoop.hbase.protobuf.generated.AdminProtos.StopServerResponse> done) {
         channel.callMethod(
-          getDescriptor().getMethods().get(12),
+          getDescriptor().getMethods().get(13),
           controller,
           request,
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.StopServerResponse.getDefaultInstance(),
@@ -14627,6 +14966,11 @@ public final class AdminProtos {
       public org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryResponse replicateWALEntry(
           com.google.protobuf.RpcController controller,
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryRequest request)
+          throws com.google.protobuf.ServiceException;
+      
+      public org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse replay(
+          com.google.protobuf.RpcController controller,
+          org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest request)
           throws com.google.protobuf.ServiceException;
       
       public org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterResponse rollWALWriter(
@@ -14772,12 +15116,24 @@ public final class AdminProtos {
       }
       
       
+      public org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse replay(
+          com.google.protobuf.RpcController controller,
+          org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiRequest request)
+          throws com.google.protobuf.ServiceException {
+        return (org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse) channel.callBlockingMethod(
+          getDescriptor().getMethods().get(10),
+          controller,
+          request,
+          org.apache.hadoop.hbase.protobuf.generated.ClientProtos.MultiResponse.getDefaultInstance());
+      }
+      
+      
       public org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterResponse rollWALWriter(
           com.google.protobuf.RpcController controller,
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterRequest request)
           throws com.google.protobuf.ServiceException {
         return (org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterResponse) channel.callBlockingMethod(
-          getDescriptor().getMethods().get(10),
+          getDescriptor().getMethods().get(11),
           controller,
           request,
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.RollWALWriterResponse.getDefaultInstance());
@@ -14789,7 +15145,7 @@ public final class AdminProtos {
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoRequest request)
           throws com.google.protobuf.ServiceException {
         return (org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoResponse) channel.callBlockingMethod(
-          getDescriptor().getMethods().get(11),
+          getDescriptor().getMethods().get(12),
           controller,
           request,
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.GetServerInfoResponse.getDefaultInstance());
@@ -14801,7 +15157,7 @@ public final class AdminProtos {
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.StopServerRequest request)
           throws com.google.protobuf.ServiceException {
         return (org.apache.hadoop.hbase.protobuf.generated.AdminProtos.StopServerResponse) channel.callBlockingMethod(
-          getDescriptor().getMethods().get(12),
+          getDescriptor().getMethods().get(13),
           controller,
           request,
           org.apache.hadoop.hbase.protobuf.generated.AdminProtos.StopServerResponse.getDefaultInstance());
@@ -14964,77 +15320,80 @@ public final class AdminProtos {
       descriptor;
   static {
     java.lang.String[] descriptorData = {
-      "\n\013Admin.proto\032\013hbase.proto\032\tWAL.proto\"Q\n" +
-      "\024GetRegionInfoRequest\022 \n\006region\030\001 \002(\0132\020." +
-      "RegionSpecifier\022\027\n\017compactionState\030\002 \001(\010" +
-      "\"\301\001\n\025GetRegionInfoResponse\022\037\n\nregionInfo" +
-      "\030\001 \002(\0132\013.RegionInfo\022?\n\017compactionState\030\002" +
-      " \001(\0162&.GetRegionInfoResponse.CompactionS" +
-      "tate\"F\n\017CompactionState\022\010\n\004NONE\020\000\022\t\n\005MIN" +
-      "OR\020\001\022\t\n\005MAJOR\020\002\022\023\n\017MAJOR_AND_MINOR\020\003\"G\n\023" +
-      "GetStoreFileRequest\022 \n\006region\030\001 \002(\0132\020.Re" +
-      "gionSpecifier\022\016\n\006family\030\002 \003(\014\")\n\024GetStor",
-      "eFileResponse\022\021\n\tstoreFile\030\001 \003(\t\"\030\n\026GetO" +
-      "nlineRegionRequest\":\n\027GetOnlineRegionRes" +
-      "ponse\022\037\n\nregionInfo\030\001 \003(\0132\013.RegionInfo\"\225" +
-      "\001\n\021OpenRegionRequest\0223\n\010openInfo\030\001 \003(\0132!" +
-      ".OpenRegionRequest.RegionOpenInfo\032K\n\016Reg" +
-      "ionOpenInfo\022\033\n\006region\030\001 \002(\0132\013.RegionInfo" +
-      "\022\034\n\024versionOfOfflineNode\030\002 \001(\r\"\234\001\n\022OpenR" +
-      "egionResponse\022<\n\014openingState\030\001 \003(\0162&.Op" +
-      "enRegionResponse.RegionOpeningState\"H\n\022R" +
-      "egionOpeningState\022\n\n\006OPENED\020\000\022\022\n\016ALREADY",
-      "_OPENED\020\001\022\022\n\016FAILED_OPENING\020\002\"\232\001\n\022CloseR" +
-      "egionRequest\022 \n\006region\030\001 \002(\0132\020.RegionSpe" +
-      "cifier\022\034\n\024versionOfClosingNode\030\002 \001(\r\022\034\n\016" +
-      "transitionInZK\030\003 \001(\010:\004true\022&\n\021destinatio" +
-      "nServer\030\004 \001(\0132\013.ServerName\"%\n\023CloseRegio" +
-      "nResponse\022\016\n\006closed\030\001 \002(\010\"M\n\022FlushRegion" +
-      "Request\022 \n\006region\030\001 \002(\0132\020.RegionSpecifie" +
-      "r\022\025\n\rifOlderThanTs\030\002 \001(\004\"=\n\023FlushRegionR" +
-      "esponse\022\025\n\rlastFlushTime\030\001 \002(\004\022\017\n\007flushe" +
-      "d\030\002 \001(\010\"J\n\022SplitRegionRequest\022 \n\006region\030",
-      "\001 \002(\0132\020.RegionSpecifier\022\022\n\nsplitPoint\030\002 " +
-      "\001(\014\"\025\n\023SplitRegionResponse\"W\n\024CompactReg" +
-      "ionRequest\022 \n\006region\030\001 \002(\0132\020.RegionSpeci" +
-      "fier\022\r\n\005major\030\002 \001(\010\022\016\n\006family\030\003 \001(\014\"\027\n\025C" +
-      "ompactRegionResponse\"t\n\023MergeRegionsRequ" +
-      "est\022!\n\007regionA\030\001 \002(\0132\020.RegionSpecifier\022!" +
-      "\n\007regionB\030\002 \002(\0132\020.RegionSpecifier\022\027\n\010for" +
-      "cible\030\003 \001(\010:\005false\"\026\n\024MergeRegionsRespon" +
-      "se\"7\n\010WALEntry\022\024\n\003key\030\001 \002(\0132\007.WALKey\022\025\n\r" +
-      "keyValueBytes\030\002 \003(\014\"4\n\030ReplicateWALEntry",
-      "Request\022\030\n\005entry\030\001 \003(\0132\t.WALEntry\"\033\n\031Rep" +
-      "licateWALEntryResponse\"\026\n\024RollWALWriterR" +
-      "equest\".\n\025RollWALWriterResponse\022\025\n\rregio" +
-      "nToFlush\030\001 \003(\014\"#\n\021StopServerRequest\022\016\n\006r" +
-      "eason\030\001 \002(\t\"\024\n\022StopServerResponse\"\026\n\024Get" +
-      "ServerInfoRequest\"@\n\nServerInfo\022\037\n\nserve" +
-      "rName\030\001 \002(\0132\013.ServerName\022\021\n\twebuiPort\030\002 " +
-      "\001(\r\"8\n\025GetServerInfoResponse\022\037\n\nserverIn" +
-      "fo\030\001 \002(\0132\013.ServerInfo2\266\006\n\014AdminService\022>" +
-      "\n\rgetRegionInfo\022\025.GetRegionInfoRequest\032\026",
-      ".GetRegionInfoResponse\022;\n\014getStoreFile\022\024" +
-      ".GetStoreFileRequest\032\025.GetStoreFileRespo" +
-      "nse\022D\n\017getOnlineRegion\022\027.GetOnlineRegion" +
-      "Request\032\030.GetOnlineRegionResponse\0225\n\nope" +
-      "nRegion\022\022.OpenRegionRequest\032\023.OpenRegion" +
-      "Response\0228\n\013closeRegion\022\023.CloseRegionReq" +
-      "uest\032\024.CloseRegionResponse\0228\n\013flushRegio" +
-      "n\022\023.FlushRegionRequest\032\024.FlushRegionResp" +
-      "onse\0228\n\013splitRegion\022\023.SplitRegionRequest" +
-      "\032\024.SplitRegionResponse\022>\n\rcompactRegion\022",
-      "\025.CompactRegionRequest\032\026.CompactRegionRe" +
-      "sponse\022;\n\014mergeRegions\022\024.MergeRegionsReq" +
-      "uest\032\025.MergeRegionsResponse\022J\n\021replicate" +
-      "WALEntry\022\031.ReplicateWALEntryRequest\032\032.Re" +
-      "plicateWALEntryResponse\022>\n\rrollWALWriter" +
-      "\022\025.RollWALWriterRequest\032\026.RollWALWriterR" +
-      "esponse\022>\n\rgetServerInfo\022\025.GetServerInfo" +
-      "Request\032\026.GetServerInfoResponse\0225\n\nstopS" +
-      "erver\022\022.StopServerRequest\032\023.StopServerRe" +
-      "sponseBA\n*org.apache.hadoop.hbase.protob",
-      "uf.generatedB\013AdminProtosH\001\210\001\001\240\001\001"
+      "\n\013Admin.proto\032\014Client.proto\032\013hbase.proto" +
+      "\032\tWAL.proto\"Q\n\024GetRegionInfoRequest\022 \n\006r" +
+      "egion\030\001 \002(\0132\020.RegionSpecifier\022\027\n\017compact" +
+      "ionState\030\002 \001(\010\"\301\001\n\025GetRegionInfoResponse" +
+      "\022\037\n\nregionInfo\030\001 \002(\0132\013.RegionInfo\022?\n\017com" +
+      "pactionState\030\002 \001(\0162&.GetRegionInfoRespon" +
+      "se.CompactionState\"F\n\017CompactionState\022\010\n" +
+      "\004NONE\020\000\022\t\n\005MINOR\020\001\022\t\n\005MAJOR\020\002\022\023\n\017MAJOR_A" +
+      "ND_MINOR\020\003\"G\n\023GetStoreFileRequest\022 \n\006reg" +
+      "ion\030\001 \002(\0132\020.RegionSpecifier\022\016\n\006family\030\002 ",
+      "\003(\014\")\n\024GetStoreFileResponse\022\021\n\tstoreFile" +
+      "\030\001 \003(\t\"\030\n\026GetOnlineRegionRequest\":\n\027GetO" +
+      "nlineRegionResponse\022\037\n\nregionInfo\030\001 \003(\0132" +
+      "\013.RegionInfo\"\270\001\n\021OpenRegionRequest\0223\n\010op" +
+      "enInfo\030\001 \003(\0132!.OpenRegionRequest.RegionO" +
+      "penInfo\032n\n\016RegionOpenInfo\022\033\n\006region\030\001 \002(" +
+      "\0132\013.RegionInfo\022\034\n\024versionOfOfflineNode\030\002" +
+      " \001(\r\022!\n\014favoredNodes\030\003 \003(\0132\013.ServerName\"" +
+      "\234\001\n\022OpenRegionResponse\022<\n\014openingState\030\001" +
+      " \003(\0162&.OpenRegionResponse.RegionOpeningS",
+      "tate\"H\n\022RegionOpeningState\022\n\n\006OPENED\020\000\022\022" +
+      "\n\016ALREADY_OPENED\020\001\022\022\n\016FAILED_OPENING\020\002\"\232" +
+      "\001\n\022CloseRegionRequest\022 \n\006region\030\001 \002(\0132\020." +
+      "RegionSpecifier\022\034\n\024versionOfClosingNode\030" +
+      "\002 \001(\r\022\034\n\016transitionInZK\030\003 \001(\010:\004true\022&\n\021d" +
+      "estinationServer\030\004 \001(\0132\013.ServerName\"%\n\023C" +
+      "loseRegionResponse\022\016\n\006closed\030\001 \002(\010\"M\n\022Fl" +
+      "ushRegionRequest\022 \n\006region\030\001 \002(\0132\020.Regio" +
+      "nSpecifier\022\025\n\rifOlderThanTs\030\002 \001(\004\"=\n\023Flu" +
+      "shRegionResponse\022\025\n\rlastFlushTime\030\001 \002(\004\022",
+      "\017\n\007flushed\030\002 \001(\010\"J\n\022SplitRegionRequest\022 " +
+      "\n\006region\030\001 \002(\0132\020.RegionSpecifier\022\022\n\nspli" +
+      "tPoint\030\002 \001(\014\"\025\n\023SplitRegionResponse\"W\n\024C" +
+      "ompactRegionRequest\022 \n\006region\030\001 \002(\0132\020.Re" +
+      "gionSpecifier\022\r\n\005major\030\002 \001(\010\022\016\n\006family\030\003" +
+      " \001(\014\"\027\n\025CompactRegionResponse\"t\n\023MergeRe" +
+      "gionsRequest\022!\n\007regionA\030\001 \002(\0132\020.RegionSp" +
+      "ecifier\022!\n\007regionB\030\002 \002(\0132\020.RegionSpecifi" +
+      "er\022\027\n\010forcible\030\003 \001(\010:\005false\"\026\n\024MergeRegi" +
+      "onsResponse\"7\n\010WALEntry\022\024\n\003key\030\001 \002(\0132\007.W",
+      "ALKey\022\025\n\rkeyValueBytes\030\002 \003(\014\"4\n\030Replicat" +
+      "eWALEntryRequest\022\030\n\005entry\030\001 \003(\0132\t.WALEnt" +
+      "ry\"\033\n\031ReplicateWALEntryResponse\"\026\n\024RollW" +
+      "ALWriterRequest\".\n\025RollWALWriterResponse" +
+      "\022\025\n\rregionToFlush\030\001 \003(\014\"#\n\021StopServerReq" +
+      "uest\022\016\n\006reason\030\001 \002(\t\"\024\n\022StopServerRespon" +
+      "se\"\026\n\024GetServerInfoRequest\"@\n\nServerInfo" +
+      "\022\037\n\nserverName\030\001 \002(\0132\013.ServerName\022\021\n\tweb" +
+      "uiPort\030\002 \001(\r\"8\n\025GetServerInfoResponse\022\037\n" +
+      "\nserverInfo\030\001 \002(\0132\013.ServerInfo2\337\006\n\014Admin",
+      "Service\022>\n\rgetRegionInfo\022\025.GetRegionInfo" +
+      "Request\032\026.GetRegionInfoResponse\022;\n\014getSt" +
+      "oreFile\022\024.GetStoreFileRequest\032\025.GetStore" +
+      "FileResponse\022D\n\017getOnlineRegion\022\027.GetOnl" +
+      "ineRegionRequest\032\030.GetOnlineRegionRespon" +
+      "se\0225\n\nopenRegion\022\022.OpenRegionRequest\032\023.O" +
+      "penRegionResponse\0228\n\013closeRegion\022\023.Close" +
+      "RegionRequest\032\024.CloseRegionResponse\0228\n\013f" +
+      "lushRegion\022\023.FlushRegionRequest\032\024.FlushR" +
+      "egionResponse\0228\n\013splitRegion\022\023.SplitRegi",
+      "onRequest\032\024.SplitRegionResponse\022>\n\rcompa" +
+      "ctRegion\022\025.CompactRegionRequest\032\026.Compac" +
+      "tRegionResponse\022;\n\014mergeRegions\022\024.MergeR" +
+      "egionsRequest\032\025.MergeRegionsResponse\022J\n\021" +
+      "replicateWALEntry\022\031.ReplicateWALEntryReq" +
+      "uest\032\032.ReplicateWALEntryResponse\022\'\n\006repl" +
+      "ay\022\r.MultiRequest\032\016.MultiResponse\022>\n\rrol" +
+      "lWALWriter\022\025.RollWALWriterRequest\032\026.Roll" +
+      "WALWriterResponse\022>\n\rgetServerInfo\022\025.Get" +
+      "ServerInfoRequest\032\026.GetServerInfoRespons",
+      "e\0225\n\nstopServer\022\022.StopServerRequest\032\023.St" +
+      "opServerResponseBA\n*org.apache.hadoop.hb" +
+      "ase.protobuf.generatedB\013AdminProtosH\001\210\001\001" +
+      "\240\001\001"
     };
     com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner assigner =
       new com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner() {
@@ -15102,7 +15461,7 @@ public final class AdminProtos {
           internal_static_OpenRegionRequest_RegionOpenInfo_fieldAccessorTable = new
             com.google.protobuf.GeneratedMessage.FieldAccessorTable(
               internal_static_OpenRegionRequest_RegionOpenInfo_descriptor,
-              new java.lang.String[] { "Region", "VersionOfOfflineNode", },
+              new java.lang.String[] { "Region", "VersionOfOfflineNode", "FavoredNodes", },
               org.apache.hadoop.hbase.protobuf.generated.AdminProtos.OpenRegionRequest.RegionOpenInfo.class,
               org.apache.hadoop.hbase.protobuf.generated.AdminProtos.OpenRegionRequest.RegionOpenInfo.Builder.class);
           internal_static_OpenRegionResponse_descriptor =
@@ -15279,6 +15638,7 @@ public final class AdminProtos {
     com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
         new com.google.protobuf.Descriptors.FileDescriptor[] {
+          org.apache.hadoop.hbase.protobuf.generated.ClientProtos.getDescriptor(),
           org.apache.hadoop.hbase.protobuf.generated.HBaseProtos.getDescriptor(),
           org.apache.hadoop.hbase.protobuf.generated.WALProtos.getDescriptor(),
         }, assigner);

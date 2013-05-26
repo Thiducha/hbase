@@ -133,7 +133,7 @@ public class MetaEditor {
    * @param ps Put to add to .META.
    * @throws IOException
    */
-  static void putsToMetaTable(final CatalogTracker ct, final List<Put> ps)
+  public static void putsToMetaTable(final CatalogTracker ct, final List<Put> ps)
   throws IOException {
     HTable t = MetaReader.getMetaHTable(ct);
     try {
@@ -491,25 +491,6 @@ public class MetaEditor {
     if (regionsToAdd != null && regionsToAdd.size() > 0) {
       LOG.debug("Add to META, regions: " + regionsToAdd);
     }
-  }
-
-  /**
-   * Deletes daughters references in offlined split parent.
-   * @param catalogTracker
-   * @param parent Parent row we're to remove daughter reference from
-   * @throws org.apache.hadoop.hbase.exceptions.NotAllMetaRegionsOnlineException
-   * @throws IOException
-   */
-  public static void deleteDaughtersReferencesInParent(CatalogTracker catalogTracker,
-      final HRegionInfo parent)
-  throws NotAllMetaRegionsOnlineException, IOException {
-    Delete delete = new Delete(parent.getRegionName());
-    delete.deleteColumns(HConstants.CATALOG_FAMILY, HConstants.SPLITA_QUALIFIER);
-    delete.deleteColumns(HConstants.CATALOG_FAMILY, HConstants.SPLITB_QUALIFIER);
-    deleteFromMetaTable(catalogTracker, delete);
-    LOG.info("Deleted daughters references, qualifier=" + Bytes.toStringBinary(HConstants.SPLITA_QUALIFIER) +
-      " and qualifier=" + Bytes.toStringBinary(HConstants.SPLITB_QUALIFIER) +
-      ", from parent " + parent.getRegionNameAsString());
   }
 
   /**

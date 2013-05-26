@@ -65,6 +65,7 @@ import org.apache.hadoop.hbase.exceptions.UnknownSnapshotException;
 import org.apache.hadoop.hbase.exceptions.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel;
 import org.apache.hadoop.hbase.ipc.MasterCoprocessorRpcChannel;
+import org.apache.hadoop.hbase.ipc.PayloadCarryingRpcController;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.protobuf.ResponseConverter;
@@ -572,10 +573,12 @@ public class HBaseAdmin implements Abortable, Closeable {
           firstMetaServer.getRegionInfo().getRegionName(), scan, 1, true);
         Result[] values = null;
         // Get a batch at a time.
-        ClientService.BlockingInterface server = connection.getClient(firstMetaServer.getServerName());
+        ClientService.BlockingInterface server = connection.getClient(firstMetaServer
+            .getServerName());
+        PayloadCarryingRpcController controller = new PayloadCarryingRpcController();
         try {
-          ScanResponse response = server.scan(null, request);
-          values = ResponseConverter.getResults(response);
+          ScanResponse response = server.scan(controller, request);
+          values = ResponseConverter.getResults(controller.cellScanner(), response);
         } catch (ServiceException se) {
           throw ProtobufUtil.getRemoteException(se);
         }
@@ -1813,6 +1816,11 @@ public class HBaseAdmin implements Abortable, Closeable {
    */
   public void modifyTable(final byte [] tableName, final HTableDescriptor htd)
   throws IOException {
+    if (!Bytes.equals(tableName, htd.getName())) {
+      throw new IllegalArgumentException("the specified table name '" + Bytes.toString(tableName) +
+        "' doesn't match with the HTD one: " + htd.getNameAsString());
+    }
+
     execute(new MasterAdminCallable<Void>() {
       @Override
       public Void call() throws ServiceException {
@@ -2553,6 +2561,35 @@ public class HBaseAdmin implements Abortable, Closeable {
   }
 
   /**
+   * List all the completed snapshots matching the given regular expression.
+   *
+   * @param regex The regular expression to match against
+   * @return - returns a List of SnapshotDescription
+   * @throws IOException if a remote or network exception occurs
+   */
+  public List<SnapshotDescription> listSnapshots(String regex) throws IOException {
+    return listSnapshots(Pattern.compile(regex));
+  }
+  
+  /**
+   * List all the completed snapshots matching the given pattern.
+   *
+   * @param pattern The compiled regular expression to match against
+   * @return - returns a List of SnapshotDescription
+   * @throws IOException if a remote or network exception occurs
+   */
+  public List<SnapshotDescription> listSnapshots(Pattern pattern) throws IOException {
+    List<SnapshotDescription> matched = new LinkedList<SnapshotDescription>();
+    List<SnapshotDescription> snapshots = listSnapshots();
+    for (SnapshotDescription snapshot : snapshots) {
+      if (pattern.matcher(snapshot.getName()).matches()) {
+        matched.add(snapshot);
+      }
+    }
+    return matched;
+  }
+  
+  /**
    * Delete an existing snapshot.
    * @param snapshotName name of the snapshot
    * @throws IOException if a remote or network exception occurs
@@ -2582,6 +2619,36 @@ public class HBaseAdmin implements Abortable, Closeable {
     });
   }
 
+  /**
+   * Delete existing snapshots whose names match the pattern passed.
+   * @param regex The regular expression to match against
+   * @throws IOException if a remote or network exception occurs
+   */
+  public void deleteSnapshots(final String regex) throws IOException {
+    deleteSnapshots(Pattern.compile(regex));
+  }
+  
+  /**
+   * Delete existing snapshots whose names match the pattern passed.
+   * @param pattern pattern for names of the snapshot to match
+   * @throws IOException if a remote or network exception occurs
+   */
+  public void deleteSnapshots(final Pattern pattern) throws IOException {
+    List<SnapshotDescription> snapshots = listSnapshots(pattern);
+    for (final SnapshotDescription snapshot : snapshots) {
+      // do the delete
+      execute(new MasterAdminCallable<Void>() {
+        @Override
+        public Void call() throws ServiceException {
+          masterAdmin.deleteSnapshot(
+            null,
+            DeleteSnapshotRequest.newBuilder().setSnapshot(snapshot).build());
+          return null;
+        }
+      });
+    }
+  }
+  
   /**
    * @see {@link #execute(MasterAdminCallable<V>)}
    */

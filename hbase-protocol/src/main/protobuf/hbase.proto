@@ -81,6 +81,14 @@ message RegionInfo {
   optional bytes endKey = 4;
   optional bool offline = 5;
   optional bool split = 6;
+  optional bool recovering = 7;
+}
+
+/**
+ * Protocol buffer for favored nodes
+ */
+message FavoredNodes {
+  repeated ServerName favoredNode = 1;
 }
 
 /**

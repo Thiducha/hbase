@@ -95,6 +95,7 @@ import org.apache.hadoop.hbase.exceptions.DroppedSnapshotException;
 import org.apache.hadoop.hbase.exceptions.FailedSanityCheckException;
 import org.apache.hadoop.hbase.exceptions.NoSuchColumnFamilyException;
 import org.apache.hadoop.hbase.exceptions.NotServingRegionException;
+import org.apache.hadoop.hbase.exceptions.RegionInRecoveryException;
 import org.apache.hadoop.hbase.exceptions.RegionTooBusyException;
 import org.apache.hadoop.hbase.exceptions.UnknownProtocolException;
 import org.apache.hadoop.hbase.exceptions.UnknownScannerException;
@@ -200,6 +201,16 @@ public class HRegion implements HeapSize { // , Writable{
 
   protected long completeSequenceId = -1L;
 
+  /**
+   * Operation enum is used in {@link HRegion#startRegionOperation} to provide operation context for
+   * startRegionOperation to possibly invoke different checks before any region operations. Not all
+   * operations have to be defined here. It's only needed when a special check is need in
+   * startRegionOperation
+   */
+  protected enum Operation {
+    ANY, GET, PUT, DELETE, SCAN, APPEND, INCREMENT, SPLIT_REGION, MERGE_REGION
+  }
+
   //////////////////////////////////////////////////////////////////////////////
   // Members
   //////////////////////////////////////////////////////////////////////////////
@@ -279,6 +290,11 @@ public class HRegion implements HeapSize { // , Writable{
 
   private final AtomicInteger majorInProgress = new AtomicInteger(0);
   private final AtomicInteger minorInProgress = new AtomicInteger(0);
+
+  /**
+   * Min sequence id stored in store files of a region when opening the region
+   */
+  private long minSeqIdForLogReplay = -1;
 
   /**
    * @return The smallest mvcc readPoint across all the scanners in this
@@ -641,6 +657,9 @@ public class HRegion implements HeapSize { // , Writable{
           long storeSeqIdForReplay = store.getMaxSequenceId(false);
           maxSeqIdInStores.put(store.getColumnFamilyName().getBytes(),
               storeSeqIdForReplay);
+          if (this.minSeqIdForLogReplay == -1 || storeSeqIdForReplay < this.minSeqIdForLogReplay) {
+            this.minSeqIdForLogReplay = storeSeqIdForReplay;
+          }
           // Include bulk loaded files when determining seqIdForAssignment
           long storeSeqIdForAssignment = store.getMaxSequenceId(true);
           if (maxSeqId == -1 || storeSeqIdForAssignment > maxSeqId) {
@@ -776,6 +795,21 @@ public class HRegion implements HeapSize { // , Writable{
    */
   public boolean isClosing() {
     return this.closing.get();
+  }
+
+  /**
+   * Reset recovering state of current region
+   * @param newState
+   */
+  public void setRecovering(boolean newState) {
+    this.getRegionInfo().setRecovering(newState);
+  }
+  
+  /**
+   * @return True if current region is in recovering
+   */
+  public boolean isRecovering() {
+    return this.getRegionInfo().isRecovering();
   }
 
   /** @return true if region is available (not closed and not closing) */
@@ -1264,7 +1298,7 @@ public class HRegion implements HeapSize { // , Writable{
    * <p>This method may block for some time, so it should not be called from a
    * time-sensitive thread.
    *
-   * @return true if cache was flushed
+   * @return true if the region needs compacting
    *
    * @throws IOException general io exceptions
    * @throws DroppedSnapshotException Thrown when replay of hlog is required
@@ -1336,6 +1370,9 @@ public class HRegion implements HeapSize { // , Writable{
    * Should the memstore be flushed now
    */
   boolean shouldFlush() {
+    if (flushCheckInterval <= 0) { //disabled
+      return false;
+    }
     long now = EnvironmentEdgeManager.currentTimeMillis();
     //if we flushed in the recent past, we don't need to do again now
     if ((now - getLastFlushTime() < flushCheckInterval)) {
@@ -1470,10 +1507,10 @@ public class HRegion implements HeapSize { // , Writable{
     } finally {
       this.updatesLock.writeLock().unlock();
     }
-    String s = "Finished snapshotting " + this +
-      ", commencing wait for mvcc, flushsize=" + flushsize;
+    String s = "Finished memstore snapshotting " + this +
+      ", syncing WAL and waiting on mvcc, flushsize=" + flushsize;
     status.setStatus(s);
-    LOG.debug(s);
+    if (LOG.isTraceEnabled()) LOG.trace(s);
 
     // sync unflushed WAL changes when deferred log sync is enabled
     // see HBASE-8208 for details
@@ -1488,8 +1525,9 @@ public class HRegion implements HeapSize { // , Writable{
     // were removed via a rollbackMemstore could be written to Hfiles.
     mvcc.waitForRead(w);
 
-    status.setStatus("Flushing stores");
-    LOG.debug("Finished snapshotting, commencing flushing stores");
+    s = "Flushing stores of " + this;
+    status.setStatus(s);
+    if (LOG.isTraceEnabled()) LOG.trace(s);
 
     // Any failure from here on out will be catastrophic requiring server
     // restart so hlog content can be replayed and put back into the memstore.
@@ -1605,7 +1643,7 @@ public class HRegion implements HeapSize { // , Writable{
     // look across all the HStores for this region and determine what the
     // closest key is across all column families, since the data may be sparse
     checkRow(row, "getClosestRowBefore");
-    startRegionOperation();
+    startRegionOperation(Operation.GET);
     this.readRequestsCount.increment();
     try {
       Store store = getStore(family);
@@ -1651,7 +1689,7 @@ public class HRegion implements HeapSize { // , Writable{
 
   protected RegionScanner getScanner(Scan scan,
       List<KeyValueScanner> additionalScanners) throws IOException {
-    startRegionOperation();
+    startRegionOperation(Operation.SCAN);
     try {
       // Verify families are all valid
       prepareScanner(scan);
@@ -1702,7 +1740,7 @@ public class HRegion implements HeapSize { // , Writable{
   throws IOException {
     checkReadOnly();
     checkResources();
-    startRegionOperation();
+    startRegionOperation(Operation.DELETE);
     this.writeRequestsCount.increment();
     try {
       delete.getRow();
@@ -1801,7 +1839,7 @@ public class HRegion implements HeapSize { // , Writable{
     // read lock, resources may run out.  For now, the thought is that this
     // will be extremely rare; we'll deal with it when it happens.
     checkResources();
-    startRegionOperation();
+    startRegionOperation(Operation.PUT);
     this.writeRequestsCount.increment();
     try {
       // All edits for the given row (across all column families) must happen atomically.
@@ -1859,13 +1897,29 @@ public class HRegion implements HeapSize { // , Writable{
    */
   public OperationStatus[] batchMutate(
       Pair<Mutation, Integer>[] mutationsAndLocks) throws IOException {
+    return batchMutate(mutationsAndLocks, false);
+  }
+ 
+  /**
+   * Perform a batch of mutations.
+   * It supports only Put and Delete mutations and will ignore other types passed.
+   * @param mutationsAndLocks
+   *          the list of mutations paired with their requested lock IDs.
+   * @return an array of OperationStatus which internally contains the
+   *         OperationStatusCode and the exceptionMessage if any.
+   * @throws IOException
+   */
+  OperationStatus[] batchMutate(Pair<Mutation, Integer>[] mutationsAndLocks, boolean isReplay)
+      throws IOException {
     BatchOperationInProgress<Pair<Mutation, Integer>> batchOp =
       new BatchOperationInProgress<Pair<Mutation,Integer>>(mutationsAndLocks);
 
     boolean initialized = false;
 
     while (!batchOp.isDone()) {
-      checkReadOnly();
+      if (!isReplay) {
+        checkReadOnly();
+      }
       checkResources();
 
       long newSize;
@@ -1873,11 +1927,13 @@ public class HRegion implements HeapSize { // , Writable{
 
       try {
         if (!initialized) {
-          this.writeRequestsCount.increment();
-          doPreMutationHook(batchOp);
+          if (!isReplay) {
+            this.writeRequestsCount.increment();
+            doPreMutationHook(batchOp);
+          }
           initialized = true;
         }
-        long addedSize = doMiniBatchMutation(batchOp);
+        long addedSize = doMiniBatchMutation(batchOp, isReplay);
         newSize = this.addAndGetGlobalMemstoreSize(addedSize);
       } finally {
         closeRegionOperation();
@@ -1888,6 +1944,7 @@ public class HRegion implements HeapSize { // , Writable{
     }
     return batchOp.retCodeDetails;
   }
+  
 
   private void doPreMutationHook(BatchOperationInProgress<Pair<Mutation, Integer>> batchOp)
       throws IOException {
@@ -1924,10 +1981,9 @@ public class HRegion implements HeapSize { // , Writable{
     }
   }
 
-
   @SuppressWarnings("unchecked")
-  private long doMiniBatchMutation(
-    BatchOperationInProgress<Pair<Mutation, Integer>> batchOp) throws IOException {
+  private long doMiniBatchMutation(BatchOperationInProgress<Pair<Mutation, Integer>> batchOp,
+      boolean isInReplay) throws IOException {
 
     // variable to note if all Put items are for the same CF -- metrics related
     boolean putsCfSetConsistent = true;
@@ -1938,7 +1994,7 @@ public class HRegion implements HeapSize { // , Writable{
     //The set of columnFamilies first seen for Delete.
     Set<byte[]> deletesCfSet = null;
 
-    WALEdit walEdit = new WALEdit();
+    WALEdit walEdit = new WALEdit(isInReplay);
     MultiVersionConsistencyControl.WriteEntry w = null;
     long txid = 0;
     boolean walSyncSuccessful = false;
@@ -1980,7 +2036,11 @@ public class HRegion implements HeapSize { // , Writable{
         try {
           if (isPutMutation) {
             // Check the families in the put. If bad, skip this one.
-            checkFamilies(familyMap.keySet());
+            if (isInReplay) {
+              removeNonExistentColumnFamilyForReplay(familyMap);
+            } else {
+              checkFamilies(familyMap.keySet());
+            }
             checkTimestamps(mutation.getFamilyMap(), now);
           } else {
             prepareDelete((Delete) mutation);
@@ -2039,7 +2099,7 @@ public class HRegion implements HeapSize { // , Writable{
           }
         }
       }
-
+      
       // we should record the timestamp only after we have acquired the rowLock,
       // otherwise, newer puts/deletes are not guaranteed to have a newer timestamp
       now = EnvironmentEdgeManager.currentTimeMillis();
@@ -2078,9 +2138,9 @@ public class HRegion implements HeapSize { // , Writable{
       w = mvcc.beginMemstoreInsert();
 
       // calling the pre CP hook for batch mutation
-      if (coprocessorHost != null) {
-        MiniBatchOperationInProgress<Pair<Mutation, Integer>> miniBatchOp =
-          new MiniBatchOperationInProgress<Pair<Mutation, Integer>>(batchOp.operations,
+      if (!isInReplay && coprocessorHost != null) {
+        MiniBatchOperationInProgress<Pair<Mutation, Integer>> miniBatchOp = 
+          new MiniBatchOperationInProgress<Pair<Mutation, Integer>>(batchOp.operations, 
           batchOp.retCodeDetails, batchOp.walEditsFromCoprocessors, firstIndex, lastIndexExclusive);
         if (coprocessorHost.preBatchMutate(miniBatchOp)) return 0L;
       }
@@ -2165,9 +2225,9 @@ public class HRegion implements HeapSize { // , Writable{
       }
       walSyncSuccessful = true;
       // calling the post CP hook for batch mutation
-      if (coprocessorHost != null) {
-        MiniBatchOperationInProgress<Pair<Mutation, Integer>> miniBatchOp =
-          new MiniBatchOperationInProgress<Pair<Mutation, Integer>>(batchOp.operations,
+      if (!isInReplay && coprocessorHost != null) {
+        MiniBatchOperationInProgress<Pair<Mutation, Integer>> miniBatchOp = 
+          new MiniBatchOperationInProgress<Pair<Mutation, Integer>>(batchOp.operations, 
           batchOp.retCodeDetails, batchOp.walEditsFromCoprocessors, firstIndex, lastIndexExclusive);
         coprocessorHost.postBatchMutate(miniBatchOp);
       }
@@ -2184,7 +2244,7 @@ public class HRegion implements HeapSize { // , Writable{
       // STEP 9. Run coprocessor post hooks. This should be done after the wal is
       // synced so that the coprocessor contract is adhered to.
       // ------------------------------------
-      if (coprocessorHost != null) {
+      if (!isInReplay && coprocessorHost != null) {
         for (int i = firstIndex; i < lastIndexExclusive; i++) {
           // only for successful puts
           if (batchOp.retCodeDetails[i].getOperationStatusCode()
@@ -2620,6 +2680,30 @@ public class HRegion implements HeapSize { // , Writable{
   throws NoSuchColumnFamilyException {
     for (byte[] family : families) {
       checkFamily(family);
+    }
+  }
+
+  /**
+   * During replay, there could exist column families which are removed between region server
+   * failure and replay
+   */
+  private void removeNonExistentColumnFamilyForReplay(
+      final Map<byte[], List<? extends Cell>> familyMap) {
+    List<byte[]> nonExistentList = null;
+    for (byte[] family : familyMap.keySet()) {
+      if (!this.htableDescriptor.hasFamily(family)) {
+        if (nonExistentList == null) {
+          nonExistentList = new ArrayList<byte[]>();
+        }
+        nonExistentList.add(family);
+      }
+    }
+    if (nonExistentList != null) {
+      for (byte[] family : nonExistentList) {
+        // Perhaps schema was changed between crash and replay
+        LOG.info("No family for " + Bytes.toString(family) + " omit from reply.");
+        familyMap.remove(family);
+      }
     }
   }
 
@@ -3477,7 +3561,7 @@ public class HRegion implements HeapSize { // , Writable{
             "after we renewed it. Could be caused by a very slow scanner " +
             "or a lengthy garbage collection");
       }
-      startRegionOperation();
+      startRegionOperation(Operation.SCAN);
       readRequestsCount.increment();
       try {
 
@@ -4648,7 +4732,7 @@ public class HRegion implements HeapSize { // , Writable{
 
     checkReadOnly();
     // Lock row
-    startRegionOperation();
+    startRegionOperation(Operation.APPEND);
     this.writeRequestsCount.increment();
     WriteEntry w = null;
     try {
@@ -4816,7 +4900,7 @@ public class HRegion implements HeapSize { // , Writable{
 
     checkReadOnly();
     // Lock row
-    startRegionOperation();
+    startRegionOperation(Operation.INCREMENT);
     this.writeRequestsCount.increment();
     WriteEntry w = null;
     try {
@@ -4953,7 +5037,7 @@ public class HRegion implements HeapSize { // , Writable{
       ClassSize.OBJECT +
       ClassSize.ARRAY +
       38 * ClassSize.REFERENCE + 2 * Bytes.SIZEOF_INT +
-      (11 * Bytes.SIZEOF_LONG) +
+      (12 * Bytes.SIZEOF_LONG) +
       Bytes.SIZEOF_BOOLEAN);
 
   public static final long DEEP_OVERHEAD = FIXED_OVERHEAD +
@@ -5233,6 +5317,37 @@ public class HRegion implements HeapSize { // , Writable{
    */
   public void startRegionOperation()
       throws NotServingRegionException, RegionTooBusyException, InterruptedIOException {
+    startRegionOperation(Operation.ANY);
+  }
+
+  /**
+   * @param op The operation is about to be taken on the region
+   * @throws NotServingRegionException
+   * @throws RegionTooBusyException
+   * @throws InterruptedIOException
+   */
+  protected void startRegionOperation(Operation op) throws NotServingRegionException,
+      RegionTooBusyException, InterruptedIOException {
+    switch (op) {
+    case INCREMENT:
+    case APPEND:
+    case GET:
+    case SCAN:
+    case SPLIT_REGION:
+    case MERGE_REGION:
+      // when a region is in recovering state, no read, split or merge is allowed
+      if (this.isRecovering()) {
+        throw new RegionInRecoveryException(this.getRegionNameAsString()
+            + " is recovering");
+      }
+      break;
+      default:
+        break;
+    }
+    if (op == Operation.MERGE_REGION || op == Operation.SPLIT_REGION) {
+      // split or merge region doesn't need to check the closing/closed state or lock the region
+      return;
+    }
     if (this.closing.get()) {
       throw new NotServingRegionException(getRegionNameAsString() + " is closing");
     }
@@ -5444,6 +5559,14 @@ public class HRegion implements HeapSize { // , Writable{
    */
   public long getOpenSeqNum() {
     return this.openSeqNum;
+  }
+
+  /**
+   * Gets the min sequence number that was read from storage when this region was opened. WAL Edits
+   * with smaller sequence number will be skipped from replay.
+   */
+  public long getMinSeqIdForLogReplay() {
+    return this.minSeqIdForLogReplay;
   }
 
   /**

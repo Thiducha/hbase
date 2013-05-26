@@ -118,16 +118,6 @@ public class TestLruBlockCache {
       assertEquals(buf.heapSize(), block.heapSize());
     }
 
-    // Re-add same blocks and ensure nothing has changed
-    for (CachedItem block : blocks) {
-      try {
-        cache.cacheBlock(block.cacheKey, block);
-        assertTrue("Cache should not allow re-caching a block", false);
-      } catch(RuntimeException re) {
-        // expected
-      }
-    }
-
     // Verify correctly calculated cache heap size
     assertEquals(expectedCacheSize, cache.heapSize());
 

@@ -34,7 +34,6 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.KeyValue.KeyComparator;
-import org.apache.hadoop.hbase.io.encoding.DataBlockEncoding;
 import org.apache.hadoop.hbase.io.compress.Compression;
 import org.apache.hadoop.hbase.io.hfile.HFile.Writer;
 import org.apache.hadoop.hbase.io.hfile.HFileBlock.BlockWritable;
@@ -115,7 +114,7 @@ public class HFileWriterV2 extends AbstractHFileWriter {
       final KeyComparator comparator, final ChecksumType checksumType,
       final int bytesPerChecksum, final boolean includeMVCCReadpoint) throws IOException {
     super(cacheConf,
-        ostream == null ? createOutputStream(conf, fs, path) : ostream,
+        ostream == null ? createOutputStream(conf, fs, path, null) : ostream,
         path, blockSize, compressAlgo, blockEncoder, comparator);
     this.checksumType = checksumType;
     this.bytesPerChecksum = bytesPerChecksum;
@@ -143,7 +142,7 @@ public class HFileWriterV2 extends AbstractHFileWriter {
 
     // Meta data block index writer
     metaBlockIndexWriter = new HFileBlockIndex.BlockIndexWriter();
-    LOG.debug("Initialized with " + cacheConf);
+    if (LOG.isTraceEnabled()) LOG.trace("Initialized with " + cacheConf);
   }
 
   /**

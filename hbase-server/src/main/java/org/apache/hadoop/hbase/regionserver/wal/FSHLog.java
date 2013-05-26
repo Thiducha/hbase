@@ -328,7 +328,7 @@ class FSHLog implements HLog, Syncable {
     }
 
     this.blocksize = this.conf.getLong("hbase.regionserver.hlog.blocksize",
-        getDefaultBlockSize());
+        FSUtils.getDefaultBlockSize(this.fs, this.dir));
     // Roll at 95% of block size.
     float multi = conf.getFloat("hbase.regionserver.logroll.multiplier", 0.95f);
     this.logrollsize = (long)(this.blocksize * multi);
@@ -338,7 +338,7 @@ class FSHLog implements HLog, Syncable {
     this.maxLogs = conf.getInt("hbase.regionserver.maxlogs", 32);
     this.minTolerableReplication = conf.getInt(
         "hbase.regionserver.hlog.tolerable.lowreplication",
-        this.fs.getDefaultReplication());
+        FSUtils.getDefaultReplication(fs, this.dir));
     this.lowReplicationRollLimit = conf.getInt(
         "hbase.regionserver.hlog.lowreplication.rolllimit", 5);
     this.enabled = conf.getBoolean("hbase.regionserver.hlog.enabled", true);
@@ -347,7 +347,7 @@ class FSHLog implements HLog, Syncable {
 
     this.logSyncer = new LogSyncer(this.optionalFlushInterval);
 
-    LOG.info("HLog configuration: blocksize=" +
+    LOG.info("WAL/HLog configuration: blocksize=" +
       StringUtils.byteDesc(this.blocksize) +
       ", rollsize=" + StringUtils.byteDesc(this.logrollsize) +
       ", enabled=" + this.enabled +
@@ -387,33 +387,6 @@ class FSHLog implements HLog, Syncable {
     coprocessorHost = new WALCoprocessorHost(this, conf);
 
     this.metrics = new MetricsWAL();
-  }
-
-  // use reflection to search for getDefaultBlockSize(Path f)
-  // if the method doesn't exist, fall back to using getDefaultBlockSize()
-  private long getDefaultBlockSize() throws IOException {
-    Method m = null;
-    Class<? extends FileSystem> cls = this.fs.getClass();
-    try {
-      m = cls.getMethod("getDefaultBlockSize",
-          new Class<?>[] { Path.class });
-    } catch (NoSuchMethodException e) {
-      LOG.info("FileSystem doesn't support getDefaultBlockSize");
-    } catch (SecurityException e) {
-      LOG.info("Doesn't have access to getDefaultBlockSize on "
-          + "FileSystems", e);
-      m = null; // could happen on setAccessible()
-    }
-    if (null == m) {
-      return this.fs.getDefaultBlockSize();
-    } else {
-      try {
-        Object ret = m.invoke(this.fs, this.dir);
-        return ((Long)ret).longValue();
-      } catch (Exception e) {
-        throw new IOException(e);
-      }
-    }
   }
 
   /**
@@ -502,11 +475,14 @@ class FSHLog implements HLog, Syncable {
         return null;
       }
       byte [][] regionsToFlush = null;
+      if (closed) {
+        LOG.debug("HLog closed. Skipping rolling of writer");
+        return null;
+      }
       try {
         this.logRollRunning = true;
-        boolean isClosed = closed;
-        if (isClosed || !closeBarrier.beginOp()) {
-          LOG.debug("HLog " + (isClosed ? "closed" : "closing") + ". Skipping rolling of writer");
+        if (!closeBarrier.beginOp()) {
+          LOG.debug("HLog closing. Skipping rolling of writer");
           return regionsToFlush;
         }
         // Do all the preparation outside of the updateLock to block
@@ -543,9 +519,10 @@ class FSHLog implements HLog, Syncable {
           this.hdfs_out = nextHdfsOut;
           this.numEntries.set(0);
         }
-        LOG.info("Rolled log" + (oldFile != null ? " for file=" + FSUtils.getPath(oldFile)
-          + ", entries=" + oldNumEntries + ", filesize=" + this.fs.getFileStatus(oldFile).getLen()
-          : "" ) + "; new path=" + FSUtils.getPath(newPath));
+        LOG.info("Rolled WAL " + (oldFile != null ?
+          FSUtils.getPath(oldFile) + ", entries=" + oldNumEntries + ", filesize=" +
+            StringUtils.humanReadableInt(this.fs.getFileStatus(oldFile).getLen()):
+          "" ) + "; new WAL=" + FSUtils.getPath(newPath));
 
         // Tell our listeners that a new log was created
         if (!this.listeners.isEmpty()) {
@@ -725,7 +702,7 @@ class FSHLog implements HLog, Syncable {
         i.preLogArchive(p, newPath);
       }
     }
-    if (!this.fs.rename(p, newPath)) {
+    if (!FSUtils.renameAndSetModifyTime(this.fs, p, newPath)) {
       throw new IOException("Unable to rename " + p + " to " + newPath);
     }
     // Tell our listeners that a log has been archived.
@@ -778,7 +755,7 @@ class FSHLog implements HLog, Syncable {
           }
         }
 
-        if (!fs.rename(file.getPath(),p)) {
+        if (!FSUtils.renameAndSetModifyTime(fs, file.getPath(), p)) {
           throw new IOException("Unable to rename " + file.getPath() + " to " + p);
         }
         // Tell our listeners that a log was archived.
@@ -982,6 +959,7 @@ class FSHLog implements HLog, Syncable {
           } catch (IOException e) {
             LOG.error("Error while syncing, requesting close of hlog ", e);
             requestLogRoll();
+            Threads.sleep(this.optionalFlushInterval);
           }
         }
       } catch (InterruptedException e) {
@@ -1108,7 +1086,7 @@ class FSHLog implements HLog, Syncable {
         }
       }
     } catch (IOException e) {
-      LOG.fatal("Could not sync. Requesting close of hlog", e);
+      LOG.fatal("Could not sync. Requesting roll of hlog", e);
       requestLogRoll();
       throw e;
     }
@@ -1187,18 +1165,22 @@ class FSHLog implements HLog, Syncable {
     return this.getNumCurrentReplicas != null;
   }
 
+  @Override
   public void hsync() throws IOException {
     syncer();
   }
 
+  @Override
   public void hflush() throws IOException {
     syncer();
   }
 
+  @Override
   public void sync() throws IOException {
     syncer();
   }
 
+  @Override
   public void sync(long txid) throws IOException {
     syncer(txid);
   }
@@ -1227,6 +1209,10 @@ class FSHLog implements HLog, Syncable {
       long now = EnvironmentEdgeManager.currentTimeMillis();
       // coprocessor hook:
       if (!coprocessorHost.preWALWrite(info, logKey, logEdit)) {
+        if (logEdit.isReplay()) {
+          // set replication scope null so that this won't be replicated
+          logKey.setScopes(null);
+        }
         // write to our buffer for the Hlog file.
         logSyncer.append(new FSHLog.Entry(logKey, logEdit));
       }

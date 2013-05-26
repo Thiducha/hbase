@@ -40,6 +40,8 @@ import org.apache.hadoop.hbase.protobuf.generated.WALProtos.CompactionDescriptor
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.FSUtils;
 
+import com.google.protobuf.TextFormat;
+
 public class HLogUtil {
   static final Log LOG = LogFactory.getLog(HLogUtil.class);
 
@@ -168,6 +170,37 @@ public class HLogUtil {
   }
 
   /**
+   * This function returns region server name from a log file name which is in either format:
+   * hdfs://<name node>/hbase/.logs/<server name>-splitting/... or hdfs://<name
+   * node>/hbase/.logs/<server name>/...
+   * @param logFile
+   * @return null if the passed in logFile isn't a valid HLog file path
+   */
+  public static ServerName getServerNameFromHLogDirectoryName(Path logFile) {
+    Path logDir = logFile.getParent();
+    String logDirName = logDir.getName();
+    if (logDirName.equals(HConstants.HREGION_LOGDIR_NAME)) {
+      logDir = logFile;
+      logDirName = logDir.getName();
+    }
+    ServerName serverName = null;
+    if (logDirName.endsWith(HLog.SPLITTING_EXT)) {
+      logDirName = logDirName.substring(0, logDirName.length() - HLog.SPLITTING_EXT.length());
+    }
+    try {
+      serverName = ServerName.parseServerName(logDirName);
+    } catch (IllegalArgumentException ex) {
+      serverName = null;
+      LOG.warn("Invalid log file path=" + logFile, ex);
+    }
+    if (serverName != null && serverName.getStartcode() < 0) {
+      LOG.warn("Invalid log file path=" + logFile);
+      return null;
+    }
+    return serverName;
+  }
+
+  /**
    * Returns sorted set of edit files made by wal-log splitter, excluding files
    * with '.temp' suffix.
    *
@@ -230,6 +263,8 @@ public class HLogUtil {
     WALEdit e = WALEdit.createCompaction(c);
     log.append(info, c.getTableName().toByteArray(), e,
         EnvironmentEdgeManager.currentTimeMillis(), htd);
-    LOG.info("Appended compaction marker " + c);
+    if (LOG.isTraceEnabled()) {
+      LOG.trace("Appended compaction marker " + TextFormat.shortDebugString(c));
+    }
   }
 }

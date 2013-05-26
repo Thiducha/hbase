@@ -32,6 +32,8 @@ import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.util.FSUtils;
+import org.apache.hadoop.hbase.protobuf.generated.WALProtos.WALTrailer;
 import org.apache.hadoop.io.SequenceFile;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.SequenceFile.CompressionType;
@@ -116,12 +118,12 @@ public class SequenceFileLogWriter implements HLog.Writer {
             Integer.TYPE, Short.TYPE, Long.TYPE, Boolean.TYPE,
             CompressionType.class, CompressionCodec.class, Metadata.class})
         .invoke(null, new Object[] {fs, conf, path, HLogKey.class, WALEdit.class,
-            Integer.valueOf(fs.getConf().getInt("io.file.buffer.size", 4096)),
+            Integer.valueOf(FSUtils.getDefaultBufferSize(fs)),
             Short.valueOf((short)
               conf.getInt("hbase.regionserver.hlog.replication",
-              fs.getDefaultReplication())),
+              FSUtils.getDefaultReplication(fs, path))),
             Long.valueOf(conf.getLong("hbase.regionserver.hlog.blocksize",
-                fs.getDefaultBlockSize())),
+                FSUtils.getDefaultBlockSize(fs, path))),
             Boolean.valueOf(false) /*createParent*/,
             SequenceFile.CompressionType.NONE, new DefaultCodec(),
             createMetadata(conf, compress)
@@ -138,11 +140,11 @@ public class SequenceFileLogWriter implements HLog.Writer {
       LOG.debug("new createWriter -- HADOOP-6840 -- not available");
       this.writer = SequenceFile.createWriter(fs, conf, path,
         HLogKey.class, WALEdit.class,
-        fs.getConf().getInt("io.file.buffer.size", 4096),
+        FSUtils.getDefaultBufferSize(fs),
         (short) conf.getInt("hbase.regionserver.hlog.replication",
-          fs.getDefaultReplication()),
+          FSUtils.getDefaultReplication(fs, path)),
         conf.getLong("hbase.regionserver.hlog.blocksize",
-          fs.getDefaultBlockSize()),
+          FSUtils.getDefaultBlockSize(fs, path)),
         SequenceFile.CompressionType.NONE,
         new DefaultCodec(),
         null,
@@ -230,5 +232,12 @@ public class SequenceFileLogWriter implements HLog.Writer {
    */
   public FSDataOutputStream getWriterFSDataOutputStream() {
     return this.writer_out;
+  }
+
+  /**
+   * This method is empty as trailer is added only in Protobuf based hlog readers/writers.
+   */
+  @Override
+  public void setWALTrailer(WALTrailer walTrailer) {
   }
 }
