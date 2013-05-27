@@ -12,11 +12,11 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.mockito.Mockito;
 
+import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Callable;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -54,13 +54,11 @@ public class TestAsyncProcess {
      * Do not call a server, fails if the rowkey of the operation is{@link #FAILS}
      */
     @Override
-    protected <R> Callable<MultiResponse> createCallable(final HConnection connection,
-                                                         final HRegionLocation loc,
-                                                         final MultiAction<R> multi,
-                                                         final byte[] tableName) {
+    protected ServerCallable<MultiResponse> createCallable(
+        final HRegionLocation loc, final MultiAction<Row> multi) {
 
       final MultiResponse mr = new MultiResponse();
-      for (Map.Entry<byte[], List<Action<R>>> entry : multi.actions.entrySet()) {
+      for (Map.Entry<byte[], List<Action<Row>>> entry : multi.actions.entrySet()) {
         for (Action a : entry.getValue()) {
           if (Arrays.equals(FAILS, a.getAction().getRow())) {
             mr.add(loc.getRegionInfo().getRegionName(), a.getOriginalIndex(), failure);
@@ -70,9 +68,9 @@ public class TestAsyncProcess {
         }
       }
 
-      return new Callable<MultiResponse>() {
+      return new MultiServerCallable<Row>(hConnection, tableName, null, null) {
         @Override
-        public MultiResponse call() throws Exception {
+        public MultiResponse withoutRetries() {
           return mr;
         }
       };
@@ -135,7 +133,7 @@ public class TestAsyncProcess {
     AsyncProcess ap = new MyAsyncProcess<Object>(hc, mcb, conf);
 
     List<Put> puts = new ArrayList<Put>();
-    Put p =  createPut(true, false);
+    Put p = createPut(true, false);
     puts.add(p);
 
     ap.submit(puts);
@@ -219,6 +217,51 @@ public class TestAsyncProcess {
     Assert.assertEquals(1, ap.getFailedOperations().size());
   }
 
+  @Test
+  public void testMaxTask() throws Exception {
+    HConnection hc = createHConnection();
+    final AsyncProcess ap = new MyAsyncProcess<Object>(hc, null, conf);
+
+    for (int i = 0; i < 1000; i++) {
+      ap.incTaskCounters("dummy");
+    }
+
+    final Thread myThread = Thread.currentThread();
+
+    Thread t = new Thread() {
+      public void run() {
+        Threads.sleep(2000);
+        myThread.interrupt();
+      }
+    };
+    t.start();
+
+    try {
+      ap.submit(new ArrayList<Row>());
+      Assert.fail("We should have been interrupted.");
+    } catch (InterruptedIOException expected) {
+    }
+
+    final long sleepTime = 2000;
+
+    Thread t2 = new Thread() {
+      public void run() {
+        Threads.sleep(sleepTime);
+        while (ap.taskCounter.get() > 0) {
+          ap.decTaskCounters("dummy");
+        }
+      }
+    };
+    t2.start();
+
+    long start = System.currentTimeMillis();
+    ap.submit(new ArrayList<Row>());
+    long end = System.currentTimeMillis();
+
+    //Adds 100 to secure us against approximate timing.
+    Assert.assertTrue(start + 100L + sleepTime > end);
+  }
+
 
   private class MyCB implements AsyncProcess.AsyncProcessCallback<Object> {
     private AtomicInteger successCalled = new AtomicInteger(0);
@@ -239,7 +282,7 @@ public class TestAsyncProcess {
 
     @Override
     public boolean retriableFailure(int originalIndex, Row row, byte[] region, Throwable exception) {
-      // We retry twice only.
+      // We retry once only.
       return (retriableFailure.incrementAndGet() < 2);
     }
   }
@@ -268,7 +311,7 @@ public class TestAsyncProcess {
 
 
   /**
-   * @param reg1 if true, creates a put on region 1, region 2 otherwise
+   * @param reg1    if true, creates a put on region 1, region 2 otherwise
    * @param success if true, the put will succeed.
    * @return a put
    */

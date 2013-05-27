@@ -18,41 +18,44 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * This class  allows a continuous flow of request.
+ * This class  allows a continuous flow of requests. It's written to be compatible with a
+ *  synchronous caller such as HTable.
  * <p>
- * The flow is:<list>
- * <li>buffered, to send the queries by bunch instead of one by one.</li>
- * <li>split by server. If a server is slow or does not respond, the operations on the other
- * servers continue.</li></list>
+ * The caller sends a buffer of operation, by calling submit. This class extract from this list
+ *  the operations it can send, i.e. the operations that are on region that are not considered
+ *  as busy. The process is asynchronous, i.e. it returns immediately when if has finished to
+ *  iterate on the list. If, and only if, the maximum number of current task is reached, the call
+ *  to submit will block.
  * </p>
  * <p>
- * Sending operations is then non blocking, except if:<list>
- * <li>the number of operations in progress is globally too high
- * (setting "hbase.client.max.total.tasks"). In this case, we wait before accepting
- * new operations.</li>
- * <li>A region has reach its maximum number of concurrent task
- * (setting: hbase.client.max.perregion.tasks)
- * in this case, we take all operations on the other regions but the operations on the busy regions
- * are left in the buffer. </li>
- * <li>One of the current operations has failed its maximum number of time. In this case, we try
- * to finish all the operations in progress and trow an exception. to let the user decide.</li>
+ * The class manages internally the retries.
+ * </p>
+ * <p>
+ * The class includes an error marker: it allows to know if an operation has failed or not, and
+ *  to get the exception details, i.e. the full list of exceptions for each attempt. This marker
+ *  is here to help the backward compatibility in HTable. In most (new) cases, it should be
+ *  managed by the callbacks.
+ * </p>
+ * <p>
+ * A callback is available, in order to: <list>
+ * <li>Get the result of the operation (failure or success)</li>
+ * <li>When an operation fails but could be retried, allows or not to retry</li>
+ * <li>When an operation fails for good (can't be retried or already retried the maximum number
+ *  time), register the error or not.
  * </list>
- * </p>
  * <p>
- * In other words, the process is asynchronous, until: <list>
- * <li>One of the operations has failed.</li>
- * <li>The buffer has been fulled by operations on busy regions</li>  </list>
+ * This class is not thread safe externally; only one thread should submit operations at a time.
+ * Internally, the class is thread safe enough to manage simultaneously new submission and results
+ *  arising from older operations.
  * </p>
- *
- * This class is not thread safe externally; only one thread should submit operations.
  */
 public class AsyncProcess<Res> {
   private static final Log LOG = LogFactory.getLog(AsyncProcess.class);
@@ -76,14 +79,14 @@ public class AsyncProcess<Res> {
   /**
    * This interface allows to keep the interface of the previous synchronous interface, that uses
    * an array of object to return the result.
-   *
+   * <p/>
    * This interface allows the caller to specify the behavior on errors: <list>
-   *   <li>If we have not yet reach the maximum number of retries, the user can nevertheless
-   *    specify if this specific operation should be retried or not.
-   *   </li>
-   *   <li>If an operation fails (i.e. is not retried or fails after all retries), the user can
-   *    specify is we should mark this AsyncProcess as in error or not.
-   *   </li>
+   * <li>If we have not yet reach the maximum number of retries, the user can nevertheless
+   * specify if this specific operation should be retried or not.
+   * </li>
+   * <li>If an operation fails (i.e. is not retried or fails after all retries), the user can
+   * specify is we should mark this AsyncProcess as in error or not.
+   * </li>
    * </list>
    */
   public static interface AsyncProcessCallback<Result> {
@@ -95,8 +98,9 @@ public class AsyncProcess<Res> {
 
     /**
      * called on failure, if we don't retry (i.e. called once per failed operation).
+     *
      * @return true if we should store the error and tag this async process as beeing in error.
-     *  false if the failure of this operation can be safely ignored.
+     *         false if the failure of this operation can be safely ignored.
      */
     boolean failure(int originalIndex, byte[] region, byte[] row, Throwable t);
 
@@ -117,7 +121,7 @@ public class AsyncProcess<Res> {
     public void add(Throwable ex, R row, HRegionLocation location) {
       exceptions.add(ex);
       actions.add(row);
-      addresses.add( location != null ? location.getHostnamePort() : "null location");
+      addresses.add(location != null ? location.getHostnamePort() : "null location");
     }
 
     private RetriesExhaustedWithDetailsException makeException() {
@@ -126,7 +130,7 @@ public class AsyncProcess<Res> {
           new ArrayList<Row>(actions), new ArrayList<String>(addresses));
     }
 
-    public void clear(){
+    public void clear() {
       exceptions.clear();
       actions.clear();
       addresses.clear();
@@ -206,6 +210,8 @@ public class AsyncProcess<Res> {
   }
 
   /**
+   * Check if we should submit an operation or not. We will submit the operation if it has
+   *  a location (it should), and if the region is not already considered as busy.
    * @param row          the row
    * @param numAttempt   the num attempt
    * @param posInList    the position in the list
@@ -229,7 +235,7 @@ public class AsyncProcess<Res> {
     }
     if (locationException != null) {
       // There are multiple retries in locateRegion already. No need to add new.
-      // We can't continue with this row
+      // We can't continue with this row, hence it's the last retry.
       manageError(numAttempt, posInList, row, false, locationException, null);
       return null;
     }
@@ -238,24 +244,25 @@ public class AsyncProcess<Res> {
     if (!addIt) {
       String regionName = loc.getRegionInfo().getEncodedName();
       addIt = regionStatus.get(regionName);
+
       if (addIt == null) {
-        AtomicInteger ct = taskCounterPerRegion.get(regionName);
-        long nbTask = ct == null ? 0 : ct.get();
-        addIt = (nbTask < maxConcurrentTasksPerRegion);
+        addIt = canTakeNewOperations(regionName);
         regionStatus.put(regionName, addIt);
-        if (LOG.isTraceEnabled()) {
-          LOG.debug("Region " + regionName + " has " + nbTask +
-              " tasks, max is " + maxConcurrentTasksPerRegion +
-              ", " + (addIt ? "" : "NOT ") + "adding task");
-        }
       }
     }
 
-    if (!addIt) {
-      return null;
-    }
+    return addIt ? loc : null;
+  }
 
-    return loc;
+
+  /**
+   * Check of we should send new operations to this region.
+   * @param encodedRegionName
+   * @return true if this region is considered as busy.
+   */
+  protected boolean canTakeNewOperations(String encodedRegionName){
+    AtomicInteger ct = taskCounterPerRegion.get(encodedRegionName);
+    return ct == null || ct.get() < maxConcurrentTasksPerRegion;
   }
 
   /**
@@ -322,29 +329,61 @@ public class AsyncProcess<Res> {
    * @param actionsByServer the actions structured by regions
    * @param numAttempt      the attempt number.
    */
-  public void sendMultiAction(List<Action<Row>> initialActions,
+  public void sendMultiAction(final List<Action<Row>> initialActions,
                               Map<HRegionLocation, MultiAction<Row>> actionsByServer,
-                              int numAttempt) {
+                              final int numAttempt) {
 
     // Send the queries and add them to the inProgress list
     for (Map.Entry<HRegionLocation, MultiAction<Row>> e : actionsByServer.entrySet()) {
-      long backoffTime = 0;
-      if (numAttempt > 1) {
-        backoffTime = ConnectionUtils.getPauseTime(pause, numAttempt - 1);
-      }
-      Runnable runnable = createDelayedRunnable(initialActions, backoffTime, e.getKey(),
-          e.getValue(), numAttempt);
-      if (LOG.isTraceEnabled() && numAttempt > 1) {
-        StringBuilder sb = new StringBuilder();
-        for (Action<Row> action : e.getValue().allActions()) {
-          sb.append(Bytes.toStringBinary(action.getAction().getRow())).append(';');
-        }
-        LOG.trace("Will retry requests to [" + e.getKey().getHostnamePort()
-            + "] after delay of [" + backoffTime + "] for rows [" + sb.toString() + "]");
-      }
+      final HRegionLocation loc = e.getKey();
+      final MultiAction<Row> multi = e.getValue();
+      final String regionName = loc.getRegionInfo().getEncodedName();
 
-      this.pool.submit(runnable);
+      incTaskCounters(regionName);
+
+      Runnable runnable = new Runnable() {
+        @Override
+        public void run() {
+          MultiResponse res = null;
+          try {
+            ServerCallable<MultiResponse> callable = createCallable(loc, multi);
+            try {
+              res = callable.withoutRetries();
+            } catch (IOException e) {
+              LOG.warn("The call to the RS failed, we don't know where we stand. regionName="
+                  + regionName, e);
+              resubmitAll(initialActions, multi, loc, numAttempt + 1, e);
+            }
+
+            receiveMultiAction(initialActions, multi, loc, res, numAttempt);
+          } finally {
+            decTaskCounters(regionName);
+          }
+        }
+      };
+
+      try {
+        this.pool.submit(runnable);
+      } catch (RejectedExecutionException ree) {
+        // This should never happen. But as the pool is provided by the end user, let's secure
+        //  this a little.
+        decTaskCounters(regionName);
+        LOG.warn("The task was rejected by the pool. This is unexpected. " +
+            "regionName=" + regionName, ree);
+        // We're likely to fail again, but this will increment the attempt counter, so it will
+        //  finish.
+        resubmitAll(initialActions, multi, loc, numAttempt +1, ree);
+      }
     }
+  }
+
+  /**
+   * Create a callable. Isolated to be easily overridden in the tests.
+   */
+  protected ServerCallable<MultiResponse> createCallable(
+      final HRegionLocation loc, final MultiAction<Row> multi) {
+
+    return new MultiServerCallable<Row>(hConnection, tableName, loc, multi);
   }
 
   /**
@@ -395,7 +434,7 @@ public class AsyncProcess<Res> {
    * @param numAttempt the number of attemp so far
    */
   private void resubmitAll(List<Action<Row>> initialActions, MultiAction<Row> rsActions,
-                           HRegionLocation location, int numAttempt) {
+                           HRegionLocation location, int numAttempt, Throwable t) {
     List<Action<Row>> toReplay = new ArrayList<Action<Row>>();
     for (List<Action<Row>> actions : rsActions.actions.values()) {
       for (Action<Row> action : actions) {
@@ -403,7 +442,7 @@ public class AsyncProcess<Res> {
         // any of the regions in the MultiAction.
         hConnection.updateCachedLocations(tableName, action.getAction(), null, location);
         if (manageError(numAttempt, action.getOriginalIndex(), action.getAction(),
-            true, null, null)) {
+            true, t, location)) {
           toReplay.add(action);
         }
       }
@@ -429,7 +468,7 @@ public class AsyncProcess<Res> {
     if (responses == null) {
       LOG.info("Attempt #" + numAttempt + " failed for all operations on server " +
           location.getServerName() + " , trying to resubmit.");
-      resubmitAll(initialActions, rsActions, location, numAttempt + 1);
+      resubmitAll(initialActions, rsActions, location, numAttempt + 1, null);
       return;
     }
 
@@ -474,6 +513,16 @@ public class AsyncProcess<Res> {
       LOG.info("Attempt #" + numAttempt + " failed for " + failureCount +
           " operations on server " + location.getServerName() + ", resubmitting " +
           toReplay.size() + ", tableName=" + Bytes.toString(tableName));
+
+      long backOffTime = ConnectionUtils.getPauseTime(pause, numAttempt);
+      try {
+        Thread.sleep(backOffTime);
+      } catch (InterruptedException e) {
+        LOG.warn("Not sent: " + toReplay.size() + " operations.", e);
+        Thread.interrupted();
+        return;
+      }
+
       submit(initialActions, toReplay, numAttempt + 1, true);
     } else if (failureCount != 0) {
       LOG.warn("Attempt #" + numAttempt + " failed for " + failureCount +
@@ -513,10 +562,7 @@ public class AsyncProcess<Res> {
     waitForMaximumTaskNumber(0);
   }
 
-  /**
-   *
-   * @return
-   */
+
   public boolean hasError() {
     return hasError.get();
   }
@@ -564,74 +610,5 @@ public class AsyncProcess<Res> {
     synchronized (taskCounter) {
       taskCounter.notifyAll();
     }
-  }
-
-
-  /**
-   * Create a specific Runnable that will wait a given amount of ms before executing the
-   * call to the region servers.
-   *
-   * @param initialActions - the original list of actions
-   * @param delay          - how long to wait
-   * @param loc            - location
-   * @param multi          - the multi action to execute
-   * @param numAttempt     - the number of attempt
-   * @return the Runnable
-   */
-  private Runnable createDelayedRunnable(final List<Action<Row>> initialActions,
-                                         final long delay, final HRegionLocation loc,
-                                         final MultiAction<Row> multi, final int numAttempt) {
-
-    final Callable<MultiResponse> delegate = createCallable(hConnection, loc, multi, tableName);
-    final String regionName = loc.getRegionInfo().getEncodedName();
-    incTaskCounters(regionName);
-
-    return new Runnable() {
-      private final long creationTime = EnvironmentEdgeManager.currentTimeMillis();
-
-      @Override
-      public void run() {
-        try {
-          long waitingTime = delay + creationTime - EnvironmentEdgeManager.currentTimeMillis();
-          if (waitingTime > 0) {
-            try {
-              Thread.sleep(waitingTime);
-            } catch (InterruptedException e) {
-              LOG.warn("We've been interrupted while waiting to send" +
-                  " for regionName=" + regionName);
-              resubmitAll(initialActions, multi, loc, numAttempt + 1);
-              Thread.interrupted();
-              return;
-            }
-          }
-          MultiResponse res;
-          try {
-            res = delegate.call();
-          } catch (Exception e) {
-            LOG.warn("The call to the RS failed, we don't know where we stand. regionName="
-                + regionName, e);
-            resubmitAll(initialActions, multi, loc, numAttempt + 1);
-            return;
-          }
-          receiveMultiAction(initialActions, multi, loc, res, numAttempt);
-        } finally {
-          decTaskCounters(regionName);
-        }
-      }
-    };
-  }
-
-  protected <R> Callable<MultiResponse> createCallable(final HConnection connection,
-                                                     final HRegionLocation loc,
-                                                     final MultiAction<R> multi,
-                                                     final byte[] tableName) {
-    return new Callable<MultiResponse>() {
-      @Override
-      public MultiResponse call() throws Exception {
-        ServerCallable<MultiResponse> callable =
-            new MultiServerCallable<R>(connection, tableName, loc, multi);
-        return callable.withoutRetries();
-      }
-    };
   }
 }
