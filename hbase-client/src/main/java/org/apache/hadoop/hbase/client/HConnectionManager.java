@@ -2205,10 +2205,11 @@ public class HConnectionManager {
       }
 
       @Override
-      public void failure(int pos, byte[] region, byte[] row, Throwable t) {
+      public boolean failure(int pos, byte[] region, byte[] row, Throwable t) {
         assert pos <= results.length;
         results[pos] = t;
         //Batch.Callback<Res> was not called on failure in 0.94. We keep this.
+        return true;
       }
 
       @Override

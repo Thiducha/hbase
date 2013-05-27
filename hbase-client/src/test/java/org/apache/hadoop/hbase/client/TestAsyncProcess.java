@@ -232,8 +232,9 @@ public class TestAsyncProcess {
     }
 
     @Override
-    public void failure(int originalIndex, byte[] region, byte[] row, Throwable t) {
+    public boolean failure(int originalIndex, byte[] region, byte[] row, Throwable t) {
       failureCalled.incrementAndGet();
+      return true;
     }
 
     @Override
