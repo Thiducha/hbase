@@ -158,7 +158,7 @@ class QosFunction implements Function<Pair<RequestHeader, Message>, Integer> {
         HRegion region = hRegionServer.getRegion(regionSpecifier);
         if (region.getRegionInfo().isMetaTable()) {
           if (LOG.isTraceEnabled()) {
-            LOG.trace("High priority: " + TextFormat.shortDebugString(param));
+            LOG.trace("High priority because region=" + region.getRegionNameAsString());
           }
           return HConstants.HIGH_QOS;
         }
@@ -166,7 +166,7 @@ class QosFunction implements Function<Pair<RequestHeader, Message>, Integer> {
     } catch (Exception ex) {
       // Not good throwing an exception out of here, a runtime anyways.  Let the query go into the
       // server and have it throw the exception if still an issue.  Just mark it normal priority.
-      if (LOG.isDebugEnabled()) LOG.debug("Marking normal priority after getting exception=" + ex);
+      if (LOG.isTraceEnabled()) LOG.trace("Marking normal priority after getting exception=" + ex);
       return HConstants.NORMAL_QOS;
     }
 
@@ -178,13 +178,11 @@ class QosFunction implements Function<Pair<RequestHeader, Message>, Integer> {
       RegionScanner scanner = hRegionServer.getScanner(request.getScannerId());
       if (scanner != null && scanner.getRegionInfo().isMetaRegion()) {
         if (LOG.isTraceEnabled()) {
-          LOG.trace("High priority scanner request: " + TextFormat.shortDebugString(request));
+          // Scanner requests are small in size so TextFormat version should not overwhelm log.
+          LOG.trace("High priority scanner request " + TextFormat.shortDebugString(request));
         }
         return HConstants.HIGH_QOS;
       }
-    }
-    if (LOG.isTraceEnabled()) {
-      LOG.trace("Low priority: " + TextFormat.shortDebugString(param));
     }
     return HConstants.NORMAL_QOS;
   }

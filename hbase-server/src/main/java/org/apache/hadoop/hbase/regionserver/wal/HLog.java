@@ -35,6 +35,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.exceptions.FailedLogCloseException;
+import org.apache.hadoop.hbase.protobuf.generated.WALProtos.WALTrailer;
 import org.apache.hadoop.io.Writable;
 
 
@@ -47,6 +48,14 @@ public interface HLog {
   public static final boolean SPLIT_SKIP_ERRORS_DEFAULT = false;
   /** The META region's HLog filename extension */
   public static final String META_HLOG_FILE_EXTN = ".meta";
+
+  /**
+   * Configuration name of HLog Trailer's warning size. If a waltrailer's size is greater than the
+   * configured size, a warning is logged. This is used with Protobuf reader/writer.
+   */
+  public static final String WAL_TRAILER_WARN_SIZE =
+    "hbase.regionserver.waltrailer.warn.size";
+  public static final int DEFAULT_WAL_TRAILER_WARN_SIZE = 1024*1024; // 1MB
 
   static final Pattern EDITFILES_NAME_PATTERN = Pattern.compile("-?[0-9]+");
   public static final String RECOVERED_LOG_TMPFILE_SUFFIX = ".temp";
@@ -71,6 +80,12 @@ public interface HLog {
 
     long getPosition() throws IOException;
     void reset() throws IOException;
+
+    /**
+     * @return the WALTrailer of the current HLog. It may be null in case of legacy or corrupt WAL
+     *         files.
+     */
+    WALTrailer getWALTrailer();
   }
 
   public interface Writer {
@@ -83,6 +98,12 @@ public interface HLog {
     void append(Entry entry) throws IOException;
 
     long getLength() throws IOException;
+
+    /**
+     * Sets HLog's WALTrailer. This trailer is appended at the end of WAL on closing.
+     * @param walTrailer trailer to append to WAL.
+     */
+    void setWALTrailer(WALTrailer walTrailer);
   }
 
   /**
@@ -243,17 +264,25 @@ public interface HLog {
   public void closeAndDelete() throws IOException;
 
   /**
-   * Only used in tests.
-   *
+   * Same as {@link #appendNoSync(HRegionInfo, byte[], WALEdit, UUID, long, HTableDescriptor)},
+   * except it causes a sync on the log
+   */
+  public void append(HRegionInfo info, byte[] tableName, WALEdit edits,
+      final long now, HTableDescriptor htd) throws IOException;
+
+  /**
+   * Append a set of edits to the log. Log edits are keyed by (encoded)
+   * regionName, rowname, and log-sequence-id. The HLog is flushed after this
+   * transaction is written to the log.
    * @param info
    * @param tableName
    * @param edits
    * @param now
    * @param htd
-   * @throws IOException
+   * @param isInMemstore Whether the record is in memstore. False for system records.
    */
   public void append(HRegionInfo info, byte[] tableName, WALEdit edits,
-      final long now, HTableDescriptor htd) throws IOException;
+      final long now, HTableDescriptor htd, boolean isInMemstore) throws IOException;
 
   /**
    * Append a set of edits to the log. Log edits are keyed by (encoded)
@@ -266,28 +295,11 @@ public interface HLog {
    * @param clusterId
    *          The originating clusterId for this edit (for replication)
    * @param now
-   * @return txid of this transaction
-   * @throws IOException
-   */
-  public long appendNoSync(HRegionInfo info, byte[] tableName, WALEdit edits,
-      UUID clusterId, final long now, HTableDescriptor htd) throws IOException;
-
-  /**
-   * Append a set of edits to the log. Log edits are keyed by (encoded)
-   * regionName, rowname, and log-sequence-id. The HLog is flushed after this
-   * transaction is written to the log.
-   *
-   * @param info
-   * @param tableName
-   * @param edits
-   * @param clusterId
-   *          The originating clusterId for this edit (for replication)
-   * @param now
    * @param htd
    * @return txid of this transaction
    * @throws IOException
    */
-  public long append(HRegionInfo info, byte[] tableName, WALEdit edits,
+  public long appendNoSync(HRegionInfo info, byte[] tableName, WALEdit edits,
       UUID clusterId, final long now, HTableDescriptor htd) throws IOException;
 
   public void hsync() throws IOException;
