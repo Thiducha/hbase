@@ -119,7 +119,7 @@ public class IntegrationTestingUtility extends HBaseTestingUtility {
    * cluster or a local cluster.
    * @see IntegrationTestingUtility#setUseDistributedCluster(Configuration)
    */
-  private boolean isDistributedCluster() {
+  public boolean isDistributedCluster() {
     Configuration conf = getConfiguration();
     boolean isDistributedCluster;
     isDistributedCluster = Boolean.parseBoolean(System.getProperty(IS_DISTRIBUTED_CLUSTER, "false"));
