@@ -59,6 +59,7 @@ import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -119,7 +120,7 @@ public class HTable implements HTableInterface {
   private HConnection connection;
   private final byte [] tableName;
   private volatile Configuration configuration;
-  private List<Row> writeAsyncBuffer = new ArrayList<Row>();
+  private List<Row> writeAsyncBuffer = new LinkedList<Row>();
   private long writeBufferSize;
   private boolean clearBufferOnFail;
   private boolean autoFlush;
@@ -133,7 +134,7 @@ public class HTable implements HTableInterface {
   private final boolean cleanupConnectionOnClose; // close the connection in close()
 
   /** The Async process for puts with autoflush set to false or multiputs */
-  private HConnectionManager.HConnectionImplementation.AsyncProcess<Object> ap;
+  private AsyncProcess<Object> ap;
 
   /** if we're synchronous as in 0.94- */
   protected boolean synchronousProcess;
@@ -263,8 +264,8 @@ public class HTable implements HTableInterface {
         HConstants.HBASE_CLIENT_SCANNER_CACHING,
         HConstants.DEFAULT_HBASE_CLIENT_SCANNER_CACHING);
 
-    ap = new HConnectionManager.HConnectionImplementation.AsyncProcess<Object>(
-        connection, tableName, pool, null);
+    ap = new AsyncProcess<Object>(connection, tableName, pool, null, configuration);
+
     this.maxKeyValueSize = this.configuration.getInt(
         "hbase.client.keyvalue.maxsize", -1);
     this.closed = false;
@@ -408,7 +409,9 @@ public class HTable implements HTableInterface {
 
   /**
    * Kept in 0.96 for backward compatibility
+   * @deprecated  since 0.96. This is an internal buffer that should not be read nor write.
    */
+  @Deprecated
   public List<Row> getWriteBuffer() {
     return writeAsyncBuffer;
   }
