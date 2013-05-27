@@ -87,6 +87,8 @@ public class TestHCM {
         ClusterStatusPublisher.MulticastPublisher.class, ClusterStatusPublisher.Publisher.class);
     TEST_UTIL.getConfiguration().setClass(ClusterStatusListener.STATUS_LISTENER_CLASS,
         ClusterStatusListener.MultiCastListener.class, ClusterStatusListener.Listener.class);
+    TEST_UTIL.getConfiguration().setInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER, 2);
+
     TEST_UTIL.startMiniCluster(2);
   }
 
@@ -319,14 +321,14 @@ public class TestHCM {
     put3.add(FAM_NAM, ROW, ROW);
     try {
       table.put(put3);
-      Assert.assertFalse("Unreachable point", true);
+      Assert.fail("Unreachable point");
     }catch (Throwable e){
-      LOG.info("Put done, exception caught: "+e.getClass());
+      LOG.info("Put done, exception caught: " + e.getClass());
       // Now check that we have the exception we wanted
-      Assert.assertTrue(e instanceof RetriesExhaustedWithDetailsException);
+      Assert.assertTrue("e=" + e, e instanceof RetriesExhaustedWithDetailsException);
       RetriesExhaustedWithDetailsException re = (RetriesExhaustedWithDetailsException)e;
-      Assert.assertTrue(re.getNumExceptions() == 1);
-      Assert.assertTrue(Arrays.equals(re.getRow(0).getRow(), ROW));
+      Assert.assertEquals(2, re.getNumExceptions());
+      Assert.assertArrayEquals(re.getRow(0).getRow(), ROW);
     }
     Assert.assertNotNull(conn.getCachedLocation(TABLE_NAME, ROW));
     Assert.assertEquals(

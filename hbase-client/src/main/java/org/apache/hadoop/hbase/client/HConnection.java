@@ -383,4 +383,7 @@ public interface HConnection extends Abortable, Closeable {
    * @return true if the server is known as dead, false otherwise.
    */
   public boolean isDeadServer(ServerName serverName);
+
+  void updateCachedLocations(byte[] tableName, Row row,
+                             Object exception, HRegionLocation source);
 }
