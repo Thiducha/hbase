@@ -27,34 +27,34 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * This class  allows a continuous flow of requests. It's written to be compatible with a
- *  synchronous caller such as HTable.
+ * synchronous caller such as HTable.
  * <p>
  * The caller sends a buffer of operation, by calling submit. This class extract from this list
- *  the operations it can send, i.e. the operations that are on region that are not considered
- *  as busy. The process is asynchronous, i.e. it returns immediately when if has finished to
- *  iterate on the list. If, and only if, the maximum number of current task is reached, the call
- *  to submit will block.
+ * the operations it can send, i.e. the operations that are on region that are not considered
+ * as busy. The process is asynchronous, i.e. it returns immediately when if has finished to
+ * iterate on the list. If, and only if, the maximum number of current task is reached, the call
+ * to submit will block.
  * </p>
  * <p>
  * The class manages internally the retries.
  * </p>
  * <p>
  * The class includes an error marker: it allows to know if an operation has failed or not, and
- *  to get the exception details, i.e. the full list of exceptions for each attempt. This marker
- *  is here to help the backward compatibility in HTable. In most (new) cases, it should be
- *  managed by the callbacks.
+ * to get the exception details, i.e. the full list of exceptions for each attempt. This marker
+ * is here to help the backward compatibility in HTable. In most (new) cases, it should be
+ * managed by the callbacks.
  * </p>
  * <p>
  * A callback is available, in order to: <list>
  * <li>Get the result of the operation (failure or success)</li>
  * <li>When an operation fails but could be retried, allows or not to retry</li>
  * <li>When an operation fails for good (can't be retried or already retried the maximum number
- *  time), register the error or not.
+ * time), register the error or not.
  * </list>
  * <p>
  * This class is not thread safe externally; only one thread should submit operations at a time.
  * Internally, the class is thread safe enough to manage simultaneously new submission and results
- *  arising from older operations.
+ * arising from older operations.
  * </p>
  */
 public class AsyncProcess<Res> {
@@ -211,7 +211,8 @@ public class AsyncProcess<Res> {
 
   /**
    * Check if we should submit an operation or not. We will submit the operation if it has
-   *  a location (it should), and if the region is not already considered as busy.
+   * a location (it should), and if the region is not already considered as busy.
+   *
    * @param row          the row
    * @param numAttempt   the num attempt
    * @param posInList    the position in the list
@@ -257,10 +258,11 @@ public class AsyncProcess<Res> {
 
   /**
    * Check of we should send new operations to this region.
+   *
    * @param encodedRegionName
    * @return true if this region is considered as busy.
    */
-  protected boolean canTakeNewOperations(String encodedRegionName){
+  protected boolean canTakeNewOperations(String encodedRegionName) {
     AtomicInteger ct = taskCounterPerRegion.get(encodedRegionName);
     return ct == null || ct.get() < maxConcurrentTasksPerRegion;
   }
@@ -372,7 +374,7 @@ public class AsyncProcess<Res> {
             "regionName=" + regionName, ree);
         // We're likely to fail again, but this will increment the attempt counter, so it will
         //  finish.
-        resubmitAll(initialActions, multi, loc, numAttempt +1, ree);
+        resubmitAll(initialActions, multi, loc, numAttempt + 1, ree);
       }
     }
   }
@@ -479,6 +481,7 @@ public class AsyncProcess<Res> {
     //  - RegionMovedException: we update the cache with the new region location
 
     List<Action<Row>> toReplay = new ArrayList<Action<Row>>();
+    Throwable throwable = null;
 
     int failureCount = 0;
     for (Map.Entry<byte[], List<Pair<Integer, Object>>> resultsForRS :
@@ -489,13 +492,14 @@ public class AsyncProcess<Res> {
 
         // Failure: retry if it's make sense else update the errors lists
         if (result == null || result instanceof Throwable) {
+          throwable = (Throwable) result;
           failureCount++;
           Action<Row> correspondingAction = initialActions.get(regionResult.getFirst());
           Row row = correspondingAction.getAction();
           hConnection.updateCachedLocations(this.tableName, row, result, location);
 
           if (manageError(numAttempt, correspondingAction.getOriginalIndex(), row, true,
-              (Throwable) result, location)) {
+              throwable, location)) {
             toReplay.add(correspondingAction);
           }
         } else // success
@@ -512,7 +516,8 @@ public class AsyncProcess<Res> {
     if (!toReplay.isEmpty()) {
       LOG.info("Attempt #" + numAttempt + " failed for " + failureCount +
           " operations on server " + location.getServerName() + ", resubmitting " +
-          toReplay.size() + ", tableName=" + Bytes.toString(tableName));
+          toReplay.size() + ", tableName=" + Bytes.toString(tableName) +
+          ", last exception was: " + throwable);
 
       long backOffTime = ConnectionUtils.getPauseTime(pause, numAttempt);
       try {
