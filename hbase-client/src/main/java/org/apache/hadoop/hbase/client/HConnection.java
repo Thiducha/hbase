@@ -354,7 +354,7 @@ public interface HConnection extends Abortable, Closeable {
 
 
   /**
-   * Clear any caches that pertain to server name <code>sn</code>
+   * Clear any caches that pertain to server name <code>sn</code>.
    * @param sn A server name
    */
   public void clearCaches(final ServerName sn);
@@ -384,6 +384,15 @@ public interface HConnection extends Abortable, Closeable {
    */
   public boolean isDeadServer(ServerName serverName);
 
-  void updateCachedLocations(byte[] tableName, Row row,
+
+  /**
+   * Update the location cache. This is used internally by HBase, in most cases it should not be
+   *  used by the client application.
+   * @param tableName the table name
+   * @param row the row
+   * @param exception the exception if any. Can be null.
+   * @param source the previous location
+   */
+  public void updateCachedLocations(byte[] tableName, Row row,
                              Object exception, HRegionLocation source);
 }

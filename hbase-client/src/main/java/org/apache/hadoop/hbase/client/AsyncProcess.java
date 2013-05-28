@@ -73,7 +73,7 @@ public class AsyncProcess<Res> {
   protected final int maxTotalConcurrentTasks;
   protected final int maxConcurrentTasksPerRegion;
   protected final long pause;
-  protected final int numTries;
+  protected int numTries;
 
 
   /**

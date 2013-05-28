@@ -307,6 +307,7 @@ public class TestHCM {
 
     // Hijack the number of retry to fail immediately instead of retrying: there will be no new
     //  connection to the master
+    table.ap.numTries = 1;
     Field numTries = conn.getClass().getDeclaredField("numTries");
     numTries.setAccessible(true);
     Field modifiersField = Field.class.getDeclaredField("modifiers");
@@ -322,13 +323,10 @@ public class TestHCM {
     try {
       table.put(put3);
       Assert.fail("Unreachable point");
-    }catch (Throwable e){
+    }catch (RetriesExhaustedWithDetailsException e){
       LOG.info("Put done, exception caught: " + e.getClass());
-      // Now check that we have the exception we wanted
-      Assert.assertTrue("e=" + e, e instanceof RetriesExhaustedWithDetailsException);
-      RetriesExhaustedWithDetailsException re = (RetriesExhaustedWithDetailsException)e;
-      Assert.assertEquals(2, re.getNumExceptions());
-      Assert.assertArrayEquals(re.getRow(0).getRow(), ROW);
+      Assert.assertEquals(1, e.getNumExceptions());
+      Assert.assertArrayEquals(e.getRow(0).getRow(), ROW);
     }
     Assert.assertNotNull(conn.getCachedLocation(TABLE_NAME, ROW));
     Assert.assertEquals(
@@ -362,17 +360,16 @@ public class TestHCM {
     Assert.assertFalse(conn.getCachedLocation(TABLE_NAME, ROW).getPort() ==
       curServer.getServerName().getPort());
 
-
     Scan sc = new Scan();
     sc.setStopRow(ROW);
-    sc.setStopRow(ROW);
+    sc.setStartRow(ROW);
 
     try {
       ResultScanner rs = table.getScanner(sc);
       while (rs.next() != null) {
       }
-      Assert.assertFalse("Unreachable point", true);
-    } catch (Throwable e) {
+      Assert.fail("Unreachable point");
+    } catch (RetriesExhaustedException e) {
       LOG.info("Scan done, expected exception caught: " + e.getClass());
     }
 

@@ -2,6 +2,7 @@ package org.apache.hadoop.hbase.client;
 
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HRegionLocation;
 import org.apache.hadoop.hbase.ServerName;
@@ -12,11 +13,13 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.mockito.Mockito;
 
+import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -75,6 +78,37 @@ public class TestAsyncProcess {
         }
       };
     }
+  }
+
+  /**
+   * Returns our async process.
+   */
+  static class MyConnectionImpl extends HConnectionManager.HConnectionImplementation {
+    MyAsyncProcess<?> ap;
+    final static Configuration c = new Configuration();
+
+    static {
+      c.setInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER, 2);
+    }
+
+    protected MyConnectionImpl() {
+      super(c);
+    }
+
+    @Override
+    protected <R> AsyncProcess createAsyncProcess(byte[] tableName, ExecutorService pool,
+                                                  AsyncProcess.AsyncProcessCallback<R> callback,
+                                                  Configuration conf) {
+      ap = new MyAsyncProcess<R>(this, callback, conf);
+      return ap;
+    }
+
+    @Override
+    public HRegionLocation locateRegion(final byte[] tableName,
+                                        final byte[] row) {
+      return loc1;
+    }
+
   }
 
   @Test
@@ -286,7 +320,7 @@ public class TestAsyncProcess {
   }
 
 
-  private static HConnection createHConnection() throws Exception {
+  private static HConnection createHConnection() throws IOException {
     HConnection hc = Mockito.mock(HConnection.class);
 
     Mockito.when(hc.getRegionLocation(Mockito.eq(DUMMY_TABLE),
@@ -320,14 +354,14 @@ public class TestAsyncProcess {
     Assert.assertEquals(0, ht.getWriteBufferSize());
   }
 
-  private void doHTableFailedPut(boolean bufferOn, boolean close) throws Exception {
+  private void doHTableFailedPut(boolean bufferOn) throws Exception {
     HTable ht = new HTable();
     HConnection hc = createHConnection();
     MyCB mcb = new MyCB(); // This allows to have some hints on what's going on.
     ht.ap = new MyAsyncProcess<Object>(hc, mcb, conf);
     ht.setAutoFlush(true, true);
-    if (bufferOn){
-      ht.setWriteBufferSize(1024L*1024L);
+    if (bufferOn) {
+      ht.setWriteBufferSize(1024L * 1024L);
     } else {
       ht.setWriteBufferSize(0L);
     }
@@ -337,37 +371,121 @@ public class TestAsyncProcess {
     Assert.assertEquals(0L, ht.currentWriteBufferSize);
     try {
       ht.put(put);
-      if (bufferOn){
+      if (bufferOn) {
         ht.flushCommits();
       }
       Assert.fail();
-    }catch (RetriesExhaustedException expected){
+    } catch (RetriesExhaustedException expected) {
     }
     Assert.assertEquals(0L, ht.currentWriteBufferSize);
     Assert.assertEquals(0, mcb.successCalled.get());
     Assert.assertEquals(2, mcb.retriableFailure.get());
     Assert.assertEquals(1, mcb.failureCalled.get());
 
-    if (close){
-      // This should not raise any exception, they have been 'received' before by the catch.
-      ht.close();
-    }
+    // This should not raise any exception, puts have been 'received' before by the catch.
+    ht.close();
   }
 
   @Test
-  public void testHTableFailedPut() throws Exception {
-    doHTableFailedPut(true, false);
-    doHTableFailedPut(false, false);
-    doHTableFailedPut(true, true);
-    doHTableFailedPut(false, true);
+  public void testHTableFailedPutWithBuffer() throws Exception {
+    doHTableFailedPut(true);
+  }
+
+  @Test
+  public void doHTableFailedPutWithoutBuffer() throws Exception {
+    doHTableFailedPut(false);
+  }
+
+  @Test
+  public void testHTableFailedPutAndNewPut() throws Exception {
+    HTable ht = new HTable();
+    HConnection hc = createHConnection();
+    MyCB mcb = new MyCB(); // This allows to have some hints on what's going on.
+    ht.ap = new MyAsyncProcess<Object>(hc, mcb, conf);
+    ht.setAutoFlush(false, true);
+    ht.setWriteBufferSize(0);
+
+    Put p = createPut(true, false);
+    ht.put(p);
+
+    ht.ap.waitUntilDone(); // Let's do all the retries.
+
+    // We're testing that we're behaving as we were behaving in 0.94: sending exceptions in the
+    //  doPut if it fails.
+    // This said, it's not a very easy going behavior. For example, when we insert a list of
+    //  puts, we may raise an exception in the middle of the list. It's then up to the caller to
+    //  manage what was inserted, what was tried but failed, and what was not even tried.
+    p = createPut(true, true);
+    Assert.assertEquals(0, ht.writeAsyncBuffer.size());
+    try {
+      ht.put(p);
+      Assert.fail();
+    } catch (RetriesExhaustedException expected) {
+    }
+    Assert.assertEquals("the put should not been inserted.", 0, ht.writeAsyncBuffer.size());
   }
 
 
-    /**
-     * @param reg1    if true, creates a put on region 1, region 2 otherwise
-     * @param success if true, the put will succeed.
-     * @return a put
-     */
+  @Test
+  public void testWithNoClearOnFail() throws IOException {
+    HTable ht = new HTable();
+    HConnection hc = createHConnection();
+    MyCB mcb = new MyCB();
+    ht.ap = new MyAsyncProcess<Object>(hc, mcb, conf);
+    ht.setAutoFlush(false, false);
+
+    Put p = createPut(true, false);
+    ht.put(p);
+    Assert.assertEquals(0, ht.writeAsyncBuffer.size());
+    try {
+      ht.flushCommits();
+    } catch (RetriesExhaustedWithDetailsException expected) {
+    }
+    Assert.assertEquals(1, ht.writeAsyncBuffer.size());
+
+    try {
+      ht.close();
+    } catch (RetriesExhaustedWithDetailsException expected) {
+    }
+    Assert.assertEquals(1, ht.writeAsyncBuffer.size());
+  }
+
+  @Test
+  public void testBatch() throws IOException, InterruptedException {
+    HTable ht = new HTable();
+    ht.connection = new MyConnectionImpl();
+
+    List<Put> puts = new ArrayList<Put>();
+    puts.add(createPut(true, true));
+    puts.add(createPut(true, true));
+    puts.add(createPut(true, true));
+    puts.add(createPut(true, true));
+    puts.add(createPut(true, false)); // <=== the bad apple, position 4
+    puts.add(createPut(true, true));
+    puts.add(createPut(true, false)); // <=== another bad apple, position 6
+
+    Object[] res = new Object[puts.size()];
+    try {
+      ht.processBatch(puts, res);
+      Assert.fail();
+    } catch (RetriesExhaustedException expected) {
+    }
+
+    Assert.assertEquals(res[0], success);
+    Assert.assertEquals(res[1], success);
+    Assert.assertEquals(res[2], success);
+    Assert.assertEquals(res[3], success);
+    Assert.assertEquals(res[4], failure);
+    Assert.assertEquals(res[5], success);
+    Assert.assertEquals(res[6], failure);
+  }
+
+
+  /**
+   * @param reg1    if true, creates a put on region 1, region 2 otherwise
+   * @param success if true, the put will succeed.
+   * @return a put
+   */
   private Put createPut(boolean reg1, boolean success) {
     Put p;
     if (!success) {

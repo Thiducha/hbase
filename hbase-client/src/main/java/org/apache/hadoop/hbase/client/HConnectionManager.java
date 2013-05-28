@@ -435,7 +435,7 @@ public class HConnectionManager {
     final int rpcTimeout;
     private final int prefetchRegionLimit;
     private final boolean useServerTrackerForRetries;
-    private final long serverTrackerTimeout;
+    private long serverTrackerTimeout;
 
     private volatile boolean closed;
     private volatile boolean aborted;
@@ -484,12 +484,12 @@ public class HConnectionManager {
     private int refCount;
 
     // indicates whether this connection's life cycle is managed (by us)
-    private final boolean managed;
+    private boolean managed;
 
     /**
      * Cluster registry of basic info such as clusterid and meta region location.
      */
-    final Registry registry;
+     Registry registry;
 
     /**
      * constructor
@@ -503,20 +503,8 @@ public class HConnectionManager {
      * users of an HConnectionImplementation instance.
      */
     HConnectionImplementation(Configuration conf, boolean managed) throws IOException {
-      this.conf = conf;
+      this(conf);
       this.managed = managed;
-      this.closed = false;
-      this.pause = conf.getLong(HConstants.HBASE_CLIENT_PAUSE,
-        HConstants.DEFAULT_HBASE_CLIENT_PAUSE);
-      this.numTries = conf.getInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER,
-        HConstants.DEFAULT_HBASE_CLIENT_RETRIES_NUMBER);
-      this.rpcTimeout = conf.getInt(
-        HConstants.HBASE_RPC_TIMEOUT_KEY,
-        HConstants.DEFAULT_HBASE_RPC_TIMEOUT);
-      this.prefetchRegionLimit = conf.getInt(
-        HConstants.HBASE_CLIENT_PREFETCH_LIMIT,
-        HConstants.DEFAULT_HBASE_CLIENT_PREFETCH_LIMIT);
-      this.useServerTrackerForRetries = conf.getBoolean(RETRIES_BY_SERVER_KEY, true);
       long serverTrackerTimeout = 0;
       if (this.useServerTrackerForRetries) {
         // Server tracker allows us to do faster, and yet useful (hopefully), retries.
@@ -553,6 +541,25 @@ public class HConnectionManager {
               }
             }, conf, listenerClass);
       }
+    }
+
+    /**
+     * For tests.
+     */
+    protected HConnectionImplementation(Configuration conf) {
+      this.conf = conf;
+      this.closed = false;
+      this.pause = conf.getLong(HConstants.HBASE_CLIENT_PAUSE,
+          HConstants.DEFAULT_HBASE_CLIENT_PAUSE);
+      this.numTries = conf.getInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER,
+          HConstants.DEFAULT_HBASE_CLIENT_RETRIES_NUMBER);
+      this.rpcTimeout = conf.getInt(
+          HConstants.HBASE_RPC_TIMEOUT_KEY,
+          HConstants.DEFAULT_HBASE_RPC_TIMEOUT);
+      this.prefetchRegionLimit = conf.getInt(
+          HConstants.HBASE_CLIENT_PREFETCH_LIMIT,
+          HConstants.DEFAULT_HBASE_CLIENT_PREFETCH_LIMIT);
+      this.useServerTrackerForRetries = conf.getBoolean(RETRIES_BY_SERVER_KEY, true);
     }
  
     /**
@@ -2119,7 +2126,7 @@ public class HConnectionManager {
       // To fulfill the original contract, we have a special callback. This callback
       //  will set the results in the Object array.
       ObjectResultFiller<R> cb = new ObjectResultFiller<R>(results, callback);
-      AsyncProcess<R> asyncProcess = new AsyncProcess<R>(this, tableName, pool, cb, conf);
+      AsyncProcess<?> asyncProcess = createAsyncProcess(tableName, pool, cb, conf);
 
       // We're doing a submit all. This way, the originalIndex will match the initial list.
       asyncProcess.submitAll(list);
@@ -2128,6 +2135,12 @@ public class HConnectionManager {
       if (asyncProcess.hasError()) {
         throw asyncProcess.getErrors();
       }
+    }
+
+    // For tests.
+    protected <R> AsyncProcess createAsyncProcess(byte[] tableName, ExecutorService pool,
+           AsyncProcess.AsyncProcessCallback<R> callback, Configuration conf) {
+      return new AsyncProcess<R>(this, tableName, pool, callback, conf);
     }
 
 

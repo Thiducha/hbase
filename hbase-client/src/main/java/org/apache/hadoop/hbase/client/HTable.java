@@ -117,10 +117,10 @@ import java.util.concurrent.TimeUnit;
 @InterfaceStability.Stable
 public class HTable implements HTableInterface {
   private static final Log LOG = LogFactory.getLog(HTable.class);
-  private HConnection connection;
+  protected HConnection connection;
   private final byte [] tableName;
   private volatile Configuration configuration;
-  private List<Row> writeAsyncBuffer = new LinkedList<Row>();
+  protected List<Row> writeAsyncBuffer = new LinkedList<Row>();
   private long writeBufferSize;
   private boolean clearBufferOnFail;
   private boolean autoFlush;
@@ -746,7 +746,8 @@ public class HTable implements HTableInterface {
    * {@inheritDoc}
    */
   @Override
-  public void put(final Put put) throws IOException {
+  public void put(final Put put)
+      throws InterruptedIOException, RetriesExhaustedWithDetailsException {
     doPut(put);
     if (autoFlush) {
       flushCommits();
@@ -757,7 +758,8 @@ public class HTable implements HTableInterface {
    * {@inheritDoc}
    */
   @Override
-  public void put(final List<Put> puts) throws IOException {
+  public void put(final List<Put> puts)
+      throws InterruptedIOException, RetriesExhaustedWithDetailsException {
     for (Put put : puts) {
       doPut(put);
     }
@@ -772,7 +774,11 @@ public class HTable implements HTableInterface {
    *  cluster.
    * @throws IOException if there is an error on the cluster.
    */
-  private void doPut(Put put) throws IOException {
+  private void doPut(Put put) throws InterruptedIOException, RetriesExhaustedWithDetailsException {
+    if (ap.hasError()){
+      backgroundFlushCommits(true);
+    }
+
     validatePut(put);
     currentWriteBufferSize += put.heapSize();
 
@@ -795,7 +801,7 @@ public class HTable implements HTableInterface {
 
     try {
       // If there is an error on the operations in progress, we don't add new operations.
-      if (!ap.hasError()) {
+      if (!ap.hasError() && previousSize > 0) {
         ap.submit(writeAsyncBuffer);
         while (!ap.hasError() && previousSize == writeAsyncBuffer.size()) {
           try {
